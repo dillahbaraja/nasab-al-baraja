@@ -1,4 +1,8 @@
 export const translations = {
+  appName: { id: "Nasab Al-Baraja", en: "Nasab Al-Baraja", ar: "نسب آل بارجاء" },
+  signIn: { id: "Masuk", en: "Sign In", ar: "تسجيل الدخول" },
+  notice: { id: "Pengumuman", en: "Notice", ar: "إشعار" },
+  about: { id: "Tentang", en: "About", ar: "حول" },
   themeTitle: { id: "Ganti Tema", en: "Toggle Theme", ar: "تبديل المظهر" },
   langTitle: { id: "Ganti Bahasa", en: "Toggle Language", ar: "تغيير اللغة" },
   searchPlaceholder: { id: "Cari Nasab (urut: Anak Ayah Kakek...)", en: "Search Lineage (e.g. Son Father Grandfather...)", ar: "البحث عن النسب (مثال: الابن ثم الأب ثم الجد...)" },

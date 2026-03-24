@@ -16,6 +16,10 @@ import NodeEditModal from './NodeEditModal';
 import { db } from './firebase';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { translations } from './i18n';
+import MobileHeader from './components/MobileHeader';
+import WebsiteHeader from './components/WebsiteHeader';
+import { StatusBar, Style } from '@capacitor/status-bar';
+import { Capacitor } from '@capacitor/core';
 
 const nodeTypes = { customNode: FamilyNode };
 
@@ -42,6 +46,18 @@ const FamilyGraph = () => {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('rf-theme', theme);
+
+    // Sync Status Bar on Android
+    if (Capacitor.getPlatform() === 'android') {
+      const updateStatusBar = async () => {
+        try {
+          await StatusBar.setStyle({
+            style: theme === 'dark' ? Style.Dark : Style.Light
+          });
+        } catch(e) { console.warn("StatusBar error:", e); }
+      };
+      updateStatusBar();
+    }
   }, [theme]);
 
   const toggleTheme = () => {
@@ -306,8 +322,55 @@ const FamilyGraph = () => {
     }
   };
 
+  const renderSearchForm = () => (
+    <div className="search-container glass-panel">
+      <form onSubmit={handleSearch} style={{ display: 'flex', width: '100%', gap: '12px', alignItems: 'center' }} className="search-form">
+        <Search size={20} className="search-icon" style={{ flexShrink: 0 }} />
+        <div style={{ position: 'relative', width: '100%' }}>
+          <input 
+            type="text" 
+            placeholder={t('searchPlaceholder')} 
+            className="search-input" 
+            value={searchQuery} 
+            onChange={handleQueryChange} 
+            onFocus={() => { if(searchQuery.length >= 3) setShowSuggestions(true) }}
+            onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+          />
+          {showSuggestions && searchSuggestions.length > 0 && (
+            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--panel-bg)', borderRadius: '8px', border: '1px solid var(--panel-border)', marginTop: '12px', padding: '4px', maxHeight: '250px', overflowY: 'auto' }}>
+              {searchSuggestions.map(s => (
+                <div key={s.id} onClick={() => selectSuggestion(s)} className="suggestion-item" style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--panel-border)' }}>
+                  <div style={{ fontWeight: 'bold' }}>{lang === 'ar' ? s.nameArab : s.nameLatin}</div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                     {(lang === 'ar' ? s.nameArab : s.nameLatin) + getNasabDesc(s)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <button type="submit" className="search-button">{t('searchButton')}</button>
+      </form>
+    </div>
+  );
+
   return (
     <>
+      <MobileHeader 
+        title={t('appName') || "Nasab Al-Baraja"} 
+        onMenuClick={(item) => alert(`Android Menu: ${item}`)}
+        t={t}
+        lang={lang}
+      />
+      
+      <WebsiteHeader 
+        onMenuClick={(item) => alert(`Website Menu: ${item}`)}
+        t={t}
+        lang={lang}
+      >
+        {renderSearchForm()}
+      </WebsiteHeader>
+
       <div className="background-glow" />
       <div className="background-glow-bottom" />
       <div className="watermark">شَجَرَةُ آلِ بَارَجَاء</div>
@@ -331,35 +394,8 @@ const FamilyGraph = () => {
         t={t}
       />
 
-      <div className="search-container glass-panel">
-        <form onSubmit={handleSearch} style={{ display: 'flex', width: '100%', gap: '12px', alignItems: 'center' }} className="search-form">
-          <Search size={20} className="search-icon" style={{ flexShrink: 0 }} />
-          <div style={{ position: 'relative', width: '100%' }}>
-            <input 
-              type="text" 
-              placeholder={t('searchPlaceholder')} 
-              className="search-input" 
-              value={searchQuery} 
-              onChange={handleQueryChange} 
-              onFocus={() => { if(searchQuery.length >= 3) setShowSuggestions(true) }}
-              onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-            />
-            {showSuggestions && searchSuggestions.length > 0 && (
-              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--panel-bg)', borderRadius: '8px', border: '1px solid var(--panel-border)', marginTop: '12px', padding: '4px', maxHeight: '250px', overflowY: 'auto' }}>
-                {searchSuggestions.map(s => (
-                  <div key={s.id} onClick={() => selectSuggestion(s)} className="suggestion-item" style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--panel-border)' }}>
-                    <div style={{ fontWeight: 'bold' }}>{lang === 'ar' ? s.nameArab : s.nameLatin}</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                       {(lang === 'ar' ? s.nameArab : s.nameLatin) + getNasabDesc(s)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          <button type="submit" className="search-button">{t('searchButton')}</button>
-        </form>
-      </div>
+      {/* Only show standalone search for Android (since it's in the header for Web) */}
+      {Capacitor.getPlatform() === 'android' && renderSearchForm()}
 
       <div style={{ width: '100%', height: '100%' }}>
         {isLoading ? (
