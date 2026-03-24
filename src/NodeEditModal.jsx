@@ -9,7 +9,8 @@ const NodeEditModal = ({
   onUpdateChild, 
   onRemoveChild,
   lang,
-  t
+  t,
+  currentUser
 }) => {
   const person = initialPerson ? (familyData.find(p => p.id === initialPerson.id) || initialPerson) : null;
   const [newLatin, setNewLatin] = useState('');
@@ -170,32 +171,34 @@ const NodeEditModal = ({
           )}
         </div>
 
-        {/* CURRENT PERSON ACTIONS */}
-        <div style={{ background: 'rgba(255,255,255,0.05)', padding: '16px', borderRadius: '8px', marginBottom: '24px' }}>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button onClick={handleEditCurrentPersonName} style={{
-              padding: '6px 12px', background: 'var(--accent)', color: '#ffffff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold'
-            }}>{t('editPerson')}</button>
-            <button 
-              onClick={handleRemoveCurrentPerson} 
-              style={{
-                padding: '6px 12px', 
-                background: personHasDescendants ? 'var(--btn-secondary-bg)' : '#ef4444', 
-                color: personHasDescendants ? 'var(--text-secondary)' : '#ffffff', 
-                border: 'none', borderRadius: '4px', 
-                cursor: personHasDescendants ? 'not-allowed' : 'pointer', 
-                fontSize: '13px', fontWeight: 'bold'
-              }}
-            >
-              {t('deletePerson')}
-            </button>
-          </div>
-          {personHasDescendants && (
-            <div style={{ fontSize: '11px', color: '#ef4444', marginTop: '6px', fontWeight: '500' }}>
-              {t('cannotDelete')}
+        {/* CURRENT PERSON ACTIONS - ONLY FOR ADMIN */}
+        {currentUser && (
+          <div style={{ background: 'rgba(255,255,255,0.05)', padding: '16px', borderRadius: '8px', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button onClick={handleEditCurrentPersonName} style={{
+                padding: '6px 12px', background: 'var(--accent)', color: '#ffffff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold'
+              }}>{t('editPerson')}</button>
+              <button 
+                onClick={handleRemoveCurrentPerson} 
+                style={{
+                  padding: '6px 12px', 
+                  background: personHasDescendants ? 'var(--btn-secondary-bg)' : '#ef4444', 
+                  color: personHasDescendants ? 'var(--text-secondary)' : '#ffffff', 
+                  border: 'none', borderRadius: '4px', 
+                  cursor: personHasDescendants ? 'not-allowed' : 'pointer', 
+                  fontSize: '13px', fontWeight: 'bold'
+                }}
+              >
+                {t('deletePerson')}
+              </button>
             </div>
-          )}
-        </div>
+            {personHasDescendants && (
+              <div style={{ fontSize: '11px', color: '#ef4444', marginTop: '6px', fontWeight: '500' }}>
+                {t('cannotDelete')}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* CHILDREN LIST */}
         <div style={{ marginBottom: '24px' }}>
@@ -214,44 +217,48 @@ const NodeEditModal = ({
                     <div style={{ fontWeight: 'bold', fontSize: '16px', color: 'var(--text-primary)' }}>{c.nameArab}</div>
                     <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{c.nameLatin}</div>
                   </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button onClick={() => handleEditChildNameItem(c)} style={{
-                      padding: '6px 10px', background: 'var(--btn-secondary-bg)', color: 'var(--btn-secondary-text)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: '500'
-                    }}>{t('editBtn')}</button>
-                    <button onClick={() => handleRemoveChildItem(c)} style={{
-                      padding: '6px 10px', background: '#ef4444', color: '#ffffff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: '500'
-                    }}>{t('deleteBtn')}</button>
-                  </div>
+                  {currentUser && (
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button onClick={() => handleEditChildNameItem(c)} style={{
+                        padding: '6px 10px', background: 'var(--btn-secondary-bg)', color: 'var(--btn-secondary-text)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: '500'
+                      }}>{t('editBtn')}</button>
+                      <button onClick={() => handleRemoveChildItem(c)} style={{
+                        padding: '6px 10px', background: '#ef4444', color: '#ffffff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: '500'
+                      }}>{t('deleteBtn')}</button>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
           )}
         </div>
 
-        {/* ADD CHILD FORM */}
-        <form onSubmit={handleAdd} style={{ borderTop: '1px solid var(--panel-border)', paddingTop: '20px' }}>
-          <h3 style={{ fontSize: '16px', marginBottom: '12px' }}>{t('addChildTitle')}{displayName}</h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-             <input
-              type="text"
-              placeholder={`${t('placeholderArab')} *`}
-              className="search-input"
-              style={{ padding: '10px 12px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '6px', color: 'var(--text-primary)' }}
-              value={newArab}
-              onChange={(e) => setNewArab(e.target.value)}
-              required
-            />
-            <input
-              type="text"
-              placeholder={`${t('placeholderLatin')} ${t('optional')}`}
-              className="search-input"
-              style={{ padding: '10px 12px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '6px', color: 'var(--text-primary)' }}
-              value={newLatin}
-              onChange={(e) => setNewLatin(e.target.value)}
-            />
-            <button type="submit" className="search-button" style={{ padding: '12px', fontSize: '15px', marginTop: '4px', fontWeight: 'bold' }}>{t('saveChild')}</button>
-          </div>
-        </form>
+        {/* ADD CHILD FORM - ONLY FOR ADMIN */}
+        {currentUser && (
+          <form onSubmit={handleAdd} style={{ borderTop: '1px solid var(--panel-border)', paddingTop: '20px' }}>
+            <h3 style={{ fontSize: '16px', marginBottom: '12px' }}>{t('addChildTitle')}{displayName}</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <input
+                type="text"
+                placeholder={`${t('placeholderArab')} *`}
+                className="search-input"
+                style={{ padding: '10px 12px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '6px', color: 'var(--text-primary)' }}
+                value={newArab}
+                onChange={(e) => setNewArab(e.target.value)}
+                required
+              />
+              <input
+                type="text"
+                placeholder={`${t('placeholderLatin')} ${t('optional')}`}
+                className="search-input"
+                style={{ padding: '10px 12px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '6px', color: 'var(--text-primary)' }}
+                value={newLatin}
+                onChange={(e) => setNewLatin(e.target.value)}
+              />
+              <button type="submit" className="search-button" style={{ padding: '12px', fontSize: '15px', marginTop: '4px', fontWeight: 'bold' }}>{t('saveChild')}</button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );

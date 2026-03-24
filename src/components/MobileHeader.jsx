@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { MoreVertical } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 
-const MobileHeader = ({ title = "Nasab Al-Baraja", onMenuClick, t, lang }) => {
+const MobileHeader = ({ title = "Nasab Al-Baraja", onMenuClick, t, lang, currentUser }) => {
   const platform = Capacitor.getPlatform();
   if (platform !== 'android') return null;
 
@@ -51,9 +51,20 @@ const MobileHeader = ({ title = "Nasab Al-Baraja", onMenuClick, t, lang }) => {
           
           {isMenuOpen && (
           <div className="popup-menu" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
-            <div className="popup-item" onClick={() => handleItemClick('Sign In')}>{t('signIn')}</div>
-            <div className="popup-item" onClick={() => handleItemClick('Notice')}>{t('notice')}</div>
-            <div className="popup-item" onClick={() => handleItemClick('About')}>{t('about')}</div>
+            {!currentUser ? (
+              <>
+                <div className="popup-item" onClick={() => handleItemClick('Sign In')}>{t('signIn')}</div>
+                <div className="popup-item" onClick={() => handleItemClick('Notice')}>{t('notice')}</div>
+                <div className="popup-item" onClick={() => handleItemClick('About')}>{t('about')}</div>
+              </>
+            ) : (
+              <>
+                <div className="popup-item" onClick={() => handleItemClick('Admin Manager')}>{t('adminManager')}</div>
+                <div className="popup-item" onClick={() => handleItemClick('Change Password')}>{t('changePassword')}</div>
+                <div className="popup-item" onClick={() => handleItemClick('Notice')}>{t('notice')}</div>
+                <div className="popup-item" onClick={() => handleItemClick('Sign Out')}>{t('signOut')}</div>
+              </>
+            )}
           </div>
         )}
         </div>

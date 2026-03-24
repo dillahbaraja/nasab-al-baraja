@@ -13,11 +13,13 @@ import FamilyNode from './FamilyNode';
 import { initialFamilyData, generateEdges } from './data';
 import { getLayoutedElements, createNodesFromData } from './layout';
 import NodeEditModal from './NodeEditModal';
-import { db } from './firebase';
+import { db, auth } from './firebase';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut, updatePassword } from 'firebase/auth';
 import { translations } from './i18n';
 import MobileHeader from './components/MobileHeader';
 import WebsiteHeader from './components/WebsiteHeader';
+import InfoModal from './components/InfoModals';
 import { StatusBar, Style } from '@capacitor/status-bar';
 import { Capacitor } from '@capacitor/core';
 
@@ -41,6 +43,12 @@ const FamilyGraph = () => {
   const [searchSuggestions, setSearchSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [admins, setAdmins] = useState([]);
+  const [editAdminData, setEditAdminData] = useState(null);
+  
+  // Info Modals State
+  const [activeInfoModal, setActiveInfoModal] = useState(null); // 'signin', 'about', 'notice', 'adminManager', 'adminForm', 'changePassword'
 
   // Apply Theme Toggle
   useEffect(() => {
@@ -80,6 +88,15 @@ const FamilyGraph = () => {
     });
   };
 
+  // Auth Listener
+  useEffect(() => {
+    if (!auth) return;
+    const unsub = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+    });
+    return () => unsub();
+  }, []);
+
   // Firestore Realtime Listener
   useEffect(() => {
     if (!db) {
@@ -88,18 +105,47 @@ const FamilyGraph = () => {
       return;
     }
 
-    const unsub = onSnapshot(collection(db, 'familyNodes'), (snapshot) => {
+    // Family Nodes Listener
+    const unsubFamily = onSnapshot(collection(db, 'familyNodes'), (snapshot) => {
       const dbData = snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
       setFamilyData(dbData);
       setIsLoading(false);
     }, (err) => {
       console.error("Firebase Snapshot Error:", err);
-      // Fallback if no database is set up gracefully
       setIsLoading(false);
     });
 
-    return () => unsub();
+    // Admins Listener
+    const unsubAdmins = onSnapshot(collection(db, 'admins'), (snapshot) => {
+      setAdmins(snapshot.docs.map(d => ({ ...d.data(), id: d.id })));
+    });
+
+    return () => {
+      unsubFamily();
+      unsubAdmins();
+    };
   }, []);
+
+  // Super Admin Seeder
+  useEffect(() => {
+    if (!db || admins.length === 0) return;
+    const superEmail = 'dillahbaraja@gmail.com';
+    const hasSuperAdmin = admins.some(a => a.email === superEmail);
+    if (!hasSuperAdmin) {
+      const seedSuper = async () => {
+        try {
+          await setDoc(doc(collection(db, 'admins')), {
+            nameLatin: 'Abdillah',
+            nameArab: 'Abdillah',
+            email: superEmail,
+            phone: '-',
+            cityCountry: 'Solo'
+          });
+        } catch(e) { console.error("Super Admin Seed Error:", e); }
+      };
+      seedSuper();
+    }
+  }, [db, admins]);
 
   // Update layout diagram on data change
   useEffect(() => {
@@ -322,6 +368,84 @@ const FamilyGraph = () => {
     }
   };
 
+  // ----- ADMIN LOGIC -----
+
+  const handleSignIn = async (email, password) => {
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      setActiveInfoModal(null);
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+      setActiveInfoModal(null);
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const handleAddAdmin = async (data) => {
+    try {
+      await setDoc(doc(collection(db, 'admins')), data);
+      setActiveInfoModal('adminManager');
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const handleUpdateAdmin = async (id, data) => {
+    try {
+      const { password, ...rest } = data;
+      const updateData = password ? data : rest;
+      await updateDoc(doc(db, 'admins', id), updateData);
+      setActiveInfoModal('adminManager');
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const handleDeleteAdmin = async (id) => {
+    if (!window.confirm(t('deleteBtn') + '?')) return;
+    try {
+      await deleteDoc(doc(db, 'admins', id));
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const handleChangePassword = async (newPassword) => {
+    try {
+      await updatePassword(auth.currentUser, newPassword);
+      alert(t('updateSuccess'));
+      setActiveInfoModal(null);
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const handleMenuClick = (item) => {
+    if (item === 'Sign In') setActiveInfoModal('signin');
+    if (item === 'About') setActiveInfoModal('about');
+    if (item === 'Notice') setActiveInfoModal('notice');
+    if (item === 'Admin Manager') setActiveInfoModal('adminManager');
+    if (item === 'Change Password') setActiveInfoModal('changePassword');
+    if (item === 'Sign Out') handleSignOut();
+  };
+
+  const handleEditClick = (admin, cancel = false) => {
+    if (cancel) {
+      setActiveInfoModal('adminManager');
+      setEditAdminData(null);
+      return;
+    }
+    setEditAdminData(admin);
+    setActiveInfoModal('adminForm');
+  };
+
   const renderSearchForm = () => (
     <div className="search-container glass-panel">
       <form onSubmit={handleSearch} style={{ display: 'flex', width: '100%', gap: '12px', alignItems: 'center' }} className="search-form">
@@ -358,18 +482,39 @@ const FamilyGraph = () => {
     <>
       <MobileHeader 
         title={t('appName') || "Nasab Al-Baraja"} 
-        onMenuClick={(item) => alert(`Android Menu: ${item}`)}
+        onMenuClick={handleMenuClick}
         t={t}
         lang={lang}
+        currentUser={currentUser}
       />
       
       <WebsiteHeader 
-        onMenuClick={(item) => alert(`Website Menu: ${item}`)}
+        onMenuClick={handleMenuClick}
         t={t}
         lang={lang}
+        currentUser={currentUser}
       >
         {renderSearchForm()}
       </WebsiteHeader>
+
+      <InfoModal 
+        isOpen={!!activeInfoModal} 
+        onClose={() => setActiveInfoModal(null)} 
+        type={activeInfoModal}
+        title={t(activeInfoModal === 'signin' ? 'signIn' : activeInfoModal === 'about' ? 'about' : activeInfoModal === 'notice' ? 'notice' : activeInfoModal === 'adminManager' ? 'adminManager' : activeInfoModal === 'adminForm' ? (editAdminData ? 'editBtn' : 'addAdmin') : 'changePassword')}
+        t={t}
+        lang={lang}
+        onSignIn={handleSignIn}
+        onSignOut={handleSignOut}
+        admins={admins}
+        onAddAdmin={handleAddAdmin}
+        onUpdateAdmin={handleUpdateAdmin}
+        onDeleteAdmin={handleDeleteAdmin}
+        onChangePassword={handleChangePassword}
+        currentUser={currentUser}
+        editAdminData={editAdminData}
+        onEditClick={handleEditClick}
+      />
 
       <div className="background-glow" />
       <div className="background-glow-bottom" />
@@ -392,6 +537,7 @@ const FamilyGraph = () => {
         onRemoveChild={handleRemoveChild}
         lang={lang}
         t={t}
+        currentUser={currentUser}
       />
 
       {/* Only show standalone search for Android (since it's in the header for Web) */}

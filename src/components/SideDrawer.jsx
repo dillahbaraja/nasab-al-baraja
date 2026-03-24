@@ -1,7 +1,6 @@
-import React from 'react';
-import { X, User, Bell, Info } from 'lucide-react';
+import { X, User, Bell, Info, Shield, Key, LogOut } from 'lucide-react';
 
-const SideDrawer = ({ isOpen, onClose, onMenuClick, t, lang }) => {
+const SideDrawer = ({ isOpen, onClose, onMenuClick, t, lang, currentUser }) => {
   return (
     <>
       {/* Overlay */}
@@ -20,18 +19,45 @@ const SideDrawer = ({ isOpen, onClose, onMenuClick, t, lang }) => {
         </div>
 
         <nav className="drawer-menu">
-          <div className="drawer-item" onClick={() => { onMenuClick('Sign In'); onClose(); }}>
-            <User size={20} />
-            <span>{t('signIn')}</span>
-          </div>
-          <div className="drawer-item" onClick={() => { onMenuClick('Notice'); onClose(); }}>
-            <Bell size={20} />
-            <span>{t('notice')}</span>
-          </div>
-          <div className="drawer-item" onClick={() => { onMenuClick('About'); onClose(); }}>
-            <Info size={20} />
-            <span>{t('about')}</span>
-          </div>
+          {!currentUser ? (
+            <>
+              <div className="drawer-item" onClick={() => { onMenuClick('Sign In'); onClose(); }}>
+                <User size={20} />
+                <span>{t('signIn')}</span>
+              </div>
+              <div className="drawer-item" onClick={() => { onMenuClick('Notice'); onClose(); }}>
+                <Bell size={20} />
+                <span>{t('notice')}</span>
+              </div>
+              <div className="drawer-item" onClick={() => { onMenuClick('About'); onClose(); }}>
+                <Info size={20} />
+                <span>{t('about')}</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="drawer-item" style={{ background: 'var(--panel-highlight-bg)', marginBottom: '10px', borderRadius: '8px', cursor: 'default' }}>
+                <User size={20} color="var(--accent)" />
+                <span style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--accent)' }}>{currentUser.email}</span>
+              </div>
+              <div className="drawer-item" onClick={() => { onMenuClick('Admin Manager'); onClose(); }}>
+                <Shield size={20} />
+                <span>{t('adminManager')}</span>
+              </div>
+              <div className="drawer-item" onClick={() => { onMenuClick('Change Password'); onClose(); }}>
+                <Key size={20} />
+                <span>{t('changePassword')}</span>
+              </div>
+              <div className="drawer-item" onClick={() => { onMenuClick('Notice'); onClose(); }}>
+                <Bell size={20} />
+                <span>{t('notice')}</span>
+              </div>
+              <div className="drawer-item" style={{ marginTop: '20px', borderTop: '1px solid var(--panel-border)', paddingTop: '20px' }} onClick={() => { onMenuClick('Sign Out'); onClose(); }}>
+                <LogOut size={20} color="#ff4444" />
+                <span style={{ color: '#ff4444' }}>{t('signOut')}</span>
+              </div>
+            </>
+          )}
         </nav>
       </div>
     </>

@@ -229,7 +229,6 @@ body {
 .web-search-wrapper {
   flex-grow: 1;
   max-width: 450px;
-  /* Wider for monitor as requested */
   width: 100%;
   transition: all 0.3s ease;
   pointer-events: auto;
@@ -274,8 +273,8 @@ body {
 /* Mobile Adjustments (Pixel 7 / iPhone / etc.) */
 @media (max-width: 767px) {
   .web-header-container {
-    padding-right: 64px;
-    /* Space for hamburger button */
+    padding-right: 76px;
+    /* Increased from 64px for more space to hamburger */
     justify-content: flex-start;
   }
 
@@ -553,4 +552,106 @@ body {
   height: 8px;
   background: var(--accent);
   border: 2px solid var(--bg-color);
+}
+
+/* Info Modals & Login Styles */
+.info-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.info-modal-content {
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  padding: 32px;
+  max-width: 500px;
+  width: 90%;
+  position: relative;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+}
+
+.info-modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.info-modal-close:hover {
+  background: var(--panel-highlight-bg);
+  color: var(--text-primary);
+}
+
+.info-modal-title {
+  font-size: 24px;
+  font-weight: bold;
+  margin-bottom: 20px;
+  color: var(--accent);
+  font-family: serif;
+}
+
+.info-modal-body {
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.login-input {
+  background: var(--input-bg);
+  border: 1px solid var(--panel-border);
+  padding: 12px;
+  border-radius: 8px;
+  color: var(--text-primary);
+  outline: none;
+}
+
+.login-button {
+  background: var(--accent);
+  color: white;
+  border: none;
+  padding: 12px;
+  border-radius: 8px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.login-button:hover {
+  background: var(--accent-hover);
 }

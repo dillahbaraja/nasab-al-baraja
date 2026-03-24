@@ -38,5 +38,21 @@ export const translations = {
   optional: { id: "(Opsional)", en: "(Optional)", ar: "(اختياري)" },
   skipLabel: { id: "(Lewati jika tidak ingin diisi)", en: "(Skip if unchanged)", ar: "(تخطي إذا لم ترغب في التغيير)" },
   addInfoPlaceholder: { id: "+ Tambah keterangan/info...", en: "+ Add info/description...", ar: "+ إضافة معلومات/وصف..." },
-  editInfoTooltip: { id: "Klik untuk mengedit info", en: "Click to edit info", ar: "انقر لتعديل المعلومات" }
+  editInfoTooltip: { id: "Klik untuk mengedit info", en: "Click to edit info", ar: "انقر لتعديل المعلومات" },
+  adminManager: { id: "Kelola Admin", en: "Admin Manager", ar: "إدارة المشرفين" },
+  changePassword: { id: "Ganti Password", en: "Change Password", ar: "تغيير كلمة المرور" },
+  signOut: { id: "Keluar", en: "Sign Out", ar: "تسجيل الخروج" },
+  adminList: { id: "Daftar Admin", en: "Admin List", ar: "قائمة المشرفين" },
+  addAdmin: { id: "Tambah Admin", en: "Add Admin", ar: "إضافة مشرف" },
+  cityCountry: { id: "Kota / Negara", en: "City / Country", ar: "المدينة / الدولة" },
+  email: { id: "Email", en: "Email", ar: "البريد الإلكتروني" },
+  phone: { id: "No. HP", en: "Phone Number", ar: "رقم الهاتف" },
+  password: { id: "Password", en: "Password", ar: "كلمة المرور" },
+  newPassword: { id: "Password Baru", en: "New Password", ar: "كلمة مرور جديدة" },
+  confirmPassword: { id: "Konfirmasi Password Baru", en: "Confirm New Password", ar: "تأكيد كلمة المرور الجديدة" },
+  save: { id: "Simpan", en: "Save", ar: "حفظ" },
+  cancel: { id: "Batal", en: "Cancel", ar: "إلغاء" },
+  name: { id: "Nama", en: "Name", ar: "الاسم" },
+  updateSuccess: { id: "Data berhasil diperbarui!", en: "Data updated successfully!", ar: "تم تحديث البيانات بنجاح!" },
+  passwordsDontMatch: { id: "Password tidak cocok!", en: "Passwords don't match!", ar: "كلمات المرور غير متطابقة!" }
 };
