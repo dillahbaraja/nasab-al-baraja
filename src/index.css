@@ -59,7 +59,9 @@
   box-sizing: border-box;
 }
 
-html, body, #root {
+html,
+body,
+#root {
   width: 100%;
   height: 100%;
   overflow: hidden;
@@ -88,7 +90,7 @@ body {
   background: var(--panel-bg);
   border-bottom: 1px solid var(--panel-border);
   z-index: 100;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   flex-shrink: 0;
 }
 
@@ -130,12 +132,13 @@ body {
 
 .popup-menu {
   position: absolute;
-  top: 100%; /* Position right below the app bar content */
+  top: 100%;
+  /* Position right below the app bar content */
   right: 0;
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: 4px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
   min-width: 140px;
   z-index: 101;
   padding: 8px 0;
@@ -143,8 +146,15 @@ body {
 }
 
 @keyframes fadeInDown {
-  from { opacity: 0; transform: translateY(-10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .popup-item {
@@ -218,7 +228,8 @@ body {
 
 .web-search-wrapper {
   flex-grow: 1;
-  max-width: 800px; /* Wider for monitor as requested */
+  max-width: 450px;
+  /* Wider for monitor as requested */
   width: 100%;
   transition: all 0.3s ease;
   pointer-events: auto;
@@ -247,7 +258,7 @@ body {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   transition: all 0.2s ease;
   flex-shrink: 0;
   pointer-events: auto;
@@ -263,12 +274,14 @@ body {
 /* Mobile Adjustments (Pixel 7 / iPhone / etc.) */
 @media (max-width: 767px) {
   .web-header-container {
-    padding-right: 64px; /* Space for hamburger button */
+    padding-right: 64px;
+    /* Space for hamburger button */
     justify-content: flex-start;
   }
-  
+
   .web-search-wrapper {
-    max-width: none; /* Stretch full width */
+    max-width: none;
+    /* Stretch full width */
   }
 }
 
@@ -313,7 +326,7 @@ body {
   background: var(--panel-bg);
   border-left: 1px solid var(--panel-border);
   z-index: 1001;
-  box-shadow: -4px 0 15px rgba(0,0,0,0.2);
+  box-shadow: -4px 0 15px rgba(0, 0, 0, 0.2);
   transform: translateX(100%);
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
@@ -396,7 +409,7 @@ body {
 
 .search-container {
   position: absolute;
-  top: calc(72px + env(safe-area-inset-top, 0px)); 
+  top: calc(72px + env(safe-area-inset-top, 0px));
   left: 50%;
   transform: translateX(-50%);
   z-index: 10;
@@ -491,9 +504,17 @@ body {
 }
 
 @keyframes intense-glow {
-  0% { box-shadow: 0 0 10px var(--accent), var(--node-shadow); }
-  50% { box-shadow: 0 0 25px var(--accent), var(--node-shadow); }
-  100% { box-shadow: 0 0 10px var(--accent), var(--node-shadow); }
+  0% {
+    box-shadow: 0 0 10px var(--accent), var(--node-shadow);
+  }
+
+  50% {
+    box-shadow: 0 0 25px var(--accent), var(--node-shadow);
+  }
+
+  100% {
+    box-shadow: 0 0 10px var(--accent), var(--node-shadow);
+  }
 }
 
 .family-node.highlighted {
