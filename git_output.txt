@@ -1,0 +1,93 @@
+
+C:\Users\dilla\.gemini\antigravity\scratch\family-tree-app>"C:\Program Files\Git\cmd\git.exe" config user.email "dillahbaraja@yahoo.com" 
+
+C:\Users\dilla\.gemini\antigravity\scratch\family-tree-app>"C:\Program Files\Git\cmd\git.exe" config user.name "dillahbaraja" 
+
+C:\Users\dilla\.gemini\antigravity\scratch\family-tree-app>"C:\Program Files\Git\cmd\git.exe" add . 
+warning: in the working copy of 'git_setup.bat', LF will be replaced by CRLF the next time Git touches it
+
+C:\Users\dilla\.gemini\antigravity\scratch\family-tree-app>"C:\Program Files\Git\cmd\git.exe" commit -m "Initial commit to GitHub" 
+[main (root-commit) a1efb36] Initial commit to GitHub
+ 75 files changed, 9364 insertions(+)
+ create mode 100644 .env.example
+ create mode 100644 .gitignore
+ create mode 100644 android/.gitignore
+ create mode 100644 android/app/.gitignore
+ create mode 100644 android/app/build.gradle
+ create mode 100644 android/app/capacitor.build.gradle
+ create mode 100644 android/app/proguard-rules.pro
+ create mode 100644 android/app/src/androidTest/java/com/getcapacitor/myapp/ExampleInstrumentedTest.java
+ create mode 100644 android/app/src/main/AndroidManifest.xml
+ create mode 100644 android/app/src/main/java/id/baraja/silsilah/MainActivity.java
+ create mode 100644 android/app/src/main/res/drawable-land-hdpi/splash.png
+ create mode 100644 android/app/src/main/res/drawable-land-mdpi/splash.png
+ create mode 100644 android/app/src/main/res/drawable-land-xhdpi/splash.png
+ create mode 100644 android/app/src/main/res/drawable-land-xxhdpi/splash.png
+ create mode 100644 android/app/src/main/res/drawable-land-xxxhdpi/splash.png
+ create mode 100644 android/app/src/main/res/drawable-port-hdpi/splash.png
+ create mode 100644 android/app/src/main/res/drawable-port-mdpi/splash.png
+ create mode 100644 android/app/src/main/res/drawable-port-xhdpi/splash.png
+ create mode 100644 android/app/src/main/res/drawable-port-xxhdpi/splash.png
+ create mode 100644 android/app/src/main/res/drawable-port-xxxhdpi/splash.png
+ create mode 100644 android/app/src/main/res/drawable-v24/ic_launcher_foreground.xml
+ create mode 100644 android/app/src/main/res/drawable/ic_launcher_background.xml
+ create mode 100644 android/app/src/main/res/drawable/splash.png
+ create mode 100644 android/app/src/main/res/layout/activity_main.xml
+ create mode 100644 android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+ create mode 100644 android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
+ create mode 100644 android/app/src/main/res/mipmap-hdpi/ic_launcher.png
+ create mode 100644 android/app/src/main/res/mipmap-hdpi/ic_launcher_foreground.png
+ create mode 100644 android/app/src/main/res/mipmap-hdpi/ic_launcher_round.png
+ create mode 100644 android/app/src/main/res/mipmap-mdpi/ic_launcher.png
+ create mode 100644 android/app/src/main/res/mipmap-mdpi/ic_launcher_foreground.png
+ create mode 100644 android/app/src/main/res/mipmap-mdpi/ic_launcher_round.png
+ create mode 100644 android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
+ create mode 100644 android/app/src/main/res/mipmap-xhdpi/ic_launcher_foreground.png
+ create mode 100644 android/app/src/main/res/mipmap-xhdpi/ic_launcher_round.png
+ create mode 100644 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+ create mode 100644 android/app/src/main/res/mipmap-xxhdpi/ic_launcher_foreground.png
+ create mode 100644 android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png
+ create mode 100644 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+ create mode 100644 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png
+ create mode 100644 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
+ create mode 100644 android/app/src/main/res/values/ic_launcher_background.xml
+ create mode 100644 android/app/src/main/res/values/strings.xml
+ create mode 100644 android/app/src/main/res/values/styles.xml
+ create mode 100644 android/app/src/main/res/xml/file_paths.xml
+ create mode 100644 android/app/src/test/java/com/getcapacitor/myapp/ExampleUnitTest.java
+ create mode 100644 android/build.gradle
+ create mode 100644 android/capacitor.settings.gradle
+ create mode 100644 android/gradle.properties
+ create mode 100644 android/gradle/wrapper/gradle-wrapper.jar
+ create mode 100644 android/gradle/wrapper/gradle-wrapper.properties
+ create mode 100644 android/gradlew
+ create mode 100644 android/gradlew.bat
+ create mode 100644 android/settings.gradle
+ create mode 100644 android/variables.gradle
+ create mode 100644 capacitor.config.json
+ create mode 100644 git_log.txt
+ create mode 100644 git_output.txt
+ create mode 100644 git_setup.bat
+ create mode 100644 git_setup.ps1
+ create mode 100644 importCsv.js
+ create mode 100644 index.html
+ create mode 100644 package-lock.json
+ create mode 100644 package.json
+ create mode 100644 src/App.jsx
+ create mode 100644 src/FamilyGraph.jsx
+ create mode 100644 src/FamilyNode.jsx
+ create mode 100644 src/NodeEditModal.jsx
+ create mode 100644 src/data.js
+ create mode 100644 src/firebase.js
+ create mode 100644 src/i18n.js
+ create mode 100644 src/index.css
+ create mode 100644 src/layout.js
+ create mode 100644 src/main.jsx
+ create mode 100644 vite.config.js
+
+C:\Users\dilla\.gemini\antigravity\scratch\family-tree-app>"C:\Program Files\Git\cmd\git.exe" branch -M main 
+
+C:\Users\dilla\.gemini\antigravity\scratch\family-tree-app>"C:\Program Files\Git\cmd\git.exe" push -u origin main 
+branch 'main' set up to track 'origin/main'.
+To https://github.com/dillahbaraja/nasab-al-baraja.git
+ * [new branch]      main -> main
