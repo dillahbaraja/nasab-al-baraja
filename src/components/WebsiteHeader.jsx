@@ -3,7 +3,7 @@ import { Menu } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import SideDrawer from './SideDrawer';
 
-const WebsiteHeader = ({ onMenuClick, children, t, lang, currentUser }) => {
+const WebsiteHeader = ({ onMenuClick, children, t, lang, currentUser, unreadCount = 0 }) => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const platform = Capacitor.getPlatform();
 
@@ -21,7 +21,18 @@ const WebsiteHeader = ({ onMenuClick, children, t, lang, currentUser }) => {
           onClick={() => setIsDrawerOpen(true)}
           aria-label="Open menu"
         >
-          <Menu size={24} />
+          <div style={{ position: 'relative' }}>
+            <Menu size={24} />
+            {unreadCount > 0 && (
+              <div style={{
+                position: 'absolute', top: -4, right: -4, background: '#ff4444', color: 'white',
+                borderRadius: '50%', width: '14px', height: '14px', fontSize: '9px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold'
+              }}>
+                {unreadCount}
+              </div>
+            )}
+          </div>
         </button>
       </div>
 
@@ -32,6 +43,7 @@ const WebsiteHeader = ({ onMenuClick, children, t, lang, currentUser }) => {
         t={t}
         lang={lang}
         currentUser={currentUser}
+        unreadCount={unreadCount}
       />
     </>
   );

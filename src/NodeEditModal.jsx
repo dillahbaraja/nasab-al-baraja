@@ -18,10 +18,12 @@ const NodeEditModal = ({
   const [showFullNasab, setShowFullNasab] = useState(false);
   const [isEditingInfo, setIsEditingInfo] = useState(false);
   const [editInfoText, setEditInfoText] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     setShowFullNasab(false);
     setIsEditingInfo(false);
+    setIsSaving(false);
   }, [person]);
 
   if (!isOpen || !person) return null;
@@ -34,7 +36,8 @@ const NodeEditModal = ({
     let nasab = [];
     let current = targetPerson;
     let count = 0; 
-    while (current && (showAll || count <= 5)) {
+    // Hard limit to prevent infinite loops on corrupted data
+    while (current && count < 50 && (showAll || count <= 5)) {
       nasab.push(language === 'ar' ? current.nameArab : current.nameLatin);
       current = familyData.find(p => p.id === current.fatherId);
       count++;
@@ -45,7 +48,7 @@ const NodeEditModal = ({
   const getAncestorCount = (targetPerson) => {
     let current = familyData.find(p => p.id === targetPerson.fatherId);
     let count = 0;
-    while(current) {
+    while(current && count < 50) {
       count++;
       current = familyData.find(p => p.id === current.fatherId);
     }
@@ -56,12 +59,21 @@ const NodeEditModal = ({
   const children = familyData.filter(p => p.fatherId === person.id);
   const personHasDescendants = children.length > 0;
 
-  const handleAdd = (e) => {
+  const handleAdd = async (e) => {
     e.preventDefault();
-    if (!newArab) return;
-    onAddChild(person, { nameLatin: newLatin, nameArab: newArab });
-    setNewLatin('');
-    setNewArab('');
+    if (!newArab || isSaving) return;
+    
+    setIsSaving(true);
+    try {
+      await onAddChild(person, { nameLatin: newLatin, nameArab: newArab });
+      setNewLatin('');
+      setNewArab('');
+      onClose(); // Auto-close on success
+    } catch (err) {
+      console.error("Save Error:", err);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // HANDLERS FOR THE CURRENTLY SELECTED PERSON

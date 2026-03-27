@@ -17,7 +17,10 @@ const InfoModal = ({
   onChangePassword,
   currentUser,
   editAdminData = null,
-  onEditClick
+  onEditClick,
+  notices = [],
+  onViewNotice,
+  onDeleteNotice
 }) => {
   const [formData, setFormData] = useState({
     nameLatin: '',
@@ -90,17 +93,45 @@ const InfoModal = ({
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
               <Bell size={48} color="var(--accent)" />
             </div>
-            <ul style={{ paddingLeft: '20px' }}>
-              <li style={{ marginBottom: '12px' }}>
-                <strong>V1.1.0</strong>: {lang === 'id' ? 'Sistem manajemen admin baru.' : lang === 'ar' ? 'نظام إدارة مشرفين جديد.' : 'New admin management system.'}
-              </li>
-              <li style={{ marginBottom: '12px' }}>
-                {lang === 'id' ? 'Kelola akses dan data administrator langsung dari aplikasi.' : lang === 'ar' ? 'إدارة الوصول وبيانات المشرفين مباشرة من التطبيق.' : 'Manage access and administrator data directly from the app.'}
-              </li>
-              <li>
-                {lang === 'id' ? 'Fitur ganti password untuk keamanan tambahan.' : lang === 'ar' ? 'ميزة تغيير كلمة المرور لمزيد من الأمان.' : 'Change password feature for extra security.'}
-              </li>
-            </ul>
+            <div className="notice-list-container" style={{ maxHeight: '400px', overflowY: 'auto' }}>
+              {notices.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                  <Bell size={32} opacity={0.3} />
+                  <p>{lang === 'id' ? 'Belum ada penambahan data keluarga baru saat ini.' : lang === 'ar' ? 'لا توجد إضافات جديدة لبيانات العائلة حالياً.' : 'No new family data additions at this time.'}</p>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {notices.map((n, idx) => (
+                    <div key={n.id || idx} className="glass-panel" style={{ padding: '12px 16px', borderLeft: '4px solid var(--accent)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '4px' }}>{n.text}</div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                          {new Date(n.timestamp).toLocaleString(lang === 'id' ? 'id-ID' : lang === 'ar' ? 'ar-SA' : 'en-US')}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', marginLeft: '12px' }}>
+                        <button 
+                          onClick={() => onViewNotice && onViewNotice(n)}
+                          style={{ background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '4px', padding: '6px 10px', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold' }}
+                        >
+                          {lang === 'id' ? 'Lihat' : lang === 'ar' ? 'عرض' : 'View'}
+                        </button>
+                        <button 
+                          onClick={() => {
+                            if (window.confirm(t('deleteBtn') + '?')) {
+                              onDeleteNotice && onDeleteNotice(n.id);
+                            }
+                          }}
+                          style={{ background: 'transparent', border: 'none', color: '#ff4444', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         );
       case 'signin':

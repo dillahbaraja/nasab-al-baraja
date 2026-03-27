@@ -23,9 +23,11 @@ export const initialFamilyData = [
 
 export const generateEdges = (familyNodes) => {
   const edges = [];
+  const validIds = new Set(familyNodes.map(p => p.id));
+  
   familyNodes.forEach(person => {
-    // Patrilineal only
-    if (person.fatherId) {
+    // Patrilineal only - verify both parent and child exist in the list
+    if (person.fatherId && validIds.has(person.fatherId)) {
       edges.push({
         id: `e-${person.fatherId}-${person.id}`,
         source: person.fatherId,

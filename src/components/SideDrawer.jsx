@@ -1,6 +1,6 @@
 import { X, User, Bell, Info, Shield, Key, LogOut } from 'lucide-react';
 
-const SideDrawer = ({ isOpen, onClose, onMenuClick, t, lang, currentUser }) => {
+const SideDrawer = ({ isOpen, onClose, onMenuClick, t, lang, currentUser, unreadCount = 0 }) => {
   return (
     <>
       {/* Overlay */}
@@ -26,8 +26,11 @@ const SideDrawer = ({ isOpen, onClose, onMenuClick, t, lang, currentUser }) => {
                 <span>{t('signIn')}</span>
               </div>
               <div className="drawer-item" onClick={() => { onMenuClick('Notice'); onClose(); }}>
-                <Bell size={20} />
-                <span>{t('notice')}</span>
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '12px', width: '100%' }}>
+                  <Bell size={20} />
+                  <span>{t('notice')}</span>
+                  {unreadCount > 0 && <span className="notice-badge" style={{ marginLeft: 'auto' }}>{unreadCount}</span>}
+                </div>
               </div>
               <div className="drawer-item" onClick={() => { onMenuClick('About'); onClose(); }}>
                 <Info size={20} />
@@ -49,8 +52,15 @@ const SideDrawer = ({ isOpen, onClose, onMenuClick, t, lang, currentUser }) => {
                 <span>{t('changePassword')}</span>
               </div>
               <div className="drawer-item" onClick={() => { onMenuClick('Notice'); onClose(); }}>
-                <Bell size={20} />
-                <span>{t('notice')}</span>
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '12px', width: '100%' }}>
+                  <Bell size={20} />
+                  <span>{t('notice')}</span>
+                  {unreadCount > 0 && <span className="notice-badge" style={{ marginLeft: 'auto' }}>{unreadCount}</span>}
+                </div>
+              </div>
+              <div className="drawer-item" onClick={() => { onMenuClick('About'); onClose(); }}>
+                <Info size={20} />
+                <span>{t('about')}</span>
               </div>
               <div className="drawer-item" style={{ marginTop: '20px', borderTop: '1px solid var(--panel-border)', paddingTop: '20px' }} onClick={() => { onMenuClick('Sign Out'); onClose(); }}>
                 <LogOut size={20} color="#ff4444" />

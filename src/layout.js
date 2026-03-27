@@ -41,6 +41,7 @@ export const getLayoutedElements = (nodes, edges, direction = 'TB') => {
   const positions = {};
 
   const calculatePositions = (id, xLeft, yTop) => {
+    if (!childrenMap[id]) return; // Safety
     const width = subtreeWidth[id];
     const centerX = xLeft + width / 2;
     
@@ -51,12 +52,12 @@ export const getLayoutedElements = (nodes, edges, direction = 'TB') => {
 
     const children = childrenMap[id];
     if (children && children.length > 0) {
-      let childrenSumWidth = children.reduce((sum, cid) => sum + subtreeWidth[cid], 0);
+      let childrenSumWidth = children.reduce((sum, cid) => sum + (subtreeWidth[cid] || 0), 0);
       let currentX = xLeft + (width - childrenSumWidth) / 2;
       
       children.forEach(childId => {
         calculatePositions(childId, currentX, yTop + nodeHeight + gapY);
-        currentX += subtreeWidth[childId];
+        currentX += (subtreeWidth[childId] || 0);
       });
     }
   };
@@ -77,16 +78,18 @@ export const getLayoutedElements = (nodes, edges, direction = 'TB') => {
 };
 
 export const createNodesFromData = (dataList) => {
-  return dataList.map(person => ({
-    id: person.id,
-    type: 'customNode',
-    position: { x: 0, y: 0 }, 
-    data: {
-      nameArab: person.nameArab || '',
-      nameLatin: person.nameLatin || person.name || '',
-      info: person.info,
-      isHighlighted: false,
-      raw: person
-    }
-  }));
+  return dataList
+    .filter(person => person && person.id) // defensive check
+    .map(person => ({
+      id: String(person.id),
+      type: 'customNode',
+      position: { x: 0, y: 0 }, 
+      data: {
+        nameArab: person.nameArab || '',
+        nameLatin: person.nameLatin || person.name || '-',
+        info: person.info || '',
+        isHighlighted: false,
+        raw: person
+      }
+    }));
 };

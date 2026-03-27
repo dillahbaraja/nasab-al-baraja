@@ -8,7 +8,7 @@ import {
   useReactFlow
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Search, Palette, Database } from 'lucide-react';
+import { Search, Palette, Database, Bell } from 'lucide-react';
 import FamilyNode from './FamilyNode';
 import { initialFamilyData, generateEdges } from './data';
 import { getLayoutedElements, createNodesFromData } from './layout';
@@ -26,7 +26,7 @@ import { Capacitor } from '@capacitor/core';
 const nodeTypes = { customNode: FamilyNode };
 
 const FamilyGraph = () => {
-  const [theme, setTheme] = useState(() => localStorage.getItem('rf-theme') || 'dark');
+  const [theme, setTheme] = useState(() => localStorage.getItem('rf-theme') || 'light');
   const [lang, setLang] = useState(() => localStorage.getItem('rf-lang') || 'id');
   const [familyData, setFamilyData] = useState([]);
   const [nodes, setNodes] = useState([]);
@@ -46,6 +46,11 @@ const FamilyGraph = () => {
   const [currentUser, setCurrentUser] = useState(null);
   const [admins, setAdmins] = useState([]);
   const [editAdminData, setEditAdminData] = useState(null);
+  const [notices, setNotices] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [lastNoticeOpen, setLastNoticeOpen] = useState(() => Number(localStorage.getItem('rf-last-notice-open')) || 0);
+  const [toast, setToast] = useState(null);
+  const toastTimeoutRef = useRef(null);
   
   // Info Modals State
   const [activeInfoModal, setActiveInfoModal] = useState(null); // 'signin', 'about', 'notice', 'adminManager', 'adminForm', 'changePassword'
@@ -97,34 +102,69 @@ const FamilyGraph = () => {
     return () => unsub();
   }, []);
 
-  // Firestore Realtime Listener
+  // 1. Family Nodes & Admins Listener (Persist during session)
   useEffect(() => {
-    if (!db) {
-      console.warn("Firestore db tidak diinisialisasi. Cek .env.local Anda.");
-      setIsLoading(false);
-      return;
-    }
+    if (!db) return;
 
-    // Family Nodes Listener
     const unsubFamily = onSnapshot(collection(db, 'familyNodes'), (snapshot) => {
       const dbData = snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
+      console.log("Family Data Update:", dbData.length, "nodes");
       setFamilyData(dbData);
       setIsLoading(false);
     }, (err) => {
-      console.error("Firebase Snapshot Error:", err);
+      console.error("Family Snapshot Error:", err);
       setIsLoading(false);
     });
 
-    // Admins Listener
     const unsubAdmins = onSnapshot(collection(db, 'admins'), (snapshot) => {
       setAdmins(snapshot.docs.map(d => ({ ...d.data(), id: d.id })));
+    }, (err) => {
+      console.error("Admins Snapshot Error:", err);
     });
 
     return () => {
       unsubFamily();
       unsubAdmins();
     };
-  }, []);
+  }, [db]); // Only on mount/db change
+
+  // 2. Notices Listener (Pure data sync)
+  useEffect(() => {
+    if (!db) return;
+
+    const unsubNotices = onSnapshot(collection(db, 'notices'), (snapshot) => {
+      const noticeList = snapshot.docs
+        .map(d => ({ ...d.data(), id: d.id }))
+        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      
+      setNotices(noticeList);
+      
+      // Trigger toast for the newest notice if it's very fresh (last 15 seconds)
+      const newest = noticeList[0];
+      if (newest && Date.now() - (newest.timestamp || 0) < 15000) {
+        if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+        setToast(newest);
+        toastTimeoutRef.current = setTimeout(() => {
+          setToast(null);
+          toastTimeoutRef.current = null;
+        }, 8000);
+      }
+    }, (err) => {
+      console.error("Notices Snapshot Error:", err);
+    });
+
+    return () => {
+      unsubNotices();
+      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    };
+  }, [db]); 
+
+  // 3. Reactive Unread Count Calculation
+  useEffect(() => {
+    const unread = notices.filter(n => (n.timestamp || 0) > lastNoticeOpen).length;
+    console.log("Updating Unread Count:", unread);
+    setUnreadCount(unread);
+  }, [notices, lastNoticeOpen]);
 
   // Super Admin Seeder
   useEffect(() => {
@@ -134,7 +174,8 @@ const FamilyGraph = () => {
     if (!hasSuperAdmin) {
       const seedSuper = async () => {
         try {
-          await setDoc(doc(collection(db, 'admins')), {
+          // Use fixed ID to prevent multiple docs during sync lag
+          await setDoc(doc(db, 'admins', 'admin_root'), {
             nameLatin: 'Abdillah',
             nameArab: 'Abdillah',
             email: superEmail,
@@ -150,39 +191,60 @@ const FamilyGraph = () => {
   // Update layout diagram on data change
   useEffect(() => {
     if (familyData.length === 0) {
-      setNodes([]);
-      setEdges([]);
+      if (!isLoading) {
+        // Stickiness: Don't clear nodes if they already exist, to prevent "disappearing" on sync gaps
+        if (nodes.length > 0) {
+          console.warn("Ignoring empty dataset to prevent vanishing nodes.");
+          return;
+        }
+        setNodes([]);
+        setEdges([]);
+      }
       return;
     }
-    const rawNodes = createNodesFromData(familyData);
-    const rawEdges = generateEdges(familyData);
-    const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(rawNodes, rawEdges, 'TB');
-    
-    const nodesWithHandler = layoutedNodes.map(n => ({
-      ...n,
-      data: {
-        ...n.data,
-        onLongPress: (nodeId, rawData) => {
-          setSelectedPerson(rawData);
-          setIsModalOpen(true);
+
+    try {
+      const rawNodes = createNodesFromData(familyData);
+      const rawEdges = generateEdges(familyData);
+      
+      // Perform layout calculation
+      const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(rawNodes, rawEdges, 'TB');
+      
+      const nodesWithHandler = layoutedNodes.map(n => ({
+        ...n,
+        data: {
+          ...n.data,
+          onLongPress: (nodeId, rawData) => {
+            setSelectedPerson(rawData);
+            setIsModalOpen(true);
+          }
         }
-      }
-    }));
-    
-    setNodes(nodesWithHandler);
-    setEdges(layoutedEdges);
-  }, [familyData]);
+      }));
+      
+      setNodes([...nodesWithHandler]);
+      setEdges([...layoutedEdges]);
+    } catch (err) {
+      console.error("Layout Rendering Crash Prevented:", err);
+      // Fallback: If layout fails, just show raw nodes in a grid or stay as is
+    }
+  }, [familyData, isLoading]);
 
   const hasInitialized = useRef(false);
   useEffect(() => {
     if (nodes.length > 0 && !isLoading && !hasInitialized.current) {
       hasInitialized.current = true;
       const savedViewport = localStorage.getItem('rf-viewport');
-      if (savedViewport && savedViewport !== "undefined") {
+      if (savedViewport && savedViewport !== "undefined" && savedViewport !== "null") {
         try {
           const vp = JSON.parse(savedViewport);
-          setTimeout(() => setViewport(vp), 100);
+          if (vp && typeof vp.x === 'number' && !isNaN(vp.x) && typeof vp.zoom === 'number') {
+            setTimeout(() => setViewport(vp), 100);
+          } else {
+            console.warn("Invalid viewport data found, defaulting to fitView");
+            setTimeout(() => fitView({ padding: 0.2, duration: 800 }), 300);
+          }
         } catch(e) {
+          console.error("Viewport parse error:", e);
           setTimeout(() => fitView({ padding: 0.2, duration: 800 }), 300);
         }
       } else {
@@ -199,6 +261,12 @@ const FamilyGraph = () => {
     (changes) => setEdges((eds) => applyEdgeChanges(changes, eds)),
     []
   );
+
+  const handleMoveEnd = useCallback((_, viewport) => {
+    if (viewport && typeof viewport.x === 'number' && !isNaN(viewport.x)) {
+      localStorage.setItem('rf-viewport', JSON.stringify(viewport));
+    }
+  }, []);
 
   const normalizeArabic = (text) => {
     return text.normalize("NFD").replace(/[\u064B-\u065F\u0670]/g, "").replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ي$/g, "ى").toLowerCase();
@@ -306,9 +374,6 @@ const FamilyGraph = () => {
     }
   };
 
-  const handleMoveEnd = (event, viewport) => {
-    localStorage.setItem('rf-viewport', JSON.stringify(viewport));
-  };
 
   // ----- FIRESTORE CRUD -----
 
@@ -324,6 +389,23 @@ const FamilyGraph = () => {
     };
     try {
       await setDoc(newDocRef, newPerson);
+      
+      // CREATE NOTICE
+      const grandfather = familyData.find(p => p.id === parent.fatherId);
+      const gfName = grandfather ? (lang === 'ar' ? grandfather.nameArab : grandfather.nameLatin) : '-';
+      const fatherName = lang === 'ar' ? parent.nameArab : parent.nameLatin;
+      const childName = lang === 'ar' ? nameArab : nameLatin;
+      
+      const noticeText = lang === 'ar' 
+        ? `${childName} بن ${fatherName} بن ${gfName}`
+        : `${childName} bin ${fatherName} bin ${gfName}`;
+
+      await setDoc(doc(collection(db, 'notices')), {
+        text: noticeText,
+        timestamp: Date.now(),
+        type: 'new_member',
+        targetId: newDocRef.id
+      });
     } catch (err) {
       console.error(err);
       alert(t('addFailed'));
@@ -430,10 +512,32 @@ const FamilyGraph = () => {
   const handleMenuClick = (item) => {
     if (item === 'Sign In') setActiveInfoModal('signin');
     if (item === 'About') setActiveInfoModal('about');
-    if (item === 'Notice') setActiveInfoModal('notice');
     if (item === 'Admin Manager') setActiveInfoModal('adminManager');
     if (item === 'Change Password') setActiveInfoModal('changePassword');
     if (item === 'Sign Out') handleSignOut();
+    
+    if (item === 'Notice') {
+      setActiveInfoModal('notice');
+      // Fix: Use the max timestamp from the actual data to avoid local clock skew issues
+      const maxTs = notices.length > 0 ? Math.max(...notices.map(n => n.timestamp || 0)) : Date.now();
+      setLastNoticeOpen(maxTs);
+      localStorage.setItem('rf-last-notice-open', String(maxTs));
+      setUnreadCount(0);
+    }
+  };
+
+  const handleViewNotice = (notice) => {
+    setActiveInfoModal(null);
+    if (!notice.targetId) return;
+
+    // Wait a bit for modal transition if needed, though React Flow handles it
+    const targetNode = nodes.find(n => n.id === notice.targetId);
+    if (targetNode) {
+      setCenter(targetNode.position.x + 100, targetNode.position.y + 40, {
+        zoom: 1.5,
+        duration: 1000
+      });
+    }
   };
 
   const handleEditClick = (admin, cancel = false) => {
@@ -478,6 +582,15 @@ const FamilyGraph = () => {
     </div>
   );
 
+  const handleDeleteNotice = async (id) => {
+    if (!db) return;
+    try {
+      await deleteDoc(doc(db, 'notices', id));
+    } catch (err) {
+      console.error("Delete Notice Error:", err);
+    }
+  };
+
   return (
     <>
       <MobileHeader 
@@ -486,6 +599,7 @@ const FamilyGraph = () => {
         t={t}
         lang={lang}
         currentUser={currentUser}
+        unreadCount={unreadCount}
       />
       
       <WebsiteHeader 
@@ -493,6 +607,7 @@ const FamilyGraph = () => {
         t={t}
         lang={lang}
         currentUser={currentUser}
+        unreadCount={unreadCount}
       >
         {renderSearchForm()}
       </WebsiteHeader>
@@ -514,7 +629,22 @@ const FamilyGraph = () => {
         currentUser={currentUser}
         editAdminData={editAdminData}
         onEditClick={handleEditClick}
+        notices={notices}
+        onViewNotice={handleViewNotice}
+        onDeleteNotice={handleDeleteNotice}
       />
+
+      {/* Toast Notification */}
+      {toast && (
+        <div className="glass-panel toast-notification" style={{
+          position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)',
+          zIndex: 9999, padding: '12px 24px', display: 'flex', alignItems: 'center', gap: '12px',
+          animation: 'slideUp 0.3s ease-out'
+        }}>
+          <Bell size={20} color="var(--accent)" />
+          <div style={{ fontSize: '14px', fontWeight: 'bold' }}>{toast.text}</div>
+        </div>
+      )}
 
       <div className="background-glow" />
       <div className="background-glow-bottom" />
@@ -563,6 +693,7 @@ const FamilyGraph = () => {
             nodesConnectable={false}
             onlyRenderVisibleElements={true}
             defaultEdgeOptions={{ type: 'smoothstep' }}
+            proOptions={{ hideAttribution: true }}
           >
             <Background color="var(--panel-border)" gap={24} size={2} />
             <Controls position="bottom-right" showInteractive={false} fitViewOptions={{ duration: 800, padding: 0.2 }}>

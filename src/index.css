@@ -1,23 +1,4 @@
 :root {
-  --bg-color: #0b1122;
-  --panel-bg: rgba(30, 41, 59, 0.95);
-  --panel-border: rgba(255, 255, 255, 0.1);
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-  --accent: #3b82f6;
-  --accent-hover: #60a5fa;
-  --node-bg: rgba(30, 41, 59, 0.95);
-  --node-border: rgba(255, 255, 255, 0.15);
-  --node-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  --node-radius: 12px;
-  --edge-color: rgba(255, 255, 255, 0.5);
-  --input-bg: rgba(0, 0, 0, 0.3);
-  --panel-highlight-bg: rgba(255, 255, 255, 0.08);
-  --btn-secondary-bg: rgba(255, 255, 255, 0.15);
-  --btn-secondary-text: #f8fafc;
-}
-
-[data-theme='light'] {
   --bg-color: #f1f5f9;
   --panel-bg: rgba(255, 255, 255, 0.98);
   --panel-border: #cbd5e1;
@@ -28,11 +9,30 @@
   --node-bg: #ffffff;
   --node-border: #cbd5e1;
   --node-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+  --node-radius: 12px;
   --edge-color: #94a3b8;
   --input-bg: #f1f5f9;
   --panel-highlight-bg: #f8fafc;
   --btn-secondary-bg: #e2e8f0;
   --btn-secondary-text: #0f172a;
+}
+
+[data-theme='dark'] {
+  --bg-color: #0b1122;
+  --panel-bg: rgba(30, 41, 59, 0.95);
+  --panel-border: rgba(255, 255, 255, 0.1);
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --accent: #3b82f6;
+  --accent-hover: #60a5fa;
+  --node-bg: rgba(30, 41, 59, 0.95);
+  --node-border: rgba(255, 255, 255, 0.15);
+  --node-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --edge-color: rgba(255, 255, 255, 0.5);
+  --input-bg: rgba(0, 0, 0, 0.3);
+  --panel-highlight-bg: rgba(255, 255, 255, 0.08);
+  --btn-secondary-bg: rgba(255, 255, 255, 0.15);
+  --btn-secondary-text: #f8fafc;
 }
 
 [data-theme='warm'] {
@@ -85,13 +85,18 @@ body {
 
 /* Android Top App Bar */
 .android-app-bar {
-  padding-top: env(safe-area-inset-top, 0px);
   width: 100%;
   background: var(--panel-bg);
   border-bottom: 1px solid var(--panel-border);
   z-index: 100;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   flex-shrink: 0;
+  transition: background 0.3s ease;
+}
+
+.status-bar-spacer {
+  height: env(safe-area-inset-top, 0px);
+  width: 100%;
 }
 
 .app-bar-content {
@@ -130,43 +135,86 @@ body {
   background: var(--panel-highlight-bg);
 }
 
-.popup-menu {
-  position: absolute;
-  top: 100%;
-  /* Position right below the app bar content */
+/* Notice Badge */
+.notice-badge {
+  background: #ff4444;
+  color: white;
+  border-radius: 12px;
+  padding: 0 6px;
+  font-size: 10px;
+  font-weight: bold;
+  line-height: normal;
+  min-width: 16px;
+  height: 16px;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+/* Toast Notifications */
+@keyframes slideUp {
+  from { transform: translate(-50%, 20px); opacity: 0; }
+  to { transform: translate(-50%, 0); opacity: 1; }
+}
+
+/* Info Modal System */
+.info-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
   right: 0;
-  background: var(--panel-bg);
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+  backdrop-filter: blur(4px);
+  padding: 20px;
+}
+
+.info-modal-content {
+  background: rgba(18, 18, 18, 0.85);
   border: 1px solid var(--panel-border);
-  border-radius: 4px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-  min-width: 140px;
-  z-index: 101;
-  padding: 8px 0;
-  animation: fadeInDown 0.2s ease-out;
+  border-radius: 16px;
+  width: 95%;
+  max-width: 500px;
+  max-height: 85vh;
+  position: relative;
+  overflow-y: auto;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(12px);
+  animation: modalScaleIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-@keyframes fadeInDown {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+@keyframes modalScaleIn {
+  from { transform: scale(0.9); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
 }
 
-.popup-item {
-  padding: 12px 16px;
-  color: var(--text-primary);
+.info-modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
   cursor: pointer;
-  font-size: 14px;
-  transition: background 0.1s ease;
+  z-index: 10;
 }
 
-.popup-item:hover {
-  background: var(--panel-highlight-bg);
+.info-modal-title {
+  padding: 24px 24px 0px;
+  font-size: 22px;
+  font-weight: bold;
+  text-align: center;
+  margin-bottom: 24px;
+  color: var(--text-primary);
+}
+
+.info-modal-body {
+  padding: 0 24px 24px;
 }
 
 /* Background glows based on themes */
@@ -287,8 +335,11 @@ body {
 @media (max-width: 480px) {
   .web-header-container {
     top: 12px;
-    padding-right: 60px;
+    padding-right: 76px;
     padding-left: 12px;
+  }
+  .hamburger-button {
+    right: 12px;
   }
 }
 
