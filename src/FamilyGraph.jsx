@@ -27,7 +27,7 @@ const nodeTypes = { customNode: FamilyNode };
 
 const FamilyGraph = () => {
   const [theme, setTheme] = useState(() => localStorage.getItem('rf-theme') || 'light');
-  const [lang, setLang] = useState(() => localStorage.getItem('rf-lang') || 'id');
+  const [lang, setLang] = useState(() => localStorage.getItem('rf-lang') || 'ar');
   const [familyData, setFamilyData] = useState([]);
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
