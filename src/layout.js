@@ -1,5 +1,5 @@
-const nodeWidth = 140;
-const nodeHeight = 140;
+const nodeWidth = 280;
+const nodeHeight = 120;
 const gapX = 40;  // Jarak horisontal antar node
 const gapY = 120; // Jarak vertikal antar generasi
 
@@ -46,7 +46,7 @@ export const getLayoutedElements = (nodes, edges, direction = 'TB') => {
     const centerX = xLeft + width / 2;
     
     positions[id] = {
-      x: centerX - nodeWidth / 2,
+      x: centerX, // Now represents absolute center since node origin is [0.5, 0]
       y: yTop
     };
 
@@ -83,10 +83,11 @@ export const createNodesFromData = (dataList) => {
     .map(person => ({
       id: String(person.id),
       type: 'customNode',
+      origin: [0.5, 0], // Anchor node to its center-top to guarantee perfect alignment
       position: { x: 0, y: 0 }, 
       data: {
-        nameArab: person.nameArab || '',
-        nameLatin: person.nameLatin || person.name || '-',
+        arabicName: person.arabicName || '',
+        englishName: person.englishName || person.name || '-',
         info: person.info || '',
         isHighlighted: false,
         raw: person

@@ -23,8 +23,8 @@ const InfoModal = ({
   onDeleteNotice
 }) => {
   const [formData, setFormData] = useState({
-    nameLatin: '',
-    nameArab: '',
+    englishName: '',
+    arabicName: '',
     email: '',
     phone: '',
     password: '',
@@ -40,15 +40,15 @@ const InfoModal = ({
   React.useEffect(() => {
     if (type === 'adminForm' && editAdminData) {
       setFormData({
-        nameLatin: editAdminData.nameLatin || '',
-        nameArab: editAdminData.nameArab || '',
+        englishName: editAdminData.englishName || '',
+        arabicName: editAdminData.arabicName || '',
         email: editAdminData.email || '',
         phone: editAdminData.phone || '',
         password: '', // Password set to empty for edit
         cityCountry: editAdminData.cityCountry || ''
       });
     } else if (type === 'adminForm') {
-      setFormData({ nameLatin: '', nameArab: '', email: '', phone: '', password: '', cityCountry: '' });
+      setFormData({ englishName: '', arabicName: '', email: '', phone: '', password: '', cityCountry: '' });
     }
   }, [type, editAdminData]);
 
@@ -182,10 +182,10 @@ const InfoModal = ({
                   <div key={admin.id} className="glass-panel" style={{ padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: isSuperAdmin ? 0.8 : 1 }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <div style={{ fontWeight: 'bold', fontFamily: 'serif', fontSize: '16px' }}>{admin.nameArab}</div>
+                        <div style={{ fontWeight: 'bold', fontFamily: 'serif', fontSize: '16px' }}>{admin.arabicName}</div>
                         {isSuperAdmin && <Shield size={12} color="var(--accent)" fill="var(--accent)" />}
                       </div>
-                      <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{admin.nameLatin}</div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{admin.englishName}</div>
                       <div style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
                         <MapPin size={10} /> {admin.cityCountry}
                       </div>
@@ -217,11 +217,11 @@ const InfoModal = ({
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div className="input-group">
                   <label style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>{t('name')} (Arab)</label>
-                  <input type="text" name="nameArab" value={formData.nameArab} onChange={handleInputChange} className="login-input" style={{ width: '100%' }} required />
+                  <input type="text" name="arabicName" value={formData.arabicName} onChange={handleInputChange} className="login-input" style={{ width: '100%' }} required />
                 </div>
                 <div className="input-group">
                   <label style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>{t('name')} (Latin)</label>
-                  <input type="text" name="nameLatin" value={formData.nameLatin} onChange={handleInputChange} className="login-input" style={{ width: '100%' }} required />
+                  <input type="text" name="englishName" value={formData.englishName} onChange={handleInputChange} className="login-input" style={{ width: '100%' }} required />
                 </div>
               </div>
               <div className="input-group">

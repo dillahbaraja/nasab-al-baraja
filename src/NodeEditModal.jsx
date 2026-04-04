@@ -28,17 +28,16 @@ const NodeEditModal = ({
 
   if (!isOpen || !person) return null;
 
-  const displayName = lang === 'ar' ? person.nameArab : person.nameLatin;
-  const getChildName = (c) => lang === 'ar' ? c.nameArab : c.nameLatin;
+  const displayName = lang === 'ar' ? person.arabicName : person.englishName;
+  const getChildName = (c) => lang === 'ar' ? c.arabicName : c.englishName;
 
   // Helper function to build lineage string
   const getFullNasab = (targetPerson, language, showAll = false) => {
     let nasab = [];
     let current = targetPerson;
     let count = 0; 
-    // Hard limit to prevent infinite loops on corrupted data
     while (current && count < 50 && (showAll || count <= 5)) {
-      nasab.push(language === 'ar' ? current.nameArab : current.nameLatin);
+      nasab.push(language === 'ar' ? current.arabicName : current.englishName);
       current = familyData.find(p => p.id === current.fatherId);
       count++;
     }
@@ -65,7 +64,7 @@ const NodeEditModal = ({
     
     setIsSaving(true);
     try {
-      await onAddChild(person, { nameLatin: newLatin, nameArab: newArab });
+      await onAddChild(person, { englishName: newLatin, arabicName: newArab });
       setNewLatin('');
       setNewArab('');
       onClose(); // Auto-close on success
@@ -89,11 +88,11 @@ const NodeEditModal = ({
   };
 
   const handleEditCurrentPersonName = () => {
-    const arab = window.prompt(t('updateArab'), person.nameArab || '');
+    const arab = window.prompt(t('updateArab'), person.arabicName || '');
     if (!arab) return;
-    const latin = window.prompt(`${t('updateLatin')} ${t('skipLabel')}`, person.nameLatin || '');
-    const finalLatin = latin === null ? person.nameLatin : latin;
-    onUpdateChild(person.id, { nameLatin: finalLatin, nameArab: arab });
+    const latin = window.prompt(`${t('updateLatin')} ${t('skipLabel')}`, person.englishName || '');
+    const finalLatin = latin === null ? person.englishName : latin;
+    onUpdateChild(person.id, { englishName: finalLatin, arabicName: arab });
   };
 
   // HANDLERS FOR THE CHILDREN (FROM THE LIST)
@@ -109,11 +108,11 @@ const NodeEditModal = ({
   };
 
   const handleEditChildNameItem = (child) => {
-    const arab = window.prompt(t('updateArab'), child.nameArab || '');
+    const arab = window.prompt(t('updateArab'), child.arabicName || '');
     if (!arab) return;
-    const latin = window.prompt(`${t('updateLatin')} ${t('skipLabel')}`, child.nameLatin || '');
-    const finalLatin = latin === null ? child.nameLatin : latin;
-    onUpdateChild(child.id, { nameLatin: finalLatin, nameArab: arab });
+    const latin = window.prompt(`${t('updateLatin')} ${t('skipLabel')}`, child.englishName || '');
+    const finalLatin = latin === null ? child.englishName : latin;
+    onUpdateChild(child.id, { englishName: finalLatin, arabicName: arab });
   };
 
   const saveInfo = () => {
@@ -226,8 +225,8 @@ const NodeEditModal = ({
                   marginBottom: '8px', borderRadius: '8px', border: '1px solid var(--panel-border)'
                 }}>
                   <div>
-                    <div style={{ fontWeight: 'bold', fontSize: '16px', color: 'var(--text-primary)' }}>{c.nameArab}</div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{c.nameLatin}</div>
+                    <div style={{ fontWeight: 'bold', fontSize: '16px', color: 'var(--text-primary)' }}>{c.arabicName}</div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{c.englishName}</div>
                   </div>
                   {currentUser && (
                     <div style={{ display: 'flex', gap: '8px' }}>

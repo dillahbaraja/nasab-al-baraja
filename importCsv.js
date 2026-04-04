@@ -91,8 +91,8 @@ const runImport = async () => {
       const docRef = doc(db, 'familyNodes', id);
       
       const firestoreData = {
-        nameArab: person.nameArab || '',
-        nameLatin: person.nameLatin || '',
+        arabicName: person.arabicName || '',
+        englishName: person.englishName || '',
         fatherId: person.fatherId || '',
         info: person.info || ''
       };

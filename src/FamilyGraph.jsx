@@ -176,8 +176,8 @@ const FamilyGraph = () => {
         try {
           // Use fixed ID to prevent multiple docs during sync lag
           await setDoc(doc(db, 'admins', 'admin_root'), {
-            nameLatin: 'Abdillah',
-            nameArab: 'Abdillah',
+            englishName: 'Abdillah',
+            arabicName: 'Abdillah',
             email: superEmail,
             phone: '-',
             cityCountry: 'Solo'
@@ -281,7 +281,7 @@ const FamilyGraph = () => {
     let current = familyData.find(p => p.id === person.fatherId);
     let count = 0;
     while(current && count < 2) {
-      parts.push(lang === 'ar' ? current.nameArab : current.nameLatin);
+      parts.push(lang === 'ar' ? current.arabicName : current.englishName);
       current = familyData.find(p => p.id === current.fatherId);
       count++;
     }
@@ -303,8 +303,8 @@ const FamilyGraph = () => {
       const queryArab = cleanText(normalizeArabic(val));
       
       const suggestions = familyData.filter(person => {
-        const latinRaw = person.nameLatin || '';
-        const arabRaw = person.nameArab || '';
+        const latinRaw = person.englishName || '';
+        const arabRaw = person.arabicName || '';
         return cleanText(latinRaw.toLowerCase()).includes(queryLatin) || 
                cleanText(normalizeArabic(arabRaw)).includes(queryArab);
       });
@@ -316,7 +316,7 @@ const FamilyGraph = () => {
   };
 
   const selectSuggestion = (person) => {
-    setSearchQuery(person.nameLatin || person.nameArab);
+    setSearchQuery(person.englishName || person.arabicName);
     setShowSuggestions(false);
     const targetNode = nodes.find((n) => n.id === person.id);
     if (targetNode) {
@@ -341,8 +341,8 @@ const FamilyGraph = () => {
       let lineageArabArr = [];
       let limit = 0;
       while (current && limit < 10) {
-        lineageLatinArr.push(current.nameLatin.toLowerCase());
-        lineageArabArr.push(normalizeArabic(current.nameArab || ''));
+        lineageLatinArr.push(current.englishName.toLowerCase());
+        lineageArabArr.push(normalizeArabic(current.arabicName || ''));
         current = familyData.find(p => p.id === current.fatherId);
         limit++;
       }
@@ -377,24 +377,24 @@ const FamilyGraph = () => {
 
   // ----- FIRESTORE CRUD -----
 
-  const handleAddChild = async (parent, { nameLatin, nameArab }) => {
+  const handleAddChild = async (parent, { englishName, arabicName }) => {
     if(!db) return alert(t('notConnected'));
     // Gunakan doc() dengan id otomatis atau doc string
     const newDocRef = doc(collection(db, 'familyNodes')); 
     const newPerson = {
-      nameLatin,
-      nameArab,
+      englishName,
+      arabicName,
       fatherId: parent.id,
-      info: `${t('descendantOf')}${parent.nameLatin}`
+      info: `${t('descendantOf')}${parent.englishName}`
     };
     try {
       await setDoc(newDocRef, newPerson);
       
       // CREATE NOTICE
       const grandfather = familyData.find(p => p.id === parent.fatherId);
-      const gfName = grandfather ? (lang === 'ar' ? grandfather.nameArab : grandfather.nameLatin) : '-';
-      const fatherName = lang === 'ar' ? parent.nameArab : parent.nameLatin;
-      const childName = lang === 'ar' ? nameArab : nameLatin;
+      const gfName = grandfather ? (lang === 'ar' ? grandfather.arabicName : grandfather.englishName) : '-';
+      const fatherName = lang === 'ar' ? parent.arabicName : parent.englishName;
+      const childName = lang === 'ar' ? arabicName : englishName;
       
       const noticeText = lang === 'ar' 
         ? `${childName} بن ${fatherName} بن ${gfName}`
@@ -568,9 +568,9 @@ const FamilyGraph = () => {
             <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--panel-bg)', borderRadius: '8px', border: '1px solid var(--panel-border)', marginTop: '12px', padding: '4px', maxHeight: '250px', overflowY: 'auto' }}>
               {searchSuggestions.map(s => (
                 <div key={s.id} onClick={() => selectSuggestion(s)} className="suggestion-item" style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--panel-border)' }}>
-                  <div style={{ fontWeight: 'bold' }}>{lang === 'ar' ? s.nameArab : s.nameLatin}</div>
+                  <div style={{ fontWeight: 'bold' }}>{lang === 'ar' ? s.arabicName : s.englishName}</div>
                   <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                     {(lang === 'ar' ? s.nameArab : s.nameLatin) + getNasabDesc(s)}
+                     {(lang === 'ar' ? s.arabicName : s.englishName) + getNasabDesc(s)}
                   </div>
                 </div>
               ))}

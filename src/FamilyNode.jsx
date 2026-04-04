@@ -25,6 +25,12 @@ const FamilyNode = ({ id, data, selected }) => {
     }
   };
 
+  const arabLength = data.arabicName ? data.arabicName.length : 0;
+  let arabFontSize = '28px';
+  if (arabLength > 50) arabFontSize = '16px';
+  else if (arabLength > 30) arabFontSize = '20px';
+  else if (arabLength > 15) arabFontSize = '24px';
+
   return (
     <div 
       className={`family-node ${selected ? 'highlighted' : ''}`}
@@ -37,13 +43,19 @@ const FamilyNode = ({ id, data, selected }) => {
     >
       <Handle type="target" position={Position.Top} />
       
-      <div className="node-content">
-        <div className="node-name-arab" style={{ fontSize: '28px', fontWeight: 'bold', fontFamily: 'serif', lineHeight: '1.2' }}>
-          {data.nameArab}
+      <div className="node-content" style={{ width: '100%' }}>
+        <div className="node-name-arab" style={{ 
+          fontSize: arabFontSize, 
+          fontWeight: 'bold', 
+          fontFamily: 'serif', 
+          lineHeight: '1.4',
+          wordBreak: 'break-word'
+        }}>
+          {data.arabicName}
         </div>
-        {data.nameLatin && (
-          <div className="node-name-latin" style={{ fontSize: '14px', color: 'var(--text-secondary)', marginTop: '8px' }}>
-            {data.nameLatin}
+        {data.englishName && (
+          <div className="node-name-latin" style={{ fontSize: '14px', color: 'var(--text-secondary)', marginTop: '12px' }}>
+            {data.englishName}
           </div>
         )}
       </div>
