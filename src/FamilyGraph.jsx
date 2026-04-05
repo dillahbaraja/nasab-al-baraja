@@ -25,6 +25,43 @@ import { Capacitor } from '@capacitor/core';
 
 const nodeTypes = { customNode: FamilyNode };
 
+const TimeoutWarning = () => {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setShow(true), 5000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleReset = async () => {
+    localStorage.clear();
+    sessionStorage.clear();
+    // Attempt to clear Firebase databases specifically that might be deadlocked
+    try {
+      const dbs = await window.indexedDB.databases();
+      for (let i = 0; i < dbs.length; i++) {
+        window.indexedDB.deleteDatabase(dbs[i].name);
+      }
+    } catch(e) {
+      // Fallback if indexedDB.databases is not supported (Firefox/Safari old)
+      window.indexedDB.deleteDatabase('firebaseLocalStorageDb');
+      window.indexedDB.deleteDatabase('firebase-heartbeat-database');
+    }
+    window.location.reload(true);
+  };
+
+  if (!show) return null;
+  return (
+    <div style={{ textAlign: 'center', marginTop: '16px', padding: '16px', background: 'var(--panel-bg)', borderRadius: '8px', border: '1px solid var(--panel-border)' }}>
+      <p style={{ marginBottom: '12px', fontSize: '14px', color: 'var(--text-secondary)' }}>
+        Koneksi bermasalah atau data lokal korup?
+      </p>
+      <button onClick={handleReset} style={{ background: 'var(--accent)', color: '#fff', padding: '8px 16px', borderRadius: '4px', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}>
+        Reset Cache & Muat Ulang
+      </button>
+    </div>
+  );
+};
+
 const FamilyGraph = () => {
   const [theme, setTheme] = useState(() => localStorage.getItem('rf-theme') || 'light');
   const [lang, setLang] = useState(() => localStorage.getItem('rf-lang') || 'ar');
@@ -679,8 +716,9 @@ const FamilyGraph = () => {
 
       <div style={{ width: '100%', height: '100%' }}>
         {isLoading ? (
-          <div style={{display:'flex', height:'100%', width:'100%', alignItems:'center', justifyContent:'center'}}>
-             {t('loading')}
+          <div style={{display:'flex', flexDirection: 'column', height:'100%', width:'100%', alignItems:'center', justifyContent:'center', gap: '16px'}}>
+             <div>{t('loading')}</div>
+             <TimeoutWarning />
           </div>
         ) : (
           <ReactFlow
