@@ -1,2 +1,14 @@
-﻿id,fatherId,arabicName,englishName,info
-1,,محمد بن مسعود بن علي بن سعد الملقب بأبي رجاء بن عبد الله,Muhammad bin Mas'ud bin Ali bin Sa'd al-Mulaqqab bi Abi Rajaa' bin Abdullah,
+﻿id,fatherId,arabicName,englishName
+1,,محمد بن مسعود بن علي بن سعد الملقب بأبي رجاء بن عبد الله,Muhammad bin Mas'ud bin Ali bin Sa'd al-Mulaqqab bi Abi Rajaa' bin Abdullah
+2,1,مسعود,Mas'ud
+3,2,عبدالملك بن سعد بن علي بن عبدالله,Abdulmalik bin Sa'd bin Ali bin Abdullah
+4,3,سعيد بن أحمد,Sa'id bin Ahmad
+5,4,عبدالله,Abdullah
+6,5,عبدالله بن سعد,Abdullah bin Sa'd
+7,6,سالم,Salim
+8,6,أحمد,Ahmad
+9,6,عبدالرحمن,Abdurrahman
+10,8,محمد,Muhammad
+11,7,عبدالقادر,Abdulqadir
+12,11,أحمد,Ahmad
+13,11,سالم,Salim

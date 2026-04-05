@@ -240,18 +240,21 @@ const FamilyGraph = () => {
           if (vp && typeof vp.x === 'number' && !isNaN(vp.x) && typeof vp.zoom === 'number') {
             setTimeout(() => setViewport(vp), 100);
           } else {
-            console.warn("Invalid viewport data found, defaulting to fitView");
-            setTimeout(() => fitView({ padding: 0.2, duration: 800 }), 300);
+            console.warn("Invalid viewport data found, defaulting to fitView for first 10 nodes");
+            const first10Nodes = nodes.slice(0, 10);
+            setTimeout(() => fitView({ padding: 0.2, duration: 800, maxZoom: 1, nodes: first10Nodes }), 300);
           }
         } catch(e) {
           console.error("Viewport parse error:", e);
-          setTimeout(() => fitView({ padding: 0.2, duration: 800 }), 300);
+          const first10Nodes = nodes.slice(0, 10);
+          setTimeout(() => fitView({ padding: 0.2, duration: 800, maxZoom: 1, nodes: first10Nodes }), 300);
         }
       } else {
-        setTimeout(() => fitView({ padding: 0.2, duration: 800 }), 300);
+        const first10Nodes = nodes.slice(0, 10);
+        setTimeout(() => fitView({ padding: 0.2, duration: 800, maxZoom: 1, nodes: first10Nodes }), 300);
       }
     }
-  }, [nodes.length, fitView, isLoading, setViewport]);
+  }, [nodes, fitView, isLoading, setViewport]);
 
   const onNodesChange = useCallback(
     (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
