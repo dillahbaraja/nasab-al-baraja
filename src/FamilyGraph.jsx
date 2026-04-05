@@ -281,19 +281,6 @@ const FamilyGraph = () => {
     return null;
   });
 
-  const hasInitialized = useRef(false);
-  useEffect(() => {
-    if (nodes.length > 0 && !isLoading && !hasInitialized.current) {
-      hasInitialized.current = true;
-      if (!initialViewport) {
-        requestAnimationFrame(() => {
-          const first10Nodes = nodes.slice(0, 10);
-          fitView({ padding: 0.2, duration: 800, maxZoom: 1, nodes: first10Nodes });
-        });
-      }
-    }
-  }, [nodes, fitView, isLoading, initialViewport]);
-
   const onNodesChange = useCallback(
     (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
     []
@@ -731,7 +718,9 @@ const FamilyGraph = () => {
             nodeTypes={nodeTypes}
             minZoom={0.1}
             maxZoom={3}
-            defaultViewport={initialViewport || { x: 0, y: 0, zoom: 1 }}
+            fitView={!initialViewport}
+            fitViewOptions={{ padding: 0.2, duration: 800, maxZoom: 1 }}
+            defaultViewport={initialViewport || undefined}
             nodesDraggable={false}
             nodesConnectable={false}
             onlyRenderVisibleElements={true}
