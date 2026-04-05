@@ -229,32 +229,33 @@ const FamilyGraph = () => {
     }
   }, [familyData, isLoading]);
 
+  const [initialViewport] = useState(() => {
+    try {
+      const saved = localStorage.getItem('rf-viewport');
+      if (saved && saved !== "undefined" && saved !== "null") {
+        const vp = JSON.parse(saved);
+        if (vp && typeof vp.x === 'number' && !isNaN(vp.x) && typeof vp.zoom === 'number') {
+          return vp;
+        }
+      }
+    } catch (e) {
+      console.error("Viewport parse error:", e);
+    }
+    return null;
+  });
+
   const hasInitialized = useRef(false);
   useEffect(() => {
     if (nodes.length > 0 && !isLoading && !hasInitialized.current) {
       hasInitialized.current = true;
-      const savedViewport = localStorage.getItem('rf-viewport');
-      if (savedViewport && savedViewport !== "undefined" && savedViewport !== "null") {
-        try {
-          const vp = JSON.parse(savedViewport);
-          if (vp && typeof vp.x === 'number' && !isNaN(vp.x) && typeof vp.zoom === 'number') {
-            setTimeout(() => setViewport(vp), 100);
-          } else {
-            console.warn("Invalid viewport data found, defaulting to fitView for first 10 nodes");
-            const first10Nodes = nodes.slice(0, 10);
-            setTimeout(() => fitView({ padding: 0.2, duration: 800, maxZoom: 1, nodes: first10Nodes }), 300);
-          }
-        } catch(e) {
-          console.error("Viewport parse error:", e);
+      if (!initialViewport) {
+        requestAnimationFrame(() => {
           const first10Nodes = nodes.slice(0, 10);
-          setTimeout(() => fitView({ padding: 0.2, duration: 800, maxZoom: 1, nodes: first10Nodes }), 300);
-        }
-      } else {
-        const first10Nodes = nodes.slice(0, 10);
-        setTimeout(() => fitView({ padding: 0.2, duration: 800, maxZoom: 1, nodes: first10Nodes }), 300);
+          fitView({ padding: 0.2, duration: 800, maxZoom: 1, nodes: first10Nodes });
+        });
       }
     }
-  }, [nodes, fitView, isLoading, setViewport]);
+  }, [nodes, fitView, isLoading, initialViewport]);
 
   const onNodesChange = useCallback(
     (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
@@ -692,6 +693,7 @@ const FamilyGraph = () => {
             nodeTypes={nodeTypes}
             minZoom={0.1}
             maxZoom={3}
+            defaultViewport={initialViewport || { x: 0, y: 0, zoom: 1 }}
             nodesDraggable={false}
             nodesConnectable={false}
             onlyRenderVisibleElements={true}
