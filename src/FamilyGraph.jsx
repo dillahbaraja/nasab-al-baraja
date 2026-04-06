@@ -68,7 +68,7 @@ const FamilyGraph = () => {
   const [familyData, setFamilyData] = useState([]);
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
-  const { setCenter, fitView, setViewport } = useReactFlow();
+  const { setCenter, fitView, setViewport, getViewport } = useReactFlow();
 
   const t = (key) => translations[key]?.[lang] || translations[key]?.['en'] || key;
 
@@ -295,6 +295,45 @@ const FamilyGraph = () => {
       localStorage.setItem('rf-viewport', JSON.stringify(viewport));
     }
   }, []);
+
+  // Handle device orientation change to keep the same focal point
+  useEffect(() => {
+    let lastWidth = window.innerWidth;
+    let lastHeight = window.innerHeight;
+    
+    const handleResize = () => {
+      const currentWidth = window.innerWidth;
+      const currentHeight = window.innerHeight;
+      
+      // Only adjust center if the width changes significantly (e.g. orientation change),
+      // avoiding jumpiness when the mobile keyboard pops up.
+      if (Math.abs(currentWidth - lastWidth) > 50) {
+        // Calculate the old center of the screen in flow coordinates
+        const { x, y, zoom } = getViewport();
+        const oldCenterX = lastWidth / 2;
+        const oldCenterY = lastHeight / 2;
+        
+        const flowCenterX = (oldCenterX - x) / zoom;
+        const flowCenterY = (oldCenterY - y) / zoom;
+        
+        // Re-apply so that the old flowCenter becomes the new screen center
+        setTimeout(() => {
+          setCenter(flowCenterX, flowCenterY, { zoom, duration: 400 });
+        }, 150);
+      }
+      
+      lastWidth = currentWidth;
+      lastHeight = currentHeight;
+    };
+
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+    };
+  }, [getViewport, setCenter]);
 
   const normalizeArabic = (text) => {
     return text.normalize("NFD").replace(/[\u064B-\u065F\u0670]/g, "").replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ي$/g, "ى").toLowerCase();
