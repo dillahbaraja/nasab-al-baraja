@@ -36,6 +36,8 @@ const InfoModal = ({
     confirmPassword: ''
   });
 
+  const [errorMsg, setErrorMsg] = useState('');
+
   // Sync edit data when opening adminForm
   React.useEffect(() => {
     if (type === 'adminForm' && editAdminData) {
@@ -50,6 +52,7 @@ const InfoModal = ({
     } else if (type === 'adminForm') {
       setFormData({ englishName: '', arabicName: '', email: '', phone: '', password: '', cityCountry: '' });
     }
+    setErrorMsg('');
   }, [type, editAdminData]);
 
   if (!isOpen) return null;
@@ -145,9 +148,19 @@ const InfoModal = ({
                lang === 'ar' ? 'يرجى تسجيل الدخول للوصول إلى ميزات إدارة البيانات.' : 
                'Please sign in to access data management features.'}
             </p>
-            <form className="login-form" onSubmit={(e) => { 
+            {errorMsg && (
+              <div style={{ color: '#ff4444', textAlign: 'center', marginBottom: '16px', fontSize: '13px', background: 'rgba(255, 68, 68, 0.1)', padding: '8px', borderRadius: '4px' }}>
+                {errorMsg}
+              </div>
+            )}
+            <form className="login-form" onSubmit={async (e) => { 
               e.preventDefault(); 
-              onSignIn(formData.email, formData.password); 
+              setErrorMsg('');
+              try {
+                await onSignIn(formData.email, formData.password);
+              } catch (err) {
+                setErrorMsg(err.message);
+              }
             }}>
               <input type="email" name="email" placeholder="Email" className="login-input" value={formData.email} onChange={handleInputChange} required />
               <input type="password" name="password" placeholder="Password" className="login-input" value={formData.password} onChange={handleInputChange} required />

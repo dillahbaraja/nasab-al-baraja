@@ -405,38 +405,45 @@ const FamilyGraph = () => {
 
   // ----- FIRESTORE CRUD -----
 
-  const handleAddChild = async (parent, { englishName, arabicName }) => {
+  const handleAddChild = async (parent, childrenList) => {
     if(!db) return alert(t('notConnected'));
-    // Gunakan doc() dengan id otomatis atau doc string
-    const newDocRef = doc(collection(db, 'familyNodes')); 
-    const newPerson = {
-      englishName,
-      arabicName,
-      fatherId: parent.id,
-      info: `${t('descendantOf')}${parent.englishName}`
-    };
     try {
-      await setDoc(newDocRef, newPerson);
+      const list = Array.isArray(childrenList) ? childrenList : [childrenList];
       
-      // CREATE NOTICE
-      const grandfather = familyData.find(p => p.id === parent.fatherId);
-      const gfName = grandfather ? (lang === 'ar' ? grandfather.arabicName : grandfather.englishName) : '-';
-      const fatherName = lang === 'ar' ? parent.arabicName : parent.englishName;
-      const childName = lang === 'ar' ? arabicName : englishName;
-      
-      const noticeText = lang === 'ar' 
-        ? `${childName} بن ${fatherName} بن ${gfName}`
-        : `${childName} bin ${fatherName} bin ${gfName}`;
+      const promises = list.map(async (child) => {
+        const { englishName, arabicName } = child;
+        const newDocRef = doc(collection(db, 'familyNodes')); 
+        const newPerson = {
+          englishName,
+          arabicName,
+          fatherId: parent.id,
+          info: `${t('descendantOf')}${parent.englishName}`
+        };
+        await setDoc(newDocRef, newPerson);
+        
+        // CREATE NOTICE
+        const grandfather = familyData.find(p => p.id === parent.fatherId);
+        const gfName = grandfather ? (lang === 'ar' ? grandfather.arabicName : grandfather.englishName) : '-';
+        const fatherName = lang === 'ar' ? parent.arabicName : parent.englishName;
+        const childName = lang === 'ar' ? arabicName : englishName;
+        
+        const noticeText = lang === 'ar' 
+          ? `${childName} بن ${fatherName} بن ${gfName}`
+          : `${childName} bin ${fatherName} bin ${gfName}`;
 
-      await setDoc(doc(collection(db, 'notices')), {
-        text: noticeText,
-        timestamp: Date.now(),
-        type: 'new_member',
-        targetId: newDocRef.id
+        await setDoc(doc(collection(db, 'notices')), {
+          text: noticeText,
+          timestamp: Date.now(),
+          type: 'new_member',
+          targetId: newDocRef.id
+        });
       });
+
+      await Promise.all(promises);
     } catch (err) {
       console.error(err);
       alert(t('addFailed'));
+      throw err;
     }
   };
 
@@ -485,7 +492,13 @@ const FamilyGraph = () => {
       await signInWithEmailAndPassword(auth, email, password);
       setActiveInfoModal(null);
     } catch (err) {
-      alert(err.message);
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+        throw new Error(lang === 'id' ? 'Email atau password salah.' : lang === 'ar' ? 'البريد الإلكتروني أو كلمة المرور غير صحيحة.' : 'Invalid email or password.');
+      } else if (err.code === 'auth/too-many-requests') {
+        throw new Error(lang === 'id' ? 'Terlalu banyak percobaan gagal, silakan coba lagi nanti.' : lang === 'ar' ? 'محاولات فاشلة كثيرة، يرجى المحاولة لاحقًا.' : 'Too many failed attempts, please try again later.');
+      } else {
+        throw new Error(lang === 'id' ? 'Gagal masuk: ' + err.message : lang === 'ar' ? 'فشل تسجيل الدخول: ' + err.message : 'Sign in failed: ' + err.message);
+      }
     }
   };
 

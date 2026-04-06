@@ -13,8 +13,7 @@ const NodeEditModal = ({
   currentUser
 }) => {
   const person = initialPerson ? (familyData.find(p => p.id === initialPerson.id) || initialPerson) : null;
-  const [newLatin, setNewLatin] = useState('');
-  const [newArab, setNewArab] = useState('');
+  const [childrenInputs, setChildrenInputs] = useState([{ latin: '', arab: '' }]);
   const [showFullNasab, setShowFullNasab] = useState(false);
   const [isEditingInfo, setIsEditingInfo] = useState(false);
   const [editInfoText, setEditInfoText] = useState('');
@@ -24,6 +23,7 @@ const NodeEditModal = ({
     setShowFullNasab(false);
     setIsEditingInfo(false);
     setIsSaving(false);
+    setChildrenInputs([{ latin: '', arab: '' }]);
   }, [person]);
 
   if (!isOpen || !person) return null;
@@ -60,13 +60,17 @@ const NodeEditModal = ({
 
   const handleAdd = async (e) => {
     e.preventDefault();
-    if (!newArab || isSaving) return;
+    const validChildren = childrenInputs.filter(c => c.arab.trim() !== '');
+    if (validChildren.length === 0 || isSaving) return;
     
     setIsSaving(true);
     try {
-      await onAddChild(person, { englishName: newLatin, arabicName: newArab });
-      setNewLatin('');
-      setNewArab('');
+      const payload = validChildren.map(c => ({
+        englishName: c.latin,
+        arabicName: c.arab
+      }));
+      await onAddChild(person, payload);
+      setChildrenInputs([{ latin: '', arab: '' }]);
       onClose(); // Auto-close on success
     } catch (err) {
       console.error("Save Error:", err);
@@ -249,24 +253,51 @@ const NodeEditModal = ({
           <form onSubmit={handleAdd} style={{ borderTop: '1px solid var(--panel-border)', paddingTop: '20px' }}>
             <h3 style={{ fontSize: '16px', marginBottom: '12px' }}>{t('addChildTitle')}{displayName}</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <input
-                type="text"
-                placeholder={`${t('placeholderArab')} *`}
-                className="search-input"
-                style={{ padding: '10px 12px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '6px', color: 'var(--text-primary)' }}
-                value={newArab}
-                onChange={(e) => setNewArab(e.target.value)}
-                required
-              />
-              <input
-                type="text"
-                placeholder={`${t('placeholderLatin')} ${t('optional')}`}
-                className="search-input"
-                style={{ padding: '10px 12px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '6px', color: 'var(--text-primary)' }}
-                value={newLatin}
-                onChange={(e) => setNewLatin(e.target.value)}
-              />
-              <button type="submit" className="search-button" style={{ padding: '12px', fontSize: '15px', marginTop: '4px', fontWeight: 'bold' }}>{t('saveChild')}</button>
+              {childrenInputs.map((childInput, idx) => (
+                <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingBottom: '12px', borderBottom: idx < childrenInputs.length - 1 ? '1px dashed var(--panel-border)' : 'none' }}>
+                  {childrenInputs.length > 1 && (
+                    <div style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Anak #{idx + 1}</span>
+                      {idx > 0 && (
+                        <button type="button" onClick={() => setChildrenInputs(childrenInputs.filter((_, i) => i !== idx))} style={{ background: 'transparent', border: 'none', color: '#ff4444', cursor: 'pointer', fontSize: '12px' }}>Hapus</button>
+                      )}
+                    </div>
+                  )}
+                  <input
+                    type="text"
+                    placeholder={`${t('placeholderArab')} *`}
+                    className="search-input"
+                    style={{ padding: '10px 12px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '6px', color: 'var(--text-primary)' }}
+                    value={childInput.arab}
+                    onChange={(e) => {
+                      const newArr = [...childrenInputs];
+                      newArr[idx].arab = e.target.value;
+                      setChildrenInputs(newArr);
+                    }}
+                    required
+                  />
+                  <input
+                    type="text"
+                    placeholder={`${t('placeholderLatin')} ${t('optional')}`}
+                    className="search-input"
+                    style={{ padding: '10px 12px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '6px', color: 'var(--text-primary)' }}
+                    value={childInput.latin}
+                    onChange={(e) => {
+                      const newArr = [...childrenInputs];
+                      newArr[idx].latin = e.target.value;
+                      setChildrenInputs(newArr);
+                    }}
+                  />
+                </div>
+              ))}
+              <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                <button type="button" onClick={() => setChildrenInputs([...childrenInputs, { latin: '', arab: '' }])} style={{ padding: '12px', background: 'var(--btn-secondary-bg)', color: 'var(--text-primary)', border: '1px solid var(--panel-border)', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', flex: '1' }}>
+                  +
+                </button>
+                <button type="submit" className="search-button" style={{ padding: '12px', fontSize: '15px', fontWeight: 'bold', flex: '4' }}>
+                  {t('saveChild')} ({childrenInputs.length})
+                </button>
+              </div>
             </div>
           </form>
         )}
