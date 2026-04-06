@@ -99,25 +99,7 @@ const NodeEditModal = ({
     onUpdateChild(person.id, { englishName: finalLatin, arabicName: arab });
   };
 
-  // HANDLERS FOR THE CHILDREN (FROM THE LIST)
-  const handleRemoveChildItem = (child) => {
-    const hasDescendants = familyData.some(p => p.fatherId === child.id);
-    if (hasDescendants) {
-      alert(`${t('cannotDeleteTarget')}${getChildName(child)}. ${t('alertConfirmMulti')}`);
-      return;
-    }
-    if (window.confirm(`${t('alertDeleteTarget')}${getChildName(child)}?`)) {
-      onRemoveChild(child.id);
-    }
-  };
 
-  const handleEditChildNameItem = (child) => {
-    const arab = window.prompt(t('updateArab'), child.arabicName || '');
-    if (!arab) return;
-    const latin = window.prompt(`${t('updateLatin')} ${t('skipLabel')}`, child.englishName || '');
-    const finalLatin = latin === null ? child.englishName : latin;
-    onUpdateChild(child.id, { englishName: finalLatin, arabicName: arab });
-  };
 
   const saveInfo = () => {
     setIsEditingInfo(false);
@@ -232,16 +214,7 @@ const NodeEditModal = ({
                     <div style={{ fontWeight: 'bold', fontSize: '16px', color: 'var(--text-primary)' }}>{c.arabicName}</div>
                     <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{c.englishName}</div>
                   </div>
-                  {currentUser && (
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button onClick={() => handleEditChildNameItem(c)} style={{
-                        padding: '6px 10px', background: 'var(--btn-secondary-bg)', color: 'var(--btn-secondary-text)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: '500'
-                      }}>{t('editBtn')}</button>
-                      <button onClick={() => handleRemoveChildItem(c)} style={{
-                        padding: '6px 10px', background: '#ef4444', color: '#ffffff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: '500'
-                      }}>{t('deleteBtn')}</button>
-                    </div>
-                  )}
+
                 </li>
               ))}
             </ul>
