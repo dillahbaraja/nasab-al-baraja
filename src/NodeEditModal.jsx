@@ -123,7 +123,7 @@ const NodeEditModal = ({
       }}>
         <button onClick={onClose} style={{
           position: 'absolute', top: '16px', right: '16px', 
-          background: 'none', border: 'none', color: '#ffffff', cursor: 'pointer', fontSize: '18px'
+          background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '18px'
         }}>✕</button>
         
         <h2 style={{ marginBottom: '16px' }}>{t('modalTitle')}</h2>

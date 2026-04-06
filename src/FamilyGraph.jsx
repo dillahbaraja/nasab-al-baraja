@@ -348,7 +348,8 @@ const FamilyGraph = () => {
     setShowSuggestions(false);
     const targetNode = nodes.find((n) => n.id === person.id);
     if (targetNode) {
-      setCenter(targetNode.position.x + 120, targetNode.position.y + 60, { zoom: 1.5, duration: 1000 });
+      fitView({ nodes: [{ id: targetNode.id }], duration: 1000, maxZoom: 1.5 });
+      setNodes((nds) => nds.map(n => ({ ...n, selected: n.id === person.id })));
     }
   };
 
@@ -395,7 +396,8 @@ const FamilyGraph = () => {
 
       const targetNode = nodes.find((n) => n.id === matchId);
       if (targetNode) {
-        setCenter(targetNode.position.x + 120, targetNode.position.y + 60, { zoom: 1.5, duration: 1000 });
+        fitView({ nodes: [{ id: targetNode.id }], duration: 1000, maxZoom: 1.5 });
+        setNodes((nds) => nds.map(n => ({ ...n, selected: n.id === matchId })));
       }
     } else {
       alert(t('notFound'));
@@ -690,6 +692,25 @@ const FamilyGraph = () => {
       <div className="background-glow" />
       <div className="background-glow-bottom" />
       <div className="watermark">شَجَرَةُ آلِ بَارَجَاء</div>
+
+      <div className="glass-panel" style={{
+        position: 'fixed',
+        bottom: '24px',
+        left: '24px',
+        zIndex: 10,
+        padding: '8px 14px',
+        borderRadius: '8px',
+        border: '1px solid var(--panel-border)',
+        fontSize: '13px',
+        fontWeight: 'bold',
+        color: 'var(--text-primary)',
+        pointerEvents: 'none',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px'
+      }}>
+        {t('totalNodes')}: <span>{familyData.length}</span>
+      </div>
 
       {/* Render Seed Button if DB is totally empty and not loading */}
       {!isLoading && familyData.length === 0 && (

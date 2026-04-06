@@ -54,5 +54,6 @@ export const translations = {
   cancel: { id: "Batal", en: "Cancel", ar: "إلغاء" },
   name: { id: "Nama", en: "Name", ar: "الاسم" },
   updateSuccess: { id: "Data berhasil diperbarui!", en: "Data updated successfully!", ar: "تم تحديث البيانات بنجاح!" },
-  passwordsDontMatch: { id: "Password tidak cocok!", en: "Passwords don't match!", ar: "كلمات المرور غير متطابقة!" }
+  passwordsDontMatch: { id: "Password tidak cocok!", en: "Passwords don't match!", ar: "كلمات المرور غير متطابقة!" },
+  totalNodes: { id: "Total Person", en: "Total Persons", ar: "إجمالي الأشخاص" }
 };

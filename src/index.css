@@ -321,9 +321,9 @@ body {
 /* Mobile Adjustments (Pixel 7 / iPhone / etc.) */
 @media (max-width: 767px) {
   .web-header-container {
+    padding-left: 76px;
     padding-right: 76px;
-    /* Increased from 64px for more space to hamburger */
-    justify-content: flex-start;
+    justify-content: center;
   }
 
   .web-search-wrapper {
@@ -332,10 +332,17 @@ body {
   }
 }
 
+@media (max-width: 602px) {
+  .web-header-container {
+    padding-left: 16px;
+    padding-right: 76px;
+    justify-content: flex-start;
+  }
+}
+
 @media (max-width: 480px) {
   .web-header-container {
     top: 12px;
-    padding-right: 76px;
     padding-left: 12px;
   }
   .hamburger-button {
