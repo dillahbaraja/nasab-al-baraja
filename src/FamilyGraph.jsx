@@ -732,22 +732,7 @@ const FamilyGraph = () => {
       <div className="background-glow-bottom" />
       <div className="watermark">شَجَرَةُ آلِ بَارَجَاء</div>
 
-      <div className="glass-panel" style={{
-        position: 'fixed',
-        bottom: '24px',
-        left: '24px',
-        zIndex: 10,
-        padding: '8px 14px',
-        borderRadius: '8px',
-        border: '1px solid var(--panel-border)',
-        fontSize: '13px',
-        fontWeight: 'bold',
-        color: 'var(--text-primary)',
-        pointerEvents: 'none',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '6px'
-      }}>
+      <div className="glass-panel total-nodes-label">
         {t('totalNodes')}: <span>{familyData.length}</span>
       </div>
 
@@ -774,7 +759,7 @@ const FamilyGraph = () => {
       {/* Only show standalone search for Android (since it's in the header for Web) */}
       {Capacitor.getPlatform() === 'android' && renderSearchForm()}
 
-      <div style={{ width: '100%', height: '100%' }}>
+      <div className={`graph-workspace ${Capacitor.getPlatform()}`} style={{ width: '100%', height: '100%' }}>
         {isLoading ? (
           <div style={{display:'flex', flexDirection: 'column', height:'100%', width:'100%', alignItems:'center', justifyContent:'center', gap: '16px'}}>
              <div>{t('loading')}</div>

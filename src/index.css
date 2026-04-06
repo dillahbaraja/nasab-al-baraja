@@ -517,7 +517,29 @@ body {
   border: 1px solid var(--panel-border) !important;
   border-radius: 8px !important;
   overflow: hidden;
-  margin-bottom: 60px !important;
+  margin-bottom: 0 !important; /* Reset margin to align with label */
+}
+
+/* Base position for controls and label */
+.react-flow__panel.bottom.right {
+  bottom: 24px !important;
+  right: 16px !important; /* Aligned with hamburger button right margin */
+}
+
+.total-nodes-label {
+  position: fixed;
+  bottom: 24px;
+  left: 16px; /* Aligned with edge margin */
+  z-index: 10;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: bold;
+  color: var(--text-primary);
+  pointer-events: none;
+  display: flex !important;
+  align-items: center;
+  gap: 6px;
 }
 
 .react-flow__controls-button {
@@ -538,6 +560,34 @@ body {
 
 .react-flow__controls-button svg {
   fill: var(--text-primary) !important;
+}
+
+/* Landscape Mode Adjustments for Controls & Label Alignment */
+@media (orientation: landscape) and (max-height: 500px) {
+  .react-flow__panel.bottom.right {
+    bottom: 12px !important;
+    right: 16px !important;
+  }
+  
+  .total-nodes-label {
+    bottom: 12px !important;
+    left: 16px !important;
+  }
+  
+  .react-flow__controls {
+    display: flex !important;
+    flex-direction: row !important;
+    margin-bottom: 0 !important;
+  }
+  
+  .react-flow__controls-button {
+    border-bottom: none !important;
+    border-right: 1px solid var(--panel-border) !important;
+  }
+  
+  .react-flow__controls-button:last-child {
+    border-right: none !important;
+  }
 }
 
 .family-node {
