@@ -92,7 +92,7 @@ const InfoModal = ({
         );
       case 'notice':
         return (
-          <div className="info-modal-body">
+          <div className="info-modal-body" style={type === 'notice' ? { paddingLeft: '12px', paddingRight: '12px' } : {}}>
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
               <Bell size={48} color="var(--accent)" />
             </div>
@@ -290,7 +290,7 @@ const InfoModal = ({
 
   return (
     <div className="info-modal-overlay" onClick={onClose}>
-      <div className="info-modal-content" onClick={(e) => e.stopPropagation()}>
+      <div className="info-modal-content" onClick={(e) => e.stopPropagation()} style={type === 'notice' ? { paddingLeft: '8px', paddingRight: '8px' } : {}}>
         <button className="info-modal-close" onClick={onClose}>
           <X size={24} />
         </button>
