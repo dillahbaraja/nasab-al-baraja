@@ -10,25 +10,14 @@ const InfoModal = ({
   lang, 
   onSignIn, 
   onSignOut,
-  admins = [], 
-  onAddAdmin, 
-  onUpdateAdmin, 
-  onDeleteAdmin,
-  onChangePassword,
   currentUser,
-  editAdminData = null,
-  onEditClick,
   notices = [],
   onViewNotice,
   onDeleteNotice
 }) => {
   const [formData, setFormData] = useState({
-    englishName: '',
-    arabicName: '',
     email: '',
-    phone: '',
-    password: '',
-    cityCountry: ''
+    password: ''
   });
 
   const [pwData, setPwData] = useState({
@@ -38,22 +27,7 @@ const InfoModal = ({
 
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Sync edit data when opening adminForm
-  React.useEffect(() => {
-    if (type === 'adminForm' && editAdminData) {
-      setFormData({
-        englishName: editAdminData.englishName || '',
-        arabicName: editAdminData.arabicName || '',
-        email: editAdminData.email || '',
-        phone: editAdminData.phone || '',
-        password: '', // Password set to empty for edit
-        cityCountry: editAdminData.cityCountry || ''
-      });
-    } else if (type === 'adminForm') {
-      setFormData({ englishName: '', arabicName: '', email: '', phone: '', password: '', cityCountry: '' });
-    }
-    setErrorMsg('');
-  }, [type, editAdminData]);
+
 
   if (!isOpen) return null;
 
@@ -168,98 +142,7 @@ const InfoModal = ({
             </form>
           </div>
         );
-      case 'adminManager':
-        return (
-          <div className="info-modal-body">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Shield size={24} color="var(--accent)" />
-                <span style={{ fontWeight: 'bold', fontSize: '18px' }}>{t('adminList')}</span>
-              </div>
-              <button 
-                className="search-button" 
-                onClick={() => onEditClick(null)}
-                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-              >
-                <UserPlus size={16} />
-                <span>{t('addAdmin')}</span>
-              </button>
-            </div>
-            
-            <div className="admin-list-container" style={{ maxHeight: '350px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {admins.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-secondary)' }}>{t('noData')}</div>
-              ) : admins.map(admin => {
-                const isSuperAdmin = admin.email === 'dillahbaraja@gmail.com';
-                return (
-                  <div key={admin.id} className="glass-panel" style={{ padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: isSuperAdmin ? 0.8 : 1 }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <div style={{ fontWeight: 'bold', fontFamily: 'serif', fontSize: '16px' }}>{admin.arabicName}</div>
-                        {isSuperAdmin && <Shield size={12} color="var(--accent)" fill="var(--accent)" />}
-                      </div>
-                      <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{admin.englishName}</div>
-                      <div style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
-                        <MapPin size={10} /> {admin.cityCountry}
-                      </div>
-                    </div>
-                    {!isSuperAdmin && (
-                      <div style={{ display: 'flex', gap: '12px' }}>
-                        <button onClick={() => onEditClick(admin)} style={{ background: 'transparent', border: 'none', color: 'var(--accent)', cursor: 'pointer' }}>
-                          <Edit size={18} />
-                        </button>
-                        <button onClick={() => onDeleteAdmin(admin.id)} style={{ background: 'transparent', border: 'none', color: '#ff4444', cursor: 'pointer' }}>
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        );
-      case 'adminForm':
-        return (
-          <div className="info-modal-body">
-            <form className="login-form" onSubmit={(e) => {
-              e.preventDefault();
-              if (editAdminData) onUpdateAdmin(editAdminData.id, formData);
-              else onAddAdmin(formData);
-            }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div className="input-group">
-                  <label style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>{t('name')} (Arab)</label>
-                  <input type="text" name="arabicName" value={formData.arabicName} onChange={handleInputChange} className="login-input" style={{ width: '100%' }} required />
-                </div>
-                <div className="input-group">
-                  <label style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>{t('name')} (Latin)</label>
-                  <input type="text" name="englishName" value={formData.englishName} onChange={handleInputChange} className="login-input" style={{ width: '100%' }} required />
-                </div>
-              </div>
-              <div className="input-group">
-                <label style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>{t('email')}</label>
-                <input type="email" name="email" value={formData.email} onChange={handleInputChange} className="login-input" style={{ width: '100%' }} required />
-              </div>
-              <div className="input-group">
-                <label style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>{t('phone')}</label>
-                <input type="text" name="phone" value={formData.phone} onChange={handleInputChange} className="login-input" style={{ width: '100%' }} required />
-              </div>
-              <div className="input-group">
-                <label style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>{t('cityCountry')}</label>
-                <input type="text" name="cityCountry" value={formData.cityCountry} onChange={handleInputChange} className="login-input" style={{ width: '100%' }} required />
-              </div>
-              <div className="input-group">
-                <label style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>{t('password')} {editAdminData && t('skipLabel')}</label>
-                <input type="password" name="password" value={formData.password} onChange={handleInputChange} className="login-input" style={{ width: '100%' }} required={!editAdminData} />
-              </div>
-              <div style={{ display: 'flex', gap: '12px', marginTop: '10px' }}>
-                <button type="submit" className="login-button" style={{ flex: 1 }}>{t('save')}</button>
-                <button type="button" className="login-button" style={{ flex: 1, background: 'var(--btn-secondary-bg)', color: 'var(--text-primary)' }} onClick={() => onEditClick(null, true)}>{t('cancel')}</button>
-              </div>
-            </form>
-          </div>
-        );
+
       case 'changePassword':
         return (
           <div className="info-modal-body">

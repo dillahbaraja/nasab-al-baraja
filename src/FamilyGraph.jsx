@@ -81,8 +81,6 @@ const FamilyGraph = () => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState(null);
-  const [admins, setAdmins] = useState([]);
-  const [editAdminData, setEditAdminData] = useState(null);
   const [notices, setNotices] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [lastNoticeOpen, setLastNoticeOpen] = useState(() => Number(localStorage.getItem('rf-last-notice-open')) || 0);
@@ -153,15 +151,8 @@ const FamilyGraph = () => {
       setIsLoading(false);
     });
 
-    const unsubAdmins = onSnapshot(collection(db, 'admins'), (snapshot) => {
-      setAdmins(snapshot.docs.map(d => ({ ...d.data(), id: d.id })));
-    }, (err) => {
-      console.error("Admins Snapshot Error:", err);
-    });
-
     return () => {
       unsubFamily();
-      unsubAdmins();
     };
   }, [db]); // Only on mount/db change
 
@@ -203,27 +194,7 @@ const FamilyGraph = () => {
     setUnreadCount(unread);
   }, [notices, lastNoticeOpen]);
 
-  // Super Admin Seeder
-  useEffect(() => {
-    if (!db || admins.length === 0) return;
-    const superEmail = 'dillahbaraja@gmail.com';
-    const hasSuperAdmin = admins.some(a => a.email === superEmail);
-    if (!hasSuperAdmin) {
-      const seedSuper = async () => {
-        try {
-          // Use fixed ID to prevent multiple docs during sync lag
-          await setDoc(doc(db, 'admins', 'admin_root'), {
-            englishName: 'Abdillah',
-            arabicName: 'Abdillah',
-            email: superEmail,
-            phone: '-',
-            cityCountry: 'Solo'
-          });
-        } catch(e) { console.error("Super Admin Seed Error:", e); }
-      };
-      seedSuper();
-    }
-  }, [db, admins]);
+
 
   // Update layout diagram on data change
   useEffect(() => {
@@ -552,34 +523,7 @@ const FamilyGraph = () => {
     }
   };
 
-  const handleAddAdmin = async (data) => {
-    try {
-      await setDoc(doc(collection(db, 'admins')), data);
-      setActiveInfoModal('adminManager');
-    } catch (err) {
-      alert(err.message);
-    }
-  };
 
-  const handleUpdateAdmin = async (id, data) => {
-    try {
-      const { password, ...rest } = data;
-      const updateData = password ? data : rest;
-      await updateDoc(doc(db, 'admins', id), updateData);
-      setActiveInfoModal('adminManager');
-    } catch (err) {
-      alert(err.message);
-    }
-  };
-
-  const handleDeleteAdmin = async (id) => {
-    if (!window.confirm(t('deleteBtn') + '?')) return;
-    try {
-      await deleteDoc(doc(db, 'admins', id));
-    } catch (err) {
-      alert(err.message);
-    }
-  };
 
   const handleChangePassword = async (newPassword) => {
     try {
@@ -594,7 +538,7 @@ const FamilyGraph = () => {
   const handleMenuClick = (item) => {
     if (item === 'Sign In') setActiveInfoModal('signin');
     if (item === 'About') setActiveInfoModal('about');
-    if (item === 'Admin Manager') setActiveInfoModal('adminManager');
+
     if (item === 'Change Password') setActiveInfoModal('changePassword');
     if (item === 'Sign Out') handleSignOut();
     
@@ -608,29 +552,25 @@ const FamilyGraph = () => {
     }
   };
 
-  const handleViewNotice = (notice) => {
+  const handleViewPerson = (personId) => {
     setActiveInfoModal(null);
-    if (!notice.targetId) return;
+    setIsModalOpen(false); 
+    
+    if (!personId) return;
 
-    // Wait a bit for modal transition if needed, though React Flow handles it
-    const targetNode = nodes.find(n => n.id === notice.targetId);
+    const targetNode = nodes.find(n => n.id === personId);
     if (targetNode) {
-      setCenter(targetNode.position.x + 100, targetNode.position.y + 40, {
-        zoom: 1.5,
-        duration: 1000
-      });
+      // center node and make it glow
+      fitView({ nodes: [{ id: targetNode.id }], duration: 1000, maxZoom: 1.5 });
+      setNodes((nds) => nds.map(n => ({ ...n, selected: n.id === personId })));
     }
   };
 
-  const handleEditClick = (admin, cancel = false) => {
-    if (cancel) {
-      setActiveInfoModal('adminManager');
-      setEditAdminData(null);
-      return;
-    }
-    setEditAdminData(admin);
-    setActiveInfoModal('adminForm');
+  const handleViewNotice = (notice) => {
+    handleViewPerson(notice.targetId);
   };
+
+
 
   const renderSearchForm = () => (
     <div className="search-container glass-panel">
@@ -698,19 +638,13 @@ const FamilyGraph = () => {
         isOpen={!!activeInfoModal} 
         onClose={() => setActiveInfoModal(null)} 
         type={activeInfoModal}
-        title={t(activeInfoModal === 'signin' ? 'signIn' : activeInfoModal === 'about' ? 'about' : activeInfoModal === 'notice' ? 'notice' : activeInfoModal === 'adminManager' ? 'adminManager' : activeInfoModal === 'adminForm' ? (editAdminData ? 'editBtn' : 'addAdmin') : 'changePassword')}
+        title={t(activeInfoModal === 'signin' ? 'signIn' : activeInfoModal === 'about' ? 'about' : activeInfoModal === 'notice' ? 'notice' : 'changePassword')}
         t={t}
         lang={lang}
         onSignIn={handleSignIn}
         onSignOut={handleSignOut}
-        admins={admins}
-        onAddAdmin={handleAddAdmin}
-        onUpdateAdmin={handleUpdateAdmin}
-        onDeleteAdmin={handleDeleteAdmin}
         onChangePassword={handleChangePassword}
         currentUser={currentUser}
-        editAdminData={editAdminData}
-        onEditClick={handleEditClick}
         notices={notices}
         onViewNotice={handleViewNotice}
         onDeleteNotice={handleDeleteNotice}
@@ -751,6 +685,7 @@ const FamilyGraph = () => {
         onAddChild={handleAddChild}
         onUpdateChild={handleUpdateChild}
         onRemoveChild={handleRemoveChild}
+        onViewPerson={handleViewPerson}
         lang={lang}
         t={t}
         currentUser={currentUser}

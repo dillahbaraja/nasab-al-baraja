@@ -8,6 +8,7 @@ const NodeEditModal = ({
   onAddChild, 
   onUpdateChild, 
   onRemoveChild,
+  onViewPerson,
   lang,
   t,
   currentUser
@@ -214,6 +215,25 @@ const NodeEditModal = ({
                     <div style={{ fontWeight: 'bold', fontSize: '16px', color: 'var(--text-primary)' }}>{c.arabicName}</div>
                     <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{c.englishName}</div>
                   </div>
+                  
+                  <button 
+                    onClick={() => onViewPerson && onViewPerson(c.id)}
+                    style={{ 
+                      background: 'var(--accent)', 
+                      color: 'white', 
+                      border: 'none', 
+                      borderRadius: '4px', 
+                      padding: '6px 12px', 
+                      fontSize: '12px', 
+                      cursor: 'pointer', 
+                      fontWeight: 'bold',
+                      transition: 'background 0.2s'
+                    }}
+                    onMouseEnter={(e) => e.target.style.background = 'var(--accent-hover)'}
+                    onMouseLeave={(e) => e.target.style.background = 'var(--accent)'}
+                  >
+                    {t('view')}
+                  </button>
 
                 </li>
               ))}

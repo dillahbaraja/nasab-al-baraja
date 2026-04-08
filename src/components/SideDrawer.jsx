@@ -43,10 +43,7 @@ const SideDrawer = ({ isOpen, onClose, onMenuClick, t, lang, currentUser, unread
                 <User size={20} color="var(--accent)" />
                 <span style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--accent)' }}>{currentUser.email}</span>
               </div>
-              <div className="drawer-item" onClick={() => { onMenuClick('Admin Manager'); onClose(); }}>
-                <Shield size={20} />
-                <span>{t('adminManager')}</span>
-              </div>
+
               <div className="drawer-item" onClick={() => { onMenuClick('Change Password'); onClose(); }}>
                 <Key size={20} />
                 <span>{t('changePassword')}</span>
