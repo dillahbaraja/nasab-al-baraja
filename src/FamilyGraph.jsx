@@ -69,6 +69,8 @@ const FamilyGraph = () => {
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
   const { setCenter, fitView, setViewport, getViewport } = useReactFlow();
+  const animationRef = useRef(null);
+  const glowTimeoutRef = useRef(null);
 
   const t = (key) => translations[key]?.[lang] || translations[key]?.['en'] || key;
 
@@ -251,6 +253,111 @@ const FamilyGraph = () => {
     }
     return null;
   });
+  
+  const triggerGlow = useCallback((nodeId) => {
+    if (glowTimeoutRef.current) clearTimeout(glowTimeoutRef.current);
+
+    setNodes((nds) => nds.map(n => {
+      if (n.id === nodeId) {
+        return { ...n, data: { ...n.data, isGlowing: true } };
+      }
+      return { ...n, data: { ...n.data, isGlowing: false } }; // Ensure only one glows
+    }));
+    
+    glowTimeoutRef.current = setTimeout(() => {
+      setNodes((nds) => nds.map(n => {
+        if (n.id === nodeId) {
+          return { ...n, data: { ...n.data, isGlowing: false } };
+        }
+        return n;
+      }));
+      glowTimeoutRef.current = null;
+    }, 1200);
+  }, []);
+
+  const smoothFocusNode = useCallback((nodeId, options = {}) => {
+    const { 
+      targetZoom, 
+      forceGlow = true,
+      customDuration
+    } = options;
+
+    if (animationRef.current) {
+      cancelAnimationFrame(animationRef.current);
+    }
+
+    const { x: currentX, y: currentY, zoom: currentZoom } = getViewport();
+    const targetNode = nodes.find((n) => n.id === nodeId);
+    if (!targetNode) return;
+
+    // Use current zoom if targetZoom not provided
+    const finalZoom = targetZoom || currentZoom;
+    
+    // Viewport dimensions
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    // Center point logic: Screen Center - (Node Coord * Zoom)
+    const targetX = (viewportWidth / 2) - (targetNode.position.x * finalZoom);
+    const targetY = (viewportHeight / 2) - (targetNode.position.y * finalZoom);
+
+    // Distance calculation for adaptive duration
+    const dx = targetX - currentX;
+    const dy = targetY - currentY;
+    const distance = Math.hypot(dx, dy);
+    
+    // Adaptive Duration: clamp(distance * factor, 280ms, 700ms)
+    let duration = customDuration || Math.min(Math.max(distance * 0.45, 280), 700);
+    
+    // Fast snap for local movements with same zoom
+    if (!customDuration && Math.abs(currentZoom - finalZoom) < 0.01 && distance < 1500) {
+        duration = Math.min(duration, 400); 
+    }
+
+    const startTime = performance.now();
+
+    const animate = (time) => {
+      const elapsed = time - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+
+      // easeInOutCubic
+      const easing = progress < 0.5 
+        ? 4 * progress * progress * progress 
+        : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+
+      const nextX = currentX + (targetX - currentX) * easing;
+      const nextY = currentY + (targetY - currentY) * easing;
+      const nextZoom = currentZoom + (finalZoom - currentZoom) * easing;
+
+      setViewport({ x: nextX, y: nextY, zoom: nextZoom });
+
+      if (progress < 1) {
+        animationRef.current = requestAnimationFrame(animate);
+      } else {
+        animationRef.current = null;
+        if (forceGlow) {
+           triggerGlow(nodeId);
+        }
+      }
+    };
+
+    animationRef.current = requestAnimationFrame(animate);
+    
+    // Select the node
+    setNodes((nds) => nds.map(n => ({ ...n, selected: n.id === nodeId })));
+  }, [getViewport, setViewport, nodes, triggerGlow]);
+
+  const onNodeClick = useCallback((_, node) => {
+    smoothFocusNode(node.id);
+  }, [smoothFocusNode]);
+
+  const onPaneClick = useCallback(() => {
+    setSelectedPerson(null);
+    if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+        animationRef.current = null;
+    }
+  }, []);
 
   const onNodesChange = useCallback(
     (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
@@ -356,11 +463,7 @@ const FamilyGraph = () => {
   const selectSuggestion = (person) => {
     setSearchQuery(person.englishName || person.arabicName);
     setShowSuggestions(false);
-    const targetNode = nodes.find((n) => n.id === person.id);
-    if (targetNode) {
-      fitView({ nodes: [{ id: targetNode.id }], duration: 1000, maxZoom: 1.5 });
-      setNodes((nds) => nds.map(n => ({ ...n, selected: n.id === person.id })));
-    }
+    smoothFocusNode(person.id, { targetZoom: 1.2 });
   };
 
   const handleSearch = (e) => {
@@ -406,8 +509,7 @@ const FamilyGraph = () => {
 
       const targetNode = nodes.find((n) => n.id === matchId);
       if (targetNode) {
-        fitView({ nodes: [{ id: targetNode.id }], duration: 1000, maxZoom: 1.5 });
-        setNodes((nds) => nds.map(n => ({ ...n, selected: n.id === matchId })));
+        smoothFocusNode(matchId, { targetZoom: 1.2 });
       }
     } else {
       alert(t('notFound'));
@@ -560,9 +662,7 @@ const FamilyGraph = () => {
 
     const targetNode = nodes.find(n => n.id === personId);
     if (targetNode) {
-      // center node and make it glow
-      fitView({ nodes: [{ id: targetNode.id }], duration: 1000, maxZoom: 1.5 });
-      setNodes((nds) => nds.map(n => ({ ...n, selected: n.id === personId })));
+      smoothFocusNode(personId, { targetZoom: 1.2 });
     }
   };
 
@@ -707,7 +807,14 @@ const FamilyGraph = () => {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onMoveEnd={handleMoveEnd}
-            onPaneClick={() => setSelectedPerson(null)}
+            onPaneClick={onPaneClick}
+            onNodeClick={onNodeClick}
+            onMoveStart={(e) => {
+              if (e && e.type !== 'animation' && animationRef.current) {
+                  cancelAnimationFrame(animationRef.current);
+                  animationRef.current = null;
+              }
+            }}
             nodeTypes={nodeTypes}
             minZoom={0.1}
             maxZoom={3}
