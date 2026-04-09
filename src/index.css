@@ -5,6 +5,7 @@
   --text-primary: #0f172a;
   --text-secondary: #475569;
   --accent: #0284c7;
+  --accent-rgb: 2, 132, 199;
   --accent-hover: #0369a1;
   --node-bg: #ffffff;
   --node-border: #cbd5e1;
@@ -24,6 +25,7 @@
   --text-primary: #f8fafc;
   --text-secondary: #94a3b8;
   --accent: #3b82f6;
+  --accent-rgb: 59, 130, 246;
   --accent-hover: #60a5fa;
   --node-bg: rgba(30, 41, 59, 0.95);
   --node-border: rgba(255, 255, 255, 0.15);
@@ -42,6 +44,7 @@
   --text-primary: #3e2b23;
   --text-secondary: #745140;
   --accent: #d35400;
+  --accent-rgb: 211, 84, 0;
   --accent-hover: #a84300;
   --node-bg: #f4e3c5;
   --node-border: #d0bba0;
@@ -606,8 +609,27 @@ body {
   box-shadow: var(--node-shadow);
   color: var(--text-primary);
   text-align: center;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
   position: relative;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Interaction States */
+.family-node.pressing {
+  transform: scale(0.98);
+  background-color: var(--panel-highlight-bg);
+}
+
+@keyframes hint-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0.4); transform: scale(0.98); }
+  70% { box-shadow: 0 0 0 10px rgba(var(--accent-rgb), 0); transform: scale(1.02); }
+  100% { box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0); transform: scale(1.02); }
+}
+
+.family-node.hinting {
+  border-color: var(--accent);
+  animation: hint-pulse 0.45s ease-out forwards;
 }
 
 @keyframes intense-glow {
