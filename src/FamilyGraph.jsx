@@ -631,6 +631,8 @@ const FamilyGraph = () => {
     }
   }, []);
 
+
+
   // Handle device orientation change to keep the same focal point
   useEffect(() => {
     let lastWidth = window.innerWidth;
@@ -992,13 +994,39 @@ const FamilyGraph = () => {
   };
 
   const handleExpandAll = useCallback(() => {
-    setCollapsedStateById({});
-    localStorage.removeItem('rf-collapsed-state');
-    // Ensure fitView runs after layout has updated
-    setTimeout(() => {
-      fitView({ padding: 0.2, duration: 800 });
-    }, 150);
-  }, [fitView]);
+    const { x, y, zoom } = getViewport();
+    
+    // Calculate viewport bounds in flow coordinates
+    const padding = 100; // Extra padding to include nodes partially off-screen
+    const minX = (-x - padding) / zoom;
+    const minY = (-y - padding) / zoom;
+    const maxX = (window.innerWidth - x + padding) / zoom;
+    const maxY = (window.innerHeight - y + padding) / zoom;
+
+    const visibleCollapsedNodes = nodes.filter(node => {
+      const isVisible = 
+        node.position.x >= minX && 
+        node.position.x <= maxX && 
+        node.position.y >= minY && 
+        node.position.y <= maxY;
+      
+      const isCollapsed = !!collapsedStateById[node.id];
+      const hasChildren = node.data?.hasChildren;
+
+      return isVisible && isCollapsed && hasChildren;
+    });
+
+    if (visibleCollapsedNodes.length === 0) return;
+
+    setCollapsedStateById(prev => {
+      const next = { ...prev };
+      visibleCollapsedNodes.forEach(node => {
+        next[node.id] = false;
+      });
+      localStorage.setItem('rf-collapsed-state', JSON.stringify(next));
+      return next;
+    });
+  }, [getViewport, nodes, collapsedStateById]);
 
   const handleViewPerson = (personId) => {
     setActiveInfoModal(null);
@@ -1117,8 +1145,8 @@ const FamilyGraph = () => {
       <div className="background-glow-bottom" />
       <div className="watermark">شَجَرَةُ آلِ بَارَجَاء</div>
 
-      <div className="glass-panel total-nodes-label">
-        {t('totalNodes')}: <span>{familyData.length}</span>
+      <div className="total-nodes-label">
+        {t('totalNodes')}: {familyData.length}
       </div>
 
       {/* Render Seed Button if DB is totally empty and not loading */}

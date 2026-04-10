@@ -532,17 +532,20 @@ body {
 .total-nodes-label {
   position: fixed;
   bottom: 24px;
-  left: 16px; /* Aligned with edge margin */
+  left: 16px;
   z-index: 10;
-  padding: 8px 14px;
-  border-radius: 8px;
-  font-size: 13px;
+  padding: 10px 20px;
+  border-radius: 12px;
+  font-size: 12px;
   font-weight: bold;
   color: var(--text-primary);
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   pointer-events: none;
   display: flex !important;
   align-items: center;
-  gap: 6px;
+  white-space: nowrap;
 }
 
 .react-flow__controls-button {
@@ -633,13 +636,15 @@ body {
 }
 
 .family-node.has-collapsed-lineage::before {
-  transform: translate(4px, 4px);
-  opacity: 0.8;
+  transform: translate(6px, 6px);
+  opacity: 0.95;
+  box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.15);
 }
 
 .family-node.has-collapsed-lineage::after {
-  transform: translate(8px, 8px);
-  opacity: 0.5;
+  transform: translate(12px, 12px);
+  opacity: 0.8;
+  box-shadow: 4px 4px 15px rgba(0, 0, 0, 0.1);
 }
 
 /* Ensure handles and content stay on top */
