@@ -613,6 +613,7 @@ body {
   position: relative;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+  isolation: isolate;
 }
 
 /* Stacked / Layered Effect for Collapsed Nodes with Children */

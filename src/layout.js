@@ -90,6 +90,9 @@ export const createNodesFromData = (dataList) => {
         englishName: person.englishName || person.name || '-',
         info: person.info || '',
         isHighlighted: false,
+        isCollapsed: !!person.isCollapsed,
+        hasChildren: !!person.hasChildren,
+        isGlowing: !!person.isGlowing,
         raw: person
       }
     }));

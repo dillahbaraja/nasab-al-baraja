@@ -587,9 +587,6 @@ const FamilyGraph = () => {
       setCollapsedStateById(prev => {
         const newState = { ...prev };
         newState[node.id] = false;
-        descendants.forEach(cid => {
-          newState[cid] = false;
-        });
         localStorage.setItem('rf-collapsed-state', JSON.stringify(newState));
         return newState;
       });
