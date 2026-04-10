@@ -347,9 +347,24 @@ const FamilyGraph = () => {
       }));
       setEdges([...layoutedEdges]);
       
-      // 3. Clear stabilization flags if set (Logic for centering is removed at user request)
-      if (toggledNodeInfo && !toggledNodeInfo.isPersistent) {
-        setToggledNodeInfo(null);
+      // 3. Stabilization: Keep the toggled node at the same screen position
+      if (toggledNodeInfo) {
+        const targetNode = layoutNodesMap.get(String(toggledNodeInfo.id));
+        if (targetNode) {
+          const { lastPos, lastViewport } = toggledNodeInfo;
+          const currentPos = targetNode.position;
+          
+          // Formula: vpOffset_new = vpOffset_old + (nodePos_old - nodePos_new) * zoom
+          const nextX = lastViewport.x + (lastPos.x - currentPos.x) * lastViewport.zoom;
+          const nextY = lastViewport.y + (lastPos.y - currentPos.y) * lastViewport.zoom;
+          
+          // Instant adjustments to prevent visual jumps
+          setViewport({ x: nextX, y: nextY, zoom: lastViewport.zoom }, { duration: 0 });
+        }
+        
+        if (!toggledNodeInfo.isPersistent) {
+          setToggledNodeInfo(null);
+        }
       }
 
       // Update tracking ref
