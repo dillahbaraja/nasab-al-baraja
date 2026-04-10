@@ -8,7 +8,7 @@ import {
   useReactFlow
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Search, Palette, Database, Bell } from 'lucide-react';
+import { Search, Palette, Database, Bell, ListTree } from 'lucide-react';
 import FamilyNode from './FamilyNode';
 import { initialFamilyData, generateEdges } from './data';
 import { getLayoutedElements, createNodesFromData } from './layout';
@@ -976,6 +976,15 @@ const FamilyGraph = () => {
     }
   };
 
+  const handleExpandAll = useCallback(() => {
+    setCollapsedStateById({});
+    localStorage.removeItem('rf-collapsed-state');
+    // Ensure fitView runs after layout has updated
+    setTimeout(() => {
+      fitView({ padding: 0.2, duration: 800 });
+    }, 150);
+  }, [fitView]);
+
   const handleViewPerson = (personId) => {
     setActiveInfoModal(null);
     setIsModalOpen(false); 
@@ -1158,6 +1167,14 @@ const FamilyGraph = () => {
           >
             <Background color="var(--panel-border)" gap={24} size={2} />
             <Controls position="bottom-right" showInteractive={false} fitViewOptions={{ duration: 800, padding: 0.2 }}>
+              <button 
+                className="react-flow__controls-button" 
+                onClick={handleExpandAll} 
+                title={t('expandAll')}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <ListTree size={14} />
+              </button>
               <button 
                 className="react-flow__controls-button" 
                 onClick={toggleTheme} 

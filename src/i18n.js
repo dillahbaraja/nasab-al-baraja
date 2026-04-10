@@ -49,5 +49,6 @@ export const translations = {
   save: { id: "Simpan", en: "Save", ar: "حفظ" },
   updateSuccess: { id: "Data berhasil diperbarui!", en: "Data updated successfully!", ar: "تم تحديث البيانات بنجاح!" },
   passwordsDontMatch: { id: "Password tidak cocok!", en: "Passwords don't match!", ar: "كلمات المرور غير متطابقة!" },
-  totalNodes: { id: "Total Person", en: "Total Persons", ar: "إجمالي الأشخاص" }
+  totalNodes: { id: "Total Person", en: "Total Persons", ar: "إجمالي الأشخاص" },
+  expandAll: { id: "Buka Semua", en: "Expand All", ar: "توسيع الكل" }
 };
