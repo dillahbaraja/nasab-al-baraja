@@ -14,7 +14,7 @@ import { initialFamilyData, generateEdges } from './data';
 import { getLayoutedElements, createNodesFromData } from './layout';
 import NodeEditModal from './NodeEditModal';
 import { db, auth } from './firebase';
-import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc, writeBatch } from 'firebase/firestore';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, updatePassword } from 'firebase/auth';
 import { translations } from './i18n';
 import MobileHeader from './components/MobileHeader';
@@ -70,7 +70,21 @@ const FamilyGraph = () => {
   const [edges, setEdges] = useState([]);
   const { setCenter, fitView, setViewport, getViewport } = useReactFlow();
   const animationRef = useRef(null);
+  const [collapsedStateById, setCollapsedStateById] = useState(() => {
+    try {
+      const saved = localStorage.getItem('rf-collapsed-state');
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('rf-collapsed-state', JSON.stringify(collapsedStateById));
+  }, [collapsedStateById]);
+
   const glowTimeoutRef = useRef(null);
+  const prevVisibleSetRef = useRef(new Set());
 
   const t = (key) => translations[key]?.[lang] || translations[key]?.['en'] || key;
 
@@ -88,6 +102,9 @@ const FamilyGraph = () => {
   const [lastNoticeOpen, setLastNoticeOpen] = useState(() => Number(localStorage.getItem('rf-last-notice-open')) || 0);
   const [toast, setToast] = useState(null);
   const toastTimeoutRef = useRef(null);
+  const [pendingFocusTarget, setPendingFocusTarget] = useState(null);
+  const [toggledNodeInfo, setToggledNodeInfo] = useState(null); // { id, lastPos, lastViewport }
+  const [collapsingParentId, setCollapsingParentId] = useState(null);
   
   // Info Modals State
   const [activeInfoModal, setActiveInfoModal] = useState(null); // 'signin', 'about', 'notice', 'adminManager', 'adminForm', 'changePassword'
@@ -202,7 +219,6 @@ const FamilyGraph = () => {
   useEffect(() => {
     if (familyData.length === 0) {
       if (!isLoading) {
-        // Stickiness: Don't clear nodes if they already exist, to prevent "disappearing" on sync gaps
         if (nodes.length > 0) {
           console.warn("Ignoring empty dataset to prevent vanishing nodes.");
           return;
@@ -214,30 +230,165 @@ const FamilyGraph = () => {
     }
 
     try {
-      const rawNodes = createNodesFromData(familyData);
-      const rawEdges = generateEdges(familyData);
+      // 1. Build lookup maps for O(N) performance
+      const personMap = new Map();
+      const parentToChildren = new Map();
+      familyData.forEach(p => {
+        const id = String(p.id);
+        const fid = p.fatherId ? String(p.fatherId) : null;
+        personMap.set(id, { ...p, id, fatherId: fid });
+        if (fid) {
+          if (!parentToChildren.has(fid)) parentToChildren.set(fid, []);
+          parentToChildren.get(fid).push({ ...p, id, fatherId: fid });
+        }
+      });
+
+      const rootList = familyData.filter(p => !p.fatherId);
+      const visibleData = [];
+      const traverse = (person) => {
+        const pid = String(person.id);
+        const isCollapsed = !!collapsedStateById[pid];
+        const isCurrentlyCollapsing = collapsingParentId === pid;
+        
+        visibleData.push({
+          ...person,
+          isGlowing: isCollapsed, // Add glow to collapsed nodes
+          isCollapsed: isCollapsed,
+          hasChildren: parentToChildren.has(pid)
+        });
+
+        if (!isCollapsed || isCurrentlyCollapsing) {
+          const children = parentToChildren.get(pid) || [];
+          children.forEach(c => traverse(c));
+        }
+      };
+      rootList.forEach(r => traverse(r));
+
+      const rawNodes = createNodesFromData(visibleData);
+      const rawEdges = generateEdges(visibleData);
       
-      // Perform layout calculation
       const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(rawNodes, rawEdges, 'TB');
       
-      const nodesWithHandler = layoutedNodes.map(n => ({
-        ...n,
-        data: {
-          ...n.data,
-          onLongPress: (nodeId, rawData) => {
-            setSelectedPerson(rawData);
-            setIsModalOpen(true);
+      // Index existing nodes and layout nodes for O(1) override lookups
+      const nodesMap = new Map(nodes.map(n => [String(n.id), n]));
+      const layoutNodesMap = new Map(layoutedNodes.map(n => [String(n.id), n]));
+
+      const finalNodes = layoutedNodes.map(n => {
+        const nid = String(n.id);
+        const person = personMap.get(nid);
+        const cpid = collapsingParentId ? String(collapsingParentId) : null;
+
+        // Grouping/Collapse Animation Overlay
+        if (person && person.fatherId && cpid) {
+          let isPhantomCollapsing = false;
+          let curr = person;
+          while (curr && curr.fatherId) {
+            if (String(curr.fatherId) === cpid) {
+              isPhantomCollapsing = true;
+              break;
+            }
+            curr = personMap.get(String(curr.fatherId));
+          }
+
+          if (isPhantomCollapsing) {
+            const parentNode = layoutNodesMap.get(cpid);
+            if (parentNode) {
+              return {
+                ...n,
+                position: { ...parentNode.position },
+                className: 'collapsing-child'
+              };
+            }
           }
         }
-      }));
+        
+        // Ungrouping/Expand Animation Overlay
+        const isNew = !prevVisibleSetRef.current.has(nid);
+        if (isNew && person && person.fatherId) {
+          const fid = String(person.fatherId);
+          const parentNode = nodesMap.get(fid) || layoutNodesMap.get(fid);
+          if (parentNode) {
+             return { ...n, position: { ...parentNode.position }, opacity: 0 };
+          }
+        }
+
+        return n;
+      });
       
-      setNodes([...nodesWithHandler]);
+      // 2. Expansion & Collapse Glow Detection
+      const currentVisibleIds = new Set(visibleData.map(p => p.id));
+      const newlyVisibleIds = new Set([...currentVisibleIds].filter(id => !prevVisibleSetRef.current.has(id)));
+      
+      setNodes(finalNodes.map(n => {
+        const isNew = newlyVisibleIds.has(n.id);
+        const isToggled = toggledNodeInfo && toggledNodeInfo.id === n.id;
+        
+        // Use the person's isGlowing property we set in traverse
+        const isGlowing = n.isGlowing || (toggledNodeInfo && toggledNodeInfo.id === n.id);
+
+        // Ungrouping Animation: New nodes start at the parent's position
+        let initialPos = { ...n.position };
+        if (isNew && toggledNodeInfo && !toggledNodeInfo.isPersistent) {
+          initialPos = { ...toggledNodeInfo.lastPos };
+        }
+        
+        return {
+          ...n,
+          data: {
+            ...n.data,
+            isGlowing,
+            onLongPress: (nodeId, rawData) => {
+              setSelectedPerson(rawData);
+              setIsModalOpen(true);
+            }
+          },
+          position: initialPos
+        };
+      }));
       setEdges([...layoutedEdges]);
+      
+      // 3. Clear stabilization flags if set (Logic for centering is removed at user request)
+      if (toggledNodeInfo && !toggledNodeInfo.isPersistent) {
+        setToggledNodeInfo(null);
+      }
+
+      // Update tracking ref
+      prevVisibleSetRef.current = currentVisibleIds;
+
+      // 4. Expansion Sequencer (Ungrouping effect)
+      if (newlyVisibleIds.size > 0) {
+        requestAnimationFrame(() => {
+          setNodes(nds => nds.map(node => {
+            const nid = String(node.id);
+            const targetNode = layoutNodesMap.get(nid);
+            if (targetNode && newlyVisibleIds.has(nid)) {
+              return { ...node, position: { ...targetNode.position }, opacity: 1 };
+            }
+            return node;
+          }));
+        });
+      }
+
+      // 5. Clear expansion/toggle glow after 2.5s
+      if (newlyVisibleIds.size > 0 || collapsingParentId) {
+        if (glowTimeoutRef.current) clearTimeout(glowTimeoutRef.current);
+        glowTimeoutRef.current = setTimeout(() => {
+          setNodes(nds => nds.map(node => {
+            const isCollapsed = !!collapsedStateById[node.id];
+            return {
+              ...node,
+              data: { 
+                ...node.data, 
+                isGlowing: isCollapsed // Permanent glow for collapsed branches, clear for others
+              }
+            };
+          }));
+        }, 2500);
+      }
     } catch (err) {
       console.error("Layout Rendering Crash Prevented:", err);
-      // Fallback: If layout fails, just show raw nodes in a grid or stay as is
     }
-  }, [familyData, isLoading]);
+  }, [familyData, collapsedStateById, isLoading]);
 
   const [initialViewport] = useState(() => {
     try {
@@ -348,8 +499,102 @@ const FamilyGraph = () => {
   }, [getViewport, setViewport, nodes, triggerGlow]);
 
   const onNodeClick = useCallback((_, node) => {
-    smoothFocusNode(node.id);
-  }, [smoothFocusNode]);
+    // Selection only, no centering (Per user request)
+    setNodes((nds) => nds.map(n => ({ ...n, selected: n.id === node.id })));
+  }, []);
+
+  const onNodeDoubleClick = useCallback((_, node) => {
+    const wasExpanded = !collapsedStateById[node.id];
+    
+    if (wasExpanded) {
+      // 1. Start Grouping animation (Recursive Collapse)
+      setCollapsingParentId(node.id);
+      
+      // Build parent-children map for O(1) recursion
+      const parentToChildrenMap = new Map();
+      familyData.forEach(p => {
+        const fid = p.fatherId ? String(p.fatherId) : null;
+        if (fid) {
+          if (!parentToChildrenMap.has(fid)) parentToChildrenMap.set(fid, []);
+          parentToChildrenMap.get(fid).push(p);
+        }
+      });
+
+      const gatherDescendantIds = (parentId) => {
+        let results = [];
+        const pid = String(parentId);
+        const children = parentToChildrenMap.get(pid) || [];
+        children.forEach(child => {
+          results.push(String(child.id));
+          results = results.concat(gatherDescendantIds(child.id));
+        });
+        return results;
+      };
+      const descendants = gatherDescendantIds(node.id);
+
+      // Stabilization: Snapping persists through the 600ms animation into the final layout
+      const view = getViewport();
+      setToggledNodeInfo({
+        id: node.id,
+        lastPos: { ...node.position },
+        lastViewport: { ...view },
+        isPersistent: true 
+      });
+
+      setTimeout(() => {
+        setCollapsedStateById(prev => {
+          const newState = { ...prev, [node.id]: true };
+          descendants.forEach(cid => { newState[cid] = true; }); // RECURSIVE COLLAPSE
+          localStorage.setItem('rf-collapsed-state', JSON.stringify(newState));
+          return newState;
+        });
+        setCollapsingParentId(null);
+        setToggledNodeInfo(prev => prev ? { ...prev, isPersistent: false } : null);
+      }, 150);
+    } else {
+      // 2. Start Ungrouping animation (Recursive Expand)
+      // Build parent-children map for O(1) recursion
+      const parentToChildrenMap = new Map();
+      familyData.forEach(p => {
+        const fid = p.fatherId ? String(p.fatherId) : null;
+        if (fid) {
+          if (!parentToChildrenMap.has(fid)) parentToChildrenMap.set(fid, []);
+          parentToChildrenMap.get(fid).push(p);
+        }
+      });
+
+      const gatherDescendantIds = (parentId) => {
+        let results = [];
+        const pid = String(parentId);
+        const children = parentToChildrenMap.get(pid) || [];
+        children.forEach(child => {
+          results.push(String(child.id));
+          results = results.concat(gatherDescendantIds(child.id));
+        });
+        return results;
+      };
+      
+      const descendants = gatherDescendantIds(node.id);
+      
+      // Viewport Stabilization (Snap only once for expand)
+      const view = getViewport();
+      setToggledNodeInfo({
+        id: node.id,
+        lastPos: { ...node.position },
+        lastViewport: { ...view }
+      });
+
+      setCollapsedStateById(prev => {
+        const newState = { ...prev };
+        newState[node.id] = false;
+        descendants.forEach(cid => {
+          newState[cid] = false;
+        });
+        localStorage.setItem('rf-collapsed-state', JSON.stringify(newState));
+        return newState;
+      });
+    }
+  }, [collapsedStateById, familyData, getViewport]);
 
   const onPaneClick = useCallback(() => {
     setSelectedPerson(null);
@@ -413,6 +658,44 @@ const FamilyGraph = () => {
     };
   }, [getViewport, setCenter]);
 
+  const ensurePathVisible = useCallback((targetId) => {
+    let current = familyData.find(p => p.id === targetId);
+    const toExpand = [];
+    while (current && current.fatherId) {
+      toExpand.push(current.fatherId);
+      current = familyData.find(p => p.id === current.fatherId);
+    }
+    
+    if (toExpand.length === 0) return false;
+
+    let changed = false;
+    setCollapsedStateById(prev => {
+      const next = { ...prev };
+      toExpand.forEach(id => {
+        if (next[id]) {
+          next[id] = false;
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+    return changed;
+  }, [familyData]);
+
+  // Auto-focus when pending target becomes visible in nodes array
+  useEffect(() => {
+    if (pendingFocusTarget) {
+      const targetNode = nodes.find(n => n.id === pendingFocusTarget.id);
+      if (targetNode) {
+        // Extra frame buffer to ensure layout settlement
+        requestAnimationFrame(() => {
+          smoothFocusNode(pendingFocusTarget.id, pendingFocusTarget.options);
+          setPendingFocusTarget(null);
+        });
+      }
+    }
+  }, [nodes, pendingFocusTarget, smoothFocusNode]);
+
   const normalizeArabic = (text) => {
     return text.normalize("NFD").replace(/[\u064B-\u065F\u0670]/g, "").replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ي$/g, "ى").toLowerCase();
   };
@@ -463,7 +746,13 @@ const FamilyGraph = () => {
   const selectSuggestion = (person) => {
     setSearchQuery(person.englishName || person.arabicName);
     setShowSuggestions(false);
-    smoothFocusNode(person.id, { targetZoom: 1.2 });
+    
+    const wasHidden = ensurePathVisible(person.id);
+    if (wasHidden) {
+      setPendingFocusTarget({ id: person.id, options: { targetZoom: 1.2 } });
+    } else {
+      smoothFocusNode(person.id, { targetZoom: 1.2 });
+    }
   };
 
   const handleSearch = (e) => {
@@ -506,10 +795,15 @@ const FamilyGraph = () => {
       const matchId = matches[nextIndex];
       setCurrentSearchIndex(nextIndex);
       setLastSearchQuery(searchQuery);
-
-      const targetNode = nodes.find((n) => n.id === matchId);
-      if (targetNode) {
-        smoothFocusNode(matchId, { targetZoom: 1.2 });
+      
+      const wasHidden = ensurePathVisible(matchId);
+      if (wasHidden) {
+        setPendingFocusTarget({ id: matchId, options: { targetZoom: 1.2 } });
+      } else {
+        const targetNode = nodes.find((n) => n.id === matchId);
+        if (targetNode) {
+          smoothFocusNode(matchId, { targetZoom: 1.2 });
+        }
       }
     } else {
       alert(t('notFound'));
@@ -574,9 +868,40 @@ const FamilyGraph = () => {
   const handleRemoveChild = async (childId) => {
     if(!db) return alert(t('notConnected'));
     try {
-      await deleteDoc(doc(db, 'familyNodes', childId));
-      if (selectedPerson && selectedPerson.id === childId) {
-        setIsModalOpen(false); // Close modal if we deleted the person actively viewed
+      const batch = writeBatch(db);
+      
+      // 1. Find all descendants recursively
+      const parentToChildrenMap = new Map();
+      familyData.forEach(p => {
+        const fid = p.fatherId ? String(p.fatherId) : null;
+        if (fid) {
+          if (!parentToChildrenMap.has(fid)) parentToChildrenMap.set(fid, []);
+          parentToChildrenMap.get(fid).push(p);
+        }
+      });
+
+      const gatherDescendantIds = (parentId) => {
+        let results = [];
+        const pid = String(parentId);
+        const children = parentToChildrenMap.get(pid) || [];
+        children.forEach(child => {
+          results.push(String(child.id));
+          results = results.concat(gatherDescendantIds(child.id));
+        });
+        return results;
+      };
+
+      const idsToDelete = [String(childId), ...gatherDescendantIds(childId)];
+      
+      // 2. Add to batch
+      idsToDelete.forEach(id => {
+        batch.delete(doc(db, 'familyNodes', id));
+      });
+
+      await batch.commit();
+
+      if (selectedPerson && idsToDelete.includes(String(selectedPerson.id))) {
+        setIsModalOpen(false); 
       }
     } catch (err) {
       console.error(err);
@@ -660,9 +985,14 @@ const FamilyGraph = () => {
     
     if (!personId) return;
 
-    const targetNode = nodes.find(n => n.id === personId);
-    if (targetNode) {
-      smoothFocusNode(personId, { targetZoom: 1.2 });
+    const wasHidden = ensurePathVisible(personId);
+    if (wasHidden) {
+      setPendingFocusTarget({ id: personId, options: { targetZoom: 1.2 } });
+    } else {
+      const targetNode = nodes.find(n => n.id === personId);
+      if (targetNode) {
+        smoothFocusNode(personId, { targetZoom: 1.2 });
+      }
     }
   };
 
@@ -809,6 +1139,8 @@ const FamilyGraph = () => {
             onMoveEnd={handleMoveEnd}
             onPaneClick={onPaneClick}
             onNodeClick={onNodeClick}
+            onNodeDoubleClick={onNodeDoubleClick}
+            zoomOnDoubleClick={false}
             onMoveStart={(e) => {
               if (e && e.type !== 'animation' && animationRef.current) {
                   cancelAnimationFrame(animationRef.current);

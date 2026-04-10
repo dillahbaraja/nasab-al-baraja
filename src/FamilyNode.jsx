@@ -5,6 +5,7 @@ const FamilyNode = ({ id, data, selected }) => {
   const [interactionStage, setInteractionStage] = useState('none'); // 'none', 'pressing', 'hinting'
   const actionTimerRef = useRef(null);
   const hintTimerRef = useRef(null);
+  const lastClickTimeRef = useRef(0);
   const touchStartPosRef = useRef(null);
   const isCancelledRef = useRef(false);
 
@@ -22,6 +23,17 @@ const FamilyNode = ({ id, data, selected }) => {
     if (e.button != null && e.button !== 0) return;
     if (!e.isPrimary) {
       cleanup();
+      return;
+    }
+
+    const now = Date.now();
+    const isDoubleClickCandidate = (now - lastClickTimeRef.current) < 350;
+    lastClickTimeRef.current = now;
+
+    if (isDoubleClickCandidate) {
+      // It's a double click! Cancel any pending long-press details
+      cleanup();
+      isCancelledRef.current = true;
       return;
     }
 
@@ -72,7 +84,7 @@ const FamilyNode = ({ id, data, selected }) => {
 
   return (
     <div
-      className={`family-node ${selected ? 'highlighted' : ''} ${interactionStage} ${data.isGlowing ? 'target-glow' : ''}`}
+      className={`family-node ${selected ? 'highlighted' : ''} ${interactionStage} ${data.isGlowing ? 'target-glow' : ''} ${data.hasChildren && data.isCollapsed ? 'has-collapsed-lineage' : ''}`}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}

@@ -83,13 +83,13 @@ const NodeEditModal = ({
   // HANDLERS FOR THE CURRENTLY SELECTED PERSON
   const handleRemoveCurrentPerson = () => {
     if (personHasDescendants) {
-      alert(`${t('cannotDeleteTarget')}${displayName}. ${t('alertConfirmMulti')}`);
-      return;
+      const confirmed = window.confirm(`PERINGATAN KERAS: ${displayName} memiliki keturunan. Menghapus orang ini akan menghapus SELURUH keturunannya (anak, cucu, dst) secara permanen!\n\nApakah Anda YAKIN ingin melanjutkan?`);
+      if (!confirmed) return;
+    } else {
+      if (!window.confirm(`${t('alertDeleteTarget')}${displayName}?`)) return;
     }
-    if (window.confirm(`${t('alertDeleteTarget')}${displayName}?`)) {
-      onRemoveChild(person.id);
-      onClose();
-    }
+    onRemoveChild(person.id);
+    onClose();
   };
 
   const handleEditCurrentPersonName = () => {
@@ -180,10 +180,10 @@ const NodeEditModal = ({
                 onClick={handleRemoveCurrentPerson} 
                 style={{
                   padding: '6px 12px', 
-                  background: personHasDescendants ? 'var(--btn-secondary-bg)' : '#ef4444', 
-                  color: personHasDescendants ? 'var(--text-secondary)' : '#ffffff', 
+                  background: '#ef4444', 
+                  color: '#ffffff', 
                   border: 'none', borderRadius: '4px', 
-                  cursor: personHasDescendants ? 'not-allowed' : 'pointer', 
+                  cursor: 'pointer', 
                   fontSize: '13px', fontWeight: 'bold'
                 }}
               >
@@ -191,8 +191,8 @@ const NodeEditModal = ({
               </button>
             </div>
             {personHasDescendants && (
-              <div style={{ fontSize: '11px', color: '#ef4444', marginTop: '6px', fontWeight: '500' }}>
-                {t('cannotDelete')}
+              <div style={{ fontSize: '11px', color: '#ef4444', marginTop: '6px', fontWeight: 'bold' }}>
+                * Menghapus orang ini akan otomatis menghapus seluruh keturunannya (Recursively).
               </div>
             )}
           </div>
