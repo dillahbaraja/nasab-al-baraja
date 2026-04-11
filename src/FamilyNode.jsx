@@ -84,7 +84,7 @@ const FamilyNode = ({ id, data, selected }) => {
 
   return (
     <div
-      className={`family-node ${selected ? 'highlighted' : ''} ${interactionStage} ${data.isGlowing ? 'target-glow' : ''} ${data.hasChildren && data.isCollapsed ? 'has-collapsed-lineage' : ''}`}
+      className={`family-node ${selected ? 'highlighted' : ''} ${interactionStage} ${data.isGlowing ? 'target-glow' : ''} ${data.isPathGlow ? 'path-glow' : ''} ${data.hasChildren && data.isCollapsed ? 'is-expandable' : ''} ${data.hasChildren && data.isCollapsed ? 'has-collapsed-lineage' : ''}`}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}

@@ -105,9 +105,53 @@ const FamilyGraph = () => {
   const [pendingFocusTarget, setPendingFocusTarget] = useState(null);
   const [toggledNodeInfo, setToggledNodeInfo] = useState(null); // { id, lastPos, lastViewport }
   const [collapsingParentId, setCollapsingParentId] = useState(null);
+  const [ancestorPath, setAncestorPath] = useState({ nodeIds: new Set(), edgeIds: new Set() });
   
   // Info Modals State
   const [activeInfoModal, setActiveInfoModal] = useState(null); // 'signin', 'about', 'notice', 'adminManager', 'adminForm', 'changePassword'
+
+  const triggerGlow = useCallback((nodeId) => {
+    if (glowTimeoutRef.current) clearTimeout(glowTimeoutRef.current);
+
+    setNodes((nds) => nds.map(n => {
+      if (n.id === nodeId) {
+        return { ...n, data: { ...n.data, isGlowing: true } };
+      }
+      return { ...n, data: { ...n.data, isGlowing: false } }; // Ensure only one glows
+    }));
+    
+    glowTimeoutRef.current = setTimeout(() => {
+      setNodes((nds) => nds.map(n => {
+        if (n.id === nodeId) {
+          return { ...n, data: { ...n.data, isGlowing: false } };
+        }
+        return n;
+      }));
+      glowTimeoutRef.current = null;
+    }, 1200);
+  }, []);
+
+  const calculateAncestorPath = useCallback((nodeId) => {
+    if (!nodeId) return { nodeIds: new Set(), edgeIds: new Set() };
+    const nodeIds = new Set([nodeId]);
+    const edgeIds = new Set();
+    let currentId = nodeId;
+    let iterations = 0; // Guard against potential infinite loops in data
+    
+    while (currentId && iterations < 100) {
+      const person = familyData.find(p => p.id === currentId);
+      if (person && person.fatherId) {
+        const fatherId = String(person.fatherId);
+        nodeIds.add(fatherId);
+        edgeIds.add(`e-${fatherId}-${currentId}`);
+        currentId = fatherId;
+      } else {
+        currentId = null;
+      }
+      iterations++;
+    }
+    return { nodeIds, edgeIds };
+  }, [familyData]);
 
   // Apply Theme Toggle
   useEffect(() => {
@@ -405,6 +449,31 @@ const FamilyGraph = () => {
     }
   }, [familyData, collapsedStateById, isLoading]);
 
+  // Highlight Ancestor Path
+  useEffect(() => {
+    setNodes(nds => nds.map(node => {
+      const nid = String(node.id);
+      const isPathGlow = ancestorPath.nodeIds.has(nid);
+      if (node.data.isPathGlow === isPathGlow) return node;
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          isPathGlow
+        }
+      };
+    }));
+    setEdges(eds => eds.map(edge => {
+      const isPathGlow = ancestorPath.edgeIds.has(edge.id);
+      const className = isPathGlow ? 'ancestor-edge-glow' : '';
+      if (edge.className === className) return edge;
+      return {
+        ...edge,
+        className
+      };
+    }));
+  }, [ancestorPath]);
+
   const [initialViewport] = useState(() => {
     try {
       const saved = localStorage.getItem('rf-viewport');
@@ -420,26 +489,6 @@ const FamilyGraph = () => {
     return null;
   });
   
-  const triggerGlow = useCallback((nodeId) => {
-    if (glowTimeoutRef.current) clearTimeout(glowTimeoutRef.current);
-
-    setNodes((nds) => nds.map(n => {
-      if (n.id === nodeId) {
-        return { ...n, data: { ...n.data, isGlowing: true } };
-      }
-      return { ...n, data: { ...n.data, isGlowing: false } }; // Ensure only one glows
-    }));
-    
-    glowTimeoutRef.current = setTimeout(() => {
-      setNodes((nds) => nds.map(n => {
-        if (n.id === nodeId) {
-          return { ...n, data: { ...n.data, isGlowing: false } };
-        }
-        return n;
-      }));
-      glowTimeoutRef.current = null;
-    }, 1200);
-  }, []);
 
   const smoothFocusNode = useCallback((nodeId, options = {}) => {
     const { 
@@ -511,12 +560,14 @@ const FamilyGraph = () => {
     
     // Select the node
     setNodes((nds) => nds.map(n => ({ ...n, selected: n.id === nodeId })));
-  }, [getViewport, setViewport, nodes, triggerGlow]);
+    setAncestorPath(calculateAncestorPath(nodeId));
+  }, [getViewport, setViewport, nodes, triggerGlow, calculateAncestorPath]);
 
   const onNodeClick = useCallback((_, node) => {
     // Selection only, no centering (Per user request)
     setNodes((nds) => nds.map(n => ({ ...n, selected: n.id === node.id })));
-  }, []);
+    setAncestorPath(calculateAncestorPath(node.id));
+  }, [calculateAncestorPath]);
 
   const onNodeDoubleClick = useCallback((_, node) => {
     const wasExpanded = !collapsedStateById[node.id];
@@ -610,6 +661,7 @@ const FamilyGraph = () => {
 
   const onPaneClick = useCallback(() => {
     setSelectedPerson(null);
+    setAncestorPath({ nodeIds: new Set(), edgeIds: new Set() });
     if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
         animationRef.current = null;
@@ -671,6 +723,7 @@ const FamilyGraph = () => {
       window.removeEventListener('orientationchange', handleResize);
     };
   }, [getViewport, setCenter]);
+
 
   const ensurePathVisible = useCallback((targetId) => {
     let current = familyData.find(p => p.id === targetId);
