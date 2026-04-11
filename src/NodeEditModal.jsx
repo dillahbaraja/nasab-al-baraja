@@ -9,6 +9,7 @@ const NodeEditModal = ({
   onUpdateChild, 
   onRemoveChild,
   onViewPerson,
+  onShowLineageOnly,
   lang,
   t,
   currentUser
@@ -167,6 +168,36 @@ const NodeEditModal = ({
               {t('continueNasab')}
             </button>
           )}
+        </div>
+
+        {/* SHOW LINEAGE ONLY BUTTON - Available to all users */}
+        <div style={{ marginBottom: '16px', textAlign: 'center' }}>
+          <button
+            onClick={() => onShowLineageOnly && onShowLineageOnly(person.id)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '10px 20px',
+              background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-hover, #7c3aed) 100%)',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: 'bold',
+              letterSpacing: '0.01em',
+              boxShadow: '0 2px 12px rgba(0,0,0,0.18)',
+              transition: 'all 0.18s ease',
+              width: '100%',
+              justifyContent: 'center'
+            }}
+            onMouseEnter={e => { e.currentTarget.style.opacity = '0.88'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+            onMouseLeave={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(0)'; }}
+          >
+            <span style={{ fontSize: '16px' }}>🌿</span>
+            {t('showLineageOnly') || 'Tampilkan Hanya Garis Keturunan Ini'}
+          </button>
         </div>
 
         {/* CURRENT PERSON ACTIONS - ONLY FOR ADMIN */}

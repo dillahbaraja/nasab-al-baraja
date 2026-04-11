@@ -1339,6 +1339,142 @@ const FamilyGraph = () => {
     }
   };
 
+  const handleShowLineageOnly = useCallback((personId) => {
+    if (!personId || familyData.length === 0) return;
+
+    // Build O(1) lookup maps
+    const personMapLocal = new Map();
+    const parentToChildren = new Map();
+    familyData.forEach(p => {
+      const id = String(p.id);
+      const fid = p.fatherId ? String(p.fatherId) : null;
+      personMapLocal.set(id, { ...p, id, fatherId: fid });
+      if (fid) {
+        if (!parentToChildren.has(fid)) parentToChildren.set(fid, []);
+        parentToChildren.get(fid).push(id);
+      }
+    });
+
+    const selectedId = String(personId);
+    const visibleSet = new Set(); // node IDs yang harus EXPANDED (tampil dengan anak-anaknya)
+    const keepOpenSet = new Set(); // node IDs yang tetap dibuka (tidak di-collapse)
+
+    // 1. Traverse ke atas: kumpulkan semua ancestor langsung
+    const ancestors = []; // ordered dari parent -> root
+    let currentId = selectedId;
+    let guard = 0;
+    while (currentId && guard < 200) {
+      const p = personMapLocal.get(currentId);
+      if (!p) break;
+      keepOpenSet.add(currentId);
+      if (p.fatherId) {
+        ancestors.push({ id: currentId, parentId: p.fatherId });
+        visibleSet.add(p.fatherId); // parent harus expanded
+        keepOpenSet.add(p.fatherId);
+      }
+      currentId = p.fatherId || null;
+      guard++;
+    }
+
+    // 2. Tentukan parent & grandparent dari selected person
+    const selectedPerson = personMapLocal.get(selectedId);
+    const parentId = selectedPerson?.fatherId || null;
+    const grandParentId = parentId ? personMapLocal.get(parentId)?.fatherId || null : null;
+
+    // 3. Saudara kandung: semua anak dari parent yang sama → tampilkan (keepOpen), tapi kolapskan mereka sendiri
+    if (parentId) {
+      const siblings = parentToChildren.get(parentId) || [];
+      siblings.forEach(sibId => {
+        keepOpenSet.add(sibId); // sibling tampil
+        // Sibling di-collapse (kecuali diri sendiri = selected)
+        visibleSet.delete(sibId);
+      });
+      // pastikan parent expanded
+      visibleSet.add(parentId);
+    }
+
+    // 4. Aunts/Uncles + First Cousins (satu kakek):
+    if (grandParentId) {
+      const parentSiblings = parentToChildren.get(grandParentId) || []; // termasuk parent selected
+      parentSiblings.forEach(auntUncleId => {
+        keepOpenSet.add(auntUncleId); // aunt/uncle tampil
+        if (auntUncleId !== parentId) {
+          // ini benar-benar aunt/uncle → expand untuk tampilkan cousins
+          visibleSet.add(auntUncleId); // aunt/uncle harus expanded
+          const cousins = parentToChildren.get(auntUncleId) || [];
+          cousins.forEach(cousinId => {
+            keepOpenSet.add(cousinId); // cousin tampil
+            // cousin di-collapse (kecuali selected)
+          });
+        }
+      });
+      // pastikan grandparent expanded
+      visibleSet.add(grandParentId);
+    }
+
+    // 5. Selected person selalu tetap open (keturunannya tidak di-collapse)
+    keepOpenSet.add(selectedId);
+
+    // 6. Bangun collapsed state baru:
+    // - Semua node yang ADA di familyData yang tidak di keepOpenSet → collapsed
+    // - Semua node ancestors yang di visibleSet → tidak collapsed
+    // - Selected person dan anak-anaknya → tidak di-touch (biarkan state lama)
+    const gatherDescendants = (rootId) => {
+      const result = new Set();
+      const stack = [rootId];
+      let g = 0;
+      while (stack.length > 0 && g < 10000) {
+        const id = stack.pop();
+        result.add(id);
+        const children = parentToChildren.get(id) || [];
+        children.forEach(c => stack.push(c));
+        g++;
+      }
+      return result;
+    };
+
+    // Keturunan selected person: jangan disentuh sama sekali (biarkan state lama mereka)
+    const selectedDescendants = gatherDescendants(selectedId);
+
+    setCollapsedStateById(prev => {
+      const next = { ...prev };
+
+      familyData.forEach(p => {
+        const id = String(p.id);
+
+        // Jangan sentuh keturunan selected person (termasuk selected itu sendiri)
+        if (selectedDescendants.has(id)) return;
+
+        if (keepOpenSet.has(id)) {
+          // Node ini harus tampil
+          if (visibleSet.has(id)) {
+            // Harus di-expand (agar anaknya muncul)
+            next[id] = false;
+          } else {
+            // Tampil tapi di-collapse (sibling, cousin)
+            next[id] = true;
+          }
+        } else {
+          // Di luar lineage → kolaps
+          next[id] = true;
+        }
+      });
+
+      localStorage.setItem('rf-collapsed-state', JSON.stringify(next));
+      return next;
+    });
+
+    // Aktifkan garis biru ancestor path + select node (sama seperti klik node biasa)
+    setAncestorPath(calculateAncestorPath(selectedId));
+    setNodes(nds => nds.map(n => ({ ...n, selected: n.id === selectedId })));
+
+    // Tutup modal, lalu fitView agar seluruh lineage terlihat centered
+    setIsModalOpen(false);
+    setTimeout(() => {
+      fitView({ duration: 700, padding: 0.18 });
+    }, 300);
+  }, [familyData, fitView, calculateAncestorPath]);
+
   const handleViewNotice = (notice) => {
     handleViewPerson(notice.targetId);
   };
@@ -1461,6 +1597,7 @@ const FamilyGraph = () => {
         onUpdateChild={handleUpdateChild}
         onRemoveChild={handleRemoveChild}
         onViewPerson={handleViewPerson}
+        onShowLineageOnly={handleShowLineageOnly}
         lang={lang}
         t={t}
         currentUser={currentUser}

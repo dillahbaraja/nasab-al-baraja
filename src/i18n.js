@@ -56,5 +56,8 @@ export const translations = {
   cameraEnabled: { id: "Animasi Kamera", en: "Camera Movement", ar: "حركة الكاميرا" },
   expandEnabled: { id: "Animasi Transisi Shajarah", en: "Tree Transitions", ar: "حركات الشجرة" },
   glowEnabled: { id: "Efek Cahaya (Glow)", en: "Glow Effects", ar: "تأثيرات التوهج" },
-  allAnimations: { id: "Aktifkan Semua Animasi", en: "Enable All Animations", ar: "تفعيل جميع الحركات" }
+  allAnimations: { id: "Aktifkan Semua Animasi", en: "Enable All Animations", ar: "تفعيل جميع الحركات" },
+  showLineageOnly: { id: "Tampilkan Hanya Garis Keturunan Ini", en: "Show Only This Lineage", ar: "عرض هذا النسب فقط" },
+  goToRightmost: { id: "Pergi ke node paling kanan", en: "Go to rightmost node", ar: "الانتقال إلى العقدة الأقصى يمينًا" },
+  goToLeftmost: { id: "Pergi ke node paling kiri", en: "Go to leftmost node", ar: "الانتقال إلى العقدة الأقصى يسارًا" }
 };
