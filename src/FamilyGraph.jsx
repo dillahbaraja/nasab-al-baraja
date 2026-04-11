@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   ReactFlow,
   Controls,
@@ -8,7 +8,7 @@ import {
   useReactFlow
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Search, Palette, Database, Bell, ListTree } from 'lucide-react';
+import { Search, Palette, Database, Bell, ListTree, ArrowRight, ArrowLeft } from 'lucide-react';
 import FamilyNode from './FamilyNode';
 import { initialFamilyData, generateEdges } from './data';
 import { getLayoutedElements, createNodesFromData } from './layout';
@@ -62,6 +62,15 @@ const TimeoutWarning = () => {
   );
 };
 
+// Module-level helpers — no state/props dependencies, defined once
+const normalizeArabic = (text) => {
+  return text.normalize("NFD").replace(/[\u064B-\u065F\u0670]/g, "").replace(/[\u0623\u0625\u0622]/g, "\u0627").replace(/\u0629/g, "\u0647").replace(/\u064A$/g, "\u0649").toLowerCase();
+};
+
+const cleanText = (text) => {
+  return text.replace(/\b(bin|ben|binti)\b/gi, '').replace(/\u0628\u0646/g, '').replace(/\s+/g, '').trim();
+};
+
 const FamilyGraph = () => {
   const [theme, setTheme] = useState(() => localStorage.getItem('rf-theme') || 'light');
   const [lang, setLang] = useState(() => localStorage.getItem('rf-lang') || 'ar');
@@ -86,14 +95,49 @@ const FamilyGraph = () => {
   const glowTimeoutRef = useRef(null);
   const lastGlowNodeIdRef = useRef(null);
   const prevVisibleSetRef = useRef(new Set());
+  const expandClickCountRef = useRef(0);
+  const expandClickTimerRef = useRef(null);
+  const hasInitialFocusedRef = useRef(false); // tracks first-load root focus
+  const [expandClickCount, setExpandClickCount] = useState(0);
+  const [navDirection, setNavDirection] = useState('right'); // 'right' = next click goes to rightmost
 
-  const t = (key) => translations[key]?.[lang] || translations[key]?.['en'] || key;
+  const t = useCallback((key) => translations[key]?.[lang] || translations[key]?.['en'] || key, [lang]);
+
+  // Memoized O(1) person lookup map — replaces O(N) familyData.find() calls
+  const personMap = useMemo(() => {
+    const map = new Map();
+    familyData.forEach(p => map.set(String(p.id), p));
+    return map;
+  }, [familyData]);
+
+  // Pre-built search index — computed once on data load, not on every search keystroke
+  const searchIndex = useMemo(() => {
+    return familyData.map(person => {
+      let current = person;
+      let lineageLatinArr = [];
+      let lineageArabArr = [];
+      let limit = 0;
+      while (current && limit < 10) {
+        lineageLatinArr.push((current.englishName || '').toLowerCase());
+        lineageArabArr.push(normalizeArabic(current.arabicName || ''));
+        current = personMap.get(String(current.fatherId));
+        limit++;
+      }
+      return {
+        id: person.id,
+        lineageLatin: cleanText(lineageLatinArr.join('')),
+        lineageArab: cleanText(lineageArabArr.join('')),
+        info: (person.info || '').toLowerCase()
+      };
+    });
+  }, [personMap]); // personMap already depends on familyData
 
   const [selectedPerson, setSelectedPerson] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [lastSearchQuery, setLastSearchQuery] = useState('');
   const [currentSearchIndex, setCurrentSearchIndex] = useState(0);
+  const searchIndexRef = useRef(0); // #6: mirror ref to avoid stale closure in handleSearch
   const [searchSuggestions, setSearchSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -160,10 +204,10 @@ const FamilyGraph = () => {
     const nodeIds = new Set([nodeId]);
     const edgeIds = new Set();
     let currentId = nodeId;
-    let iterations = 0; // Guard against potential infinite loops in data
+    let iterations = 0;
     
     while (currentId && iterations < 100) {
-      const person = familyData.find(p => p.id === currentId);
+      const person = personMap.get(currentId); // O(1) lookup instead of O(N) find()
       if (person && person.fatherId) {
         const fatherId = String(person.fatherId);
         nodeIds.add(fatherId);
@@ -175,7 +219,7 @@ const FamilyGraph = () => {
       iterations++;
     }
     return { nodeIds, edgeIds };
-  }, [familyData]);
+  }, [personMap]);
 
   // Apply Theme Toggle
   useEffect(() => {
@@ -230,7 +274,7 @@ const FamilyGraph = () => {
 
     const unsubFamily = onSnapshot(collection(db, 'familyNodes'), (snapshot) => {
       const dbData = snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
-      console.log("Family Data Update:", dbData.length, "nodes");
+
       setFamilyData(dbData);
       setIsLoading(false);
     }, (err) => {
@@ -241,7 +285,7 @@ const FamilyGraph = () => {
     return () => {
       unsubFamily();
     };
-  }, [db]); // Only on mount/db change
+  }, []); // db is a stable module constant, no need to re-subscribe
 
   // 2. Notices Listener (Pure data sync)
   useEffect(() => {
@@ -272,16 +316,22 @@ const FamilyGraph = () => {
       unsubNotices();
       if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
     };
-  }, [db]); 
+  }, []); // db is a stable module constant, no need to re-subscribe
 
   // 3. Reactive Unread Count Calculation
   useEffect(() => {
     const unread = notices.filter(n => (n.timestamp || 0) > lastNoticeOpen).length;
-    console.log("Updating Unread Count:", unread);
+
     setUnreadCount(unread);
   }, [notices, lastNoticeOpen]);
 
 
+
+  // Stable callback for node long-press — prevents child re-renders on every layout recalc
+  const handleNodeLongPress = useCallback((nodeId, rawData) => {
+    setSelectedPerson(rawData);
+    setIsModalOpen(true);
+  }, []); // setSelectedPerson and setIsModalOpen are stable React setState functions
 
   // Update layout diagram on data change
   useEffect(() => {
@@ -299,12 +349,12 @@ const FamilyGraph = () => {
 
     try {
       // 1. Build lookup maps for O(N) performance
-      const personMap = new Map();
+      const personMapLocal = new Map();
       const parentToChildren = new Map();
       familyData.forEach(p => {
         const id = String(p.id);
         const fid = p.fatherId ? String(p.fatherId) : null;
-        personMap.set(id, { ...p, id, fatherId: fid });
+        personMapLocal.set(id, { ...p, id, fatherId: fid });
         if (fid) {
           if (!parentToChildren.has(fid)) parentToChildren.set(fid, []);
           parentToChildren.get(fid).push({ ...p, id, fatherId: fid });
@@ -343,7 +393,7 @@ const FamilyGraph = () => {
 
       const finalNodes = layoutedNodes.map(n => {
         const nid = String(n.id);
-        const person = personMap.get(nid);
+        const person = personMapLocal.get(nid);
         const cpid = collapsingParentId ? String(collapsingParentId) : null;
 
         // Grouping/Collapse Animation Overlay
@@ -355,7 +405,7 @@ const FamilyGraph = () => {
               isPhantomCollapsing = true;
               break;
             }
-            curr = personMap.get(String(curr.fatherId));
+            curr = personMapLocal.get(String(curr.fatherId));
           }
 
           if (isPhantomCollapsing) {
@@ -391,8 +441,10 @@ const FamilyGraph = () => {
         const isNew = newlyVisibleIds.has(n.id);
         const isToggled = toggledNodeInfo && toggledNodeInfo.id === n.id;
         
-        // Use the person's isGlowing property we set in traverse
-        const isGlowing = n.isGlowing || (toggledNodeInfo && toggledNodeInfo.id === n.id);
+        // #7: Preserve nav glow (from triggerGlow) across layout re-renders
+        const nid2 = String(n.id);
+        const isNavGlowing = lastGlowNodeIdRef.current === nid2;
+        const isGlowing = isNavGlowing || n.isGlowing || !!(toggledNodeInfo && toggledNodeInfo.id === n.id);
 
         // Ungrouping Animation: New nodes start at the parent's position
         let initialPos = { ...n.position };
@@ -405,10 +457,7 @@ const FamilyGraph = () => {
           data: {
             ...n.data,
             isGlowing,
-            onLongPress: (nodeId, rawData) => {
-              setSelectedPerson(rawData);
-              setIsModalOpen(true);
-            }
+            onLongPress: handleNodeLongPress // Stable reference — prevents unnecessary child re-renders
           },
           position: initialPos
         };
@@ -472,7 +521,7 @@ const FamilyGraph = () => {
     } catch (err) {
       console.error("Layout Rendering Crash Prevented:", err);
     }
-  }, [familyData, collapsedStateById, isLoading]);
+  }, [familyData, collapsedStateById, isLoading, collapsingParentId, handleNodeLongPress]); // handleNodeLongPress is stable (useCallback [])
 
   // Highlight Ancestor Path
   useEffect(() => {
@@ -592,6 +641,107 @@ const FamilyGraph = () => {
     setNodes((nds) => nds.map(n => ({ ...n, selected: n.id === nodeId })));
     setAncestorPath(calculateAncestorPath(nodeId));
   }, [getViewport, setViewport, nodes, triggerGlow, calculateAncestorPath]);
+
+  // Arc navigation: zoom out → pan → zoom in (for edge navigation)
+  const handleNavEdge = useCallback((direction) => {
+    if (nodes.length === 0) return;
+
+    const target = direction === 'right'
+      ? nodes.reduce((prev, curr) => curr.position.x > prev.position.x ? curr : prev)
+      : nodes.reduce((prev, curr) => curr.position.x < prev.position.x ? curr : prev);
+
+    setNavDirection(direction === 'right' ? 'left' : 'right');
+    setNodes((nds) => nds.map(n => ({ ...n, selected: n.id === target.id })));
+    setAncestorPath(calculateAncestorPath(target.id));
+
+    if (animationRef.current) cancelAnimationFrame(animationRef.current);
+
+    const { x: startX, y: startY, zoom: startZoom } = getViewport();
+    const finalZoom = 1.0;
+    const vpW = window.innerWidth;
+    const vpH = window.innerHeight;
+
+    const endX = (vpW / 2) - (target.position.x * finalZoom);
+    const endY = (vpH / 2) - (target.position.y * finalZoom);
+    const distance = Math.hypot(endX - startX, endY - startY);
+    const isFar = distance > 400;
+
+    const ease = (p) => p < 0.5 ? 4 * p ** 3 : 1 - (-2 * p + 2) ** 3 / 2;
+
+    if (!appSettings.animationsEnabled || !appSettings.cameraEnabled || !isFar) {
+      // Direct smooth pan + zoom, no arc
+      const dur = (!appSettings.animationsEnabled || !appSettings.cameraEnabled) ? 0 : 600;
+      const dx = endX - startX;
+      const dy = endY - startY;
+      const startTime = performance.now();
+      const animateDirect = (time) => {
+        const p = Math.min((time - startTime) / (dur || 1), 1);
+        const e = ease(p);
+        setViewport({ x: startX + dx * e, y: startY + dy * e, zoom: startZoom + (finalZoom - startZoom) * e });
+        if (p < 1) animationRef.current = requestAnimationFrame(animateDirect);
+        else { animationRef.current = null; triggerGlow(target.id); }
+      };
+      animationRef.current = requestAnimationFrame(animateDirect);
+      return;
+    }
+
+    // ── True 3-Phase Arc ─────────────────────────────────────────────────────
+    // midZoom: zoom out enough to feel like flying, but nodes still visible (cap 0.35)
+    const safeStart = startZoom > 0 ? startZoom : 1;
+    const arcMidZoom = Math.min(Math.max(safeStart * 0.45, 0.13), 0.35);
+    const arcDuration = Math.min(Math.max(distance * 0.25, 900), 1600);
+
+    // Phase 1 end: same flow center as now, but at arcMidZoom
+    const flowCX = (vpW / 2 - startX) / safeStart;
+    const flowCY = (vpH / 2 - startY) / safeStart;
+    const midStartX = vpW / 2 - flowCX * arcMidZoom;
+    const midStartY = vpH / 2 - flowCY * arcMidZoom;
+
+    // Phase 2 end: target centered at arcMidZoom
+    const midEndX = vpW / 2 - target.position.x * arcMidZoom;
+    const midEndY = vpH / 2 - target.position.y * arcMidZoom;
+
+    const startTime = performance.now();
+
+    const animateArc = (time) => {
+      const raw = Math.min((time - startTime) / arcDuration, 1);
+      let curX, curY, curZoom;
+
+      if (raw <= 0.3) {
+        // Phase 1 (0–30%): zoom out, current view center stays fixed
+        const p = ease(raw / 0.3);
+        curZoom = safeStart + (arcMidZoom - safeStart) * p;
+        curX = startX + (midStartX - startX) * p;
+        curY = startY + (midStartY - startY) * p;
+
+      } else if (raw <= 0.7) {
+        // Phase 2 (30–70%): pan at arcMidZoom across the landscape
+        const p = ease((raw - 0.3) / 0.4);
+        curZoom = arcMidZoom;
+        curX = midStartX + (midEndX - midStartX) * p;
+        curY = midStartY + (midEndY - midStartY) * p;
+
+      } else {
+        // Phase 3 (70–100%): zoom in, target node locked to screen center
+        const p = ease((raw - 0.7) / 0.3);
+        curZoom = arcMidZoom + (finalZoom - arcMidZoom) * p;
+        curX = vpW / 2 - target.position.x * curZoom;
+        curY = vpH / 2 - target.position.y * curZoom;
+      }
+
+      setViewport({ x: curX, y: curY, zoom: curZoom });
+
+      if (raw < 1) {
+        animationRef.current = requestAnimationFrame(animateArc);
+      } else {
+        animationRef.current = null;
+        triggerGlow(target.id);
+      }
+    };
+
+    animationRef.current = requestAnimationFrame(animateArc);
+  }, [nodes, getViewport, setViewport, calculateAncestorPath, triggerGlow, appSettings]);
+
 
   const onNodeClick = useCallback((_, node) => {
     // Selection only, no centering (Per user request)
@@ -766,7 +916,9 @@ const FamilyGraph = () => {
     // 1. Walk up the ancestor chain to collect all ancestor IDs
     let current = familyData.find(p => p.id === targetId);
     const ancestorsToExpand = [];
-    while (current && current.fatherId) {
+    let loopGuard = 0;
+    while (current && current.fatherId && loopGuard < 100) { // #8: loop limit against circular refs
+      loopGuard++;
       ancestorsToExpand.push(String(current.fatherId));
       current = familyData.find(p => p.id === current.fatherId);
     }
@@ -810,21 +962,40 @@ const FamilyGraph = () => {
     }
   }, [nodes, pendingFocusTarget, smoothFocusNode]);
 
-  const normalizeArabic = (text) => {
-    return text.normalize("NFD").replace(/[\u064B-\u065F\u0670]/g, "").replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ي$/g, "ى").toLowerCase();
-  };
+  // Auto-focus root node on very first data load (if no saved viewport)
+  useEffect(() => {
+    if (isLoading || nodes.length === 0 || hasInitialFocusedRef.current) return;
+    if (initialViewport) {
+      // Saved viewport exists — don't override
+      hasInitialFocusedRef.current = true;
+      return;
+    }
 
-  const cleanText = (text) => {
-    return text.replace(/\b(bin|ben|binti)\b/gi, '').replace(/بن/g, '').replace(/\s+/g, '').trim();
-  };
+    // Find root person (no fatherId)
+    const rootPerson = familyData.find(p => !p.fatherId);
+    if (!rootPerson) return;
+
+    const rootNode = nodes.find(n => n.id === String(rootPerson.id));
+    const isLayoutReady = rootNode && (Math.abs(rootNode.position.x) > 1 || Math.abs(rootNode.position.y) > 1);
+    if (!isLayoutReady) return;
+
+    hasInitialFocusedRef.current = true;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        smoothFocusNode(rootNode.id, { targetZoom: 1.0, forceGlow: false });
+      });
+    });
+  }, [isLoading, nodes, familyData, initialViewport, smoothFocusNode]);
+
+
 
   const getNasabDesc = (person) => {
     let parts = [];
-    let current = familyData.find(p => p.id === person.fatherId);
+    let current = personMap.get(String(person.fatherId)); // O(1) vs O(N) find()
     let count = 0;
     while(current && count < 2) {
       parts.push(lang === 'ar' ? current.arabicName : current.englishName);
-      current = familyData.find(p => p.id === current.fatherId);
+      current = personMap.get(String(current.fatherId));
       count++;
     }
     if (parts.length === 0) return '';
@@ -847,8 +1018,10 @@ const FamilyGraph = () => {
       const suggestions = familyData.filter(person => {
         const latinRaw = person.englishName || '';
         const arabRaw = person.arabicName || '';
+        const infoRaw = person.info || '';
         return cleanText(latinRaw.toLowerCase()).includes(queryLatin) || 
-               cleanText(normalizeArabic(arabRaw)).includes(queryArab);
+               cleanText(normalizeArabic(arabRaw)).includes(queryArab) ||
+               infoRaw.toLowerCase().includes(val.toLowerCase());
       });
       setSearchSuggestions(suggestions.slice(0, 10)); // Limit 10
       setShowSuggestions(true);
@@ -875,37 +1048,25 @@ const FamilyGraph = () => {
     setShowSuggestions(false);
     
     const isSameQuery = searchQuery === lastSearchQuery;
-    let matches = [];
-
     const queryLatinClean = cleanText(searchQuery.toLowerCase());
     const queryArabClean = cleanText(normalizeArabic(searchQuery));
+    const queryLower = searchQuery.toLowerCase();
 
-    for (const person of familyData) {
-      let current = person;
-      let lineageLatinArr = [];
-      let lineageArabArr = [];
-      let limit = 0;
-      while (current && limit < 10) {
-        lineageLatinArr.push(current.englishName.toLowerCase());
-        lineageArabArr.push(normalizeArabic(current.arabicName || ''));
-        current = familyData.find(p => p.id === current.fatherId);
-        limit++;
-      }
-      const fullLineageLatin = cleanText(lineageLatinArr.join(''));
-      const fullLineageArab = cleanText(lineageArabArr.join(''));
-
-      if ((queryLatinClean.length > 0 && fullLineageLatin.startsWith(queryLatinClean)) ||
-        (queryArabClean.length > 0 && fullLineageArab.startsWith(queryArabClean))) {
-        matches.push(person.id);
-      }
-    }
+    // Use pre-built searchIndex — O(N) instead of O(N×depth) per search
+    const matches = searchIndex
+      .filter(entry =>
+        entry.info.includes(queryLower) ||
+        (queryLatinClean.length > 0 && entry.lineageLatin.startsWith(queryLatinClean)) ||
+        (queryArabClean.length > 0 && entry.lineageArab.startsWith(queryArabClean))
+      )
+      .map(entry => entry.id);
 
     if (matches.length > 0) {
       let nextIndex = 0;
       if (isSameQuery) {
-        nextIndex = (currentSearchIndex + 1) % matches.length;
+        nextIndex = (searchIndexRef.current + 1) % matches.length;
       }
-      
+      searchIndexRef.current = nextIndex;
       const matchId = matches[nextIndex];
       setCurrentSearchIndex(nextIndex);
       setLastSearchQuery(searchQuery);
@@ -1095,6 +1256,38 @@ const FamilyGraph = () => {
   };
 
   const handleExpandAll = useCallback(() => {
+    // --- Triple-click detection (3 clicks within 2 seconds = Expand All deep) ---
+    expandClickCountRef.current += 1;
+    const newCount = expandClickCountRef.current;
+    setExpandClickCount(newCount);
+
+    // Reset timer on every click
+    if (expandClickTimerRef.current) clearTimeout(expandClickTimerRef.current);
+
+    if (newCount >= 3) {
+      // TRIPLE CLICK: Expand every single node in the tree
+      expandClickCountRef.current = 0;
+      setExpandClickCount(0);
+
+      setCollapsedStateById(prev => {
+        const next = { ...prev };
+        Object.keys(next).forEach(id => { next[id] = false; });
+        localStorage.setItem('rf-collapsed-state', JSON.stringify(next));
+        return next;
+      });
+
+      // Fit view after a brief delay to let layout settle
+      setTimeout(() => fitView({ duration: 800, padding: 0.15 }), 200);
+      return;
+    }
+
+    // Schedule reset if no 3rd click arrives within 2 seconds
+    expandClickTimerRef.current = setTimeout(() => {
+      expandClickCountRef.current = 0;
+      setExpandClickCount(0);
+    }, 2000);
+
+    // SINGLE / DOUBLE CLICK: Expand only visible nodes
     const { x, y, zoom } = getViewport();
     
     // Calculate viewport bounds in flow coordinates
@@ -1127,7 +1320,7 @@ const FamilyGraph = () => {
       localStorage.setItem('rf-collapsed-state', JSON.stringify(next));
       return next;
     });
-  }, [getViewport, nodes, collapsedStateById]);
+  }, [getViewport, nodes, collapsedStateById, fitView]);
 
   const handleViewPerson = (personId) => {
     setActiveInfoModal(null);
@@ -1317,10 +1510,31 @@ const FamilyGraph = () => {
               <button 
                 className="react-flow__controls-button" 
                 onClick={handleExpandAll} 
-                title={t('expandAll')}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                title={expandClickCount === 0 ? t('expandAll') : expandClickCount === 1 ? '2 more clicks = Expand All' : '1 more click = Expand All!'}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}
               >
                 <ListTree size={14} />
+                {expandClickCount > 0 && (
+                  <span style={{
+                    position: 'absolute', top: '-4px', right: '-4px',
+                    background: expandClickCount >= 2 ? 'var(--accent)' : 'var(--text-secondary)',
+                    color: '#fff', borderRadius: '50%',
+                    width: '14px', height: '14px',
+                    fontSize: '9px', fontWeight: 'bold',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    lineHeight: 1, pointerEvents: 'none'
+                  }}>
+                    {expandClickCount}
+                  </span>
+                )}
+              </button>
+              <button
+                className="react-flow__controls-button"
+                onClick={() => handleNavEdge(navDirection)}
+                title={navDirection === 'right' ? t('goToRightmost') || 'Go to rightmost node' : t('goToLeftmost') || 'Go to leftmost node'}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                {navDirection === 'right' ? <ArrowRight size={14} /> : <ArrowLeft size={14} />}
               </button>
               <button 
                 className="react-flow__controls-button" 

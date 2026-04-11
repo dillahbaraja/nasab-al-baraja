@@ -96,6 +96,22 @@ const FamilyNode = ({ id, data, selected }) => {
       <Handle type="target" position={Position.Top} />
 
       <div className="node-content" style={{ width: '100%' }}>
+        {data.info && (
+          <div className="node-info" style={{
+            fontSize: '11px',
+            color: 'var(--text-secondary)',
+            opacity: 0.75,
+            marginBottom: '6px',
+            fontStyle: 'italic',
+            lineHeight: '1.3',
+            display: '-webkit-box',
+            WebkitLineClamp: 1,
+            WebkitBoxOrient: 'vertical',
+            overflow: 'hidden'
+          }}>
+            {data.info}
+          </div>
+        )}
         <div className="node-name-arab" style={{
           fontSize: arabFontSize,
           fontWeight: 'bold',
@@ -106,7 +122,15 @@ const FamilyNode = ({ id, data, selected }) => {
           {data.arabicName}
         </div>
         {data.englishName && (
-          <div className="node-name-latin" style={{ fontSize: '14px', color: 'var(--text-secondary)', marginTop: '12px' }}>
+          <div className="node-name-latin" style={{
+            fontSize: '14px',
+            color: 'var(--text-secondary)',
+            marginTop: '12px',
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
+            overflow: 'hidden'
+          }}>
             {data.englishName}
           </div>
         )}

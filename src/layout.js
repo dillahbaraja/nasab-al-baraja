@@ -1,7 +1,7 @@
-const nodeWidth = 280;
-const nodeHeight = 120;
-const gapX = 40;  // Jarak horisontal antar node
-const gapY = 120; // Jarak vertikal antar generasi
+const nodeWidth = 240;
+const nodeHeight = 200;
+const gapX = 20;  // Jarak horisontal antar node
+const gapY = 90;  // Jarak vertikal antar generasi
 
 export const getLayoutedElements = (nodes, edges, direction = 'TB') => {
   const childrenMap = {};
@@ -43,23 +43,31 @@ export const getLayoutedElements = (nodes, edges, direction = 'TB') => {
   const calculatePositions = (id, xLeft, yTop) => {
     if (!childrenMap[id]) return; // Safety
     const width = subtreeWidth[id];
-    const centerX = xLeft + width / 2;
-    
+    const children = childrenMap[id];
+
+    if (!children || children.length === 0) {
+      // Leaf node: center within its allocated width slot
+      positions[id] = { x: xLeft + width / 2, y: yTop };
+      return;
+    }
+
+    // 1. Place all children first (subtree widths guarantee no overlap)
+    let childrenSumWidth = children.reduce((sum, cid) => sum + (subtreeWidth[cid] || 0), 0);
+    let currentX = xLeft + (width - childrenSumWidth) / 2;
+
+    children.forEach(childId => {
+      calculatePositions(childId, currentX, yTop + nodeHeight + gapY);
+      currentX += (subtreeWidth[childId] || 0);
+    });
+
+    // 2. Parent sits at midpoint of first & last immediate child
+    //    → balanced even when siblings have very different subtree sizes
+    const firstChildX = positions[children[0]]?.x ?? (xLeft + width / 2);
+    const lastChildX  = positions[children[children.length - 1]]?.x ?? firstChildX;
     positions[id] = {
-      x: centerX, // Now represents absolute center since node origin is [0.5, 0]
+      x: (firstChildX + lastChildX) / 2,
       y: yTop
     };
-
-    const children = childrenMap[id];
-    if (children && children.length > 0) {
-      let childrenSumWidth = children.reduce((sum, cid) => sum + (subtreeWidth[cid] || 0), 0);
-      let currentX = xLeft + (width - childrenSumWidth) / 2;
-      
-      children.forEach(childId => {
-        calculatePositions(childId, currentX, yTop + nodeHeight + gapY);
-        currentX += (subtreeWidth[childId] || 0);
-      });
-    }
   };
 
   let rootX = 0;
@@ -68,13 +76,11 @@ export const getLayoutedElements = (nodes, edges, direction = 'TB') => {
     rootX += subtreeWidth[r];
   });
 
-  nodes.forEach(n => {
-    if (positions[n.id]) {
-      n.position = positions[n.id];
-    }
-  });
+  const layoutedNodes = nodes.map(n =>
+    positions[n.id] ? { ...n, position: positions[n.id] } : n
+  );
 
-  return { nodes, edges };
+  return { nodes: layoutedNodes, edges };
 };
 
 export const createNodesFromData = (dataList) => {
