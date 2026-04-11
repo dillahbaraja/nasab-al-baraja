@@ -68,7 +68,7 @@ const FamilyGraph = () => {
   const [familyData, setFamilyData] = useState([]);
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
-  const { setCenter, fitView, setViewport, getViewport } = useReactFlow();
+  const { setCenter, fitView, setViewport, getViewport, updateNodeData } = useReactFlow();
   const animationRef = useRef(null);
   const [collapsedStateById, setCollapsedStateById] = useState(() => {
     try {
@@ -84,6 +84,7 @@ const FamilyGraph = () => {
   }, [collapsedStateById]);
 
   const glowTimeoutRef = useRef(null);
+  const lastGlowNodeIdRef = useRef(null);
   const prevVisibleSetRef = useRef(new Set());
 
   const t = (key) => translations[key]?.[lang] || translations[key]?.['en'] || key;
@@ -138,23 +139,21 @@ const FamilyGraph = () => {
     if (!appSettings.glowEnabled) return;
     if (glowTimeoutRef.current) clearTimeout(glowTimeoutRef.current);
 
-    setNodes((nds) => nds.map(n => {
-      if (n.id === nodeId) {
-        return { ...n, data: { ...n.data, isGlowing: true } };
-      }
-      return { ...n, data: { ...n.data, isGlowing: false } }; // Ensure only one glows
-    }));
+    // Turn off previous glow if it exists
+    if (lastGlowNodeIdRef.current && lastGlowNodeIdRef.current !== nodeId) {
+      updateNodeData(lastGlowNodeIdRef.current, { isGlowing: false });
+    }
+
+    // Turn on current glow
+    updateNodeData(nodeId, { isGlowing: true });
+    lastGlowNodeIdRef.current = nodeId;
     
     glowTimeoutRef.current = setTimeout(() => {
-      setNodes((nds) => nds.map(n => {
-        if (n.id === nodeId) {
-          return { ...n, data: { ...n.data, isGlowing: false } };
-        }
-        return n;
-      }));
+      updateNodeData(nodeId, { isGlowing: false });
+      lastGlowNodeIdRef.current = null;
       glowTimeoutRef.current = null;
     }, 1200);
-  }, [appSettings.glowEnabled]);
+  }, [appSettings.glowEnabled, updateNodeData]);
 
   const calculateAncestorPath = useCallback((nodeId) => {
     if (!nodeId) return { nodeIds: new Set(), edgeIds: new Set() };
