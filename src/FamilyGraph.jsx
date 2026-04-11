@@ -68,7 +68,7 @@ const FamilyGraph = () => {
   const [familyData, setFamilyData] = useState([]);
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
-  const { setCenter, fitView, setViewport, getViewport, updateNodeData } = useReactFlow();
+  const { setCenter, fitView, setViewport, getViewport, updateNodeData, zoomIn } = useReactFlow();
   const animationRef = useRef(null);
   const [collapsedStateById, setCollapsedStateById] = useState(() => {
     try {
@@ -689,6 +689,13 @@ const FamilyGraph = () => {
     }
   }, [collapsedStateById, familyData, getViewport]);
 
+  const onPaneDoubleClick = useCallback((e) => {
+    // Only zoom if clicking directly on pane/background — not on a node
+    const isOnPane = !e.target.closest('.react-flow__node') && !e.target.closest('.react-flow__controls');
+    if (!isOnPane) return;
+    zoomIn({ duration: 300 });
+  }, [zoomIn]);
+
   const onPaneClick = useCallback(() => {
     setSelectedPerson(null);
     setAncestorPath({ nodeIds: new Set(), edgeIds: new Set() });
@@ -756,38 +763,48 @@ const FamilyGraph = () => {
 
 
   const ensurePathVisible = useCallback((targetId) => {
+    // 1. Walk up the ancestor chain to collect all ancestor IDs
     let current = familyData.find(p => p.id === targetId);
-    const toExpand = [];
+    const ancestorsToExpand = [];
     while (current && current.fatherId) {
-      toExpand.push(current.fatherId);
+      ancestorsToExpand.push(String(current.fatherId));
       current = familyData.find(p => p.id === current.fatherId);
     }
-    
-    if (toExpand.length === 0) return false;
 
-    let changed = false;
+    if (ancestorsToExpand.length === 0) return false;
+
+    // 2. Check synchronously (against current state snapshot) whether any are collapsed
+    //    This avoids the async setState stale-closure bug where `changed` was always false.
+    const anyCollapsed = ancestorsToExpand.some(id => !!collapsedStateById[id]);
+    
+    if (!anyCollapsed) return false;
+
+    // 3. Expand all collapsed ancestors
     setCollapsedStateById(prev => {
       const next = { ...prev };
-      toExpand.forEach(id => {
-        if (next[id]) {
-          next[id] = false;
-          changed = true;
-        }
+      ancestorsToExpand.forEach(id => {
+        if (next[id]) next[id] = false;
       });
-      return changed ? next : prev;
+      return next;
     });
-    return changed;
-  }, [familyData]);
+
+    return true;
+  }, [familyData, collapsedStateById]);
 
   // Auto-focus when pending target becomes visible in nodes array
   useEffect(() => {
     if (pendingFocusTarget) {
       const targetNode = nodes.find(n => n.id === pendingFocusTarget.id);
-      if (targetNode) {
-        // Extra frame buffer to ensure layout settlement
+      // Verify node exists AND has a meaningful computed position (not a default 0,0 before layout)
+      const isLayoutReady = targetNode && (Math.abs(targetNode.position.x) > 1 || Math.abs(targetNode.position.y) > 1);
+
+      if (isLayoutReady) {
+        // Double rAF: first frame = DOM update done, second frame = layout/paint fully settled
         requestAnimationFrame(() => {
-          smoothFocusNode(pendingFocusTarget.id, pendingFocusTarget.options);
-          setPendingFocusTarget(null);
+          requestAnimationFrame(() => {
+            smoothFocusNode(pendingFocusTarget.id, pendingFocusTarget.options);
+            setPendingFocusTarget(null);
+          });
         });
       }
     }
@@ -1259,7 +1276,7 @@ const FamilyGraph = () => {
       {/* Only show standalone search for Android (since it's in the header for Web) */}
       {Capacitor.getPlatform() === 'android' && renderSearchForm()}
 
-      <div className={`graph-workspace ${Capacitor.getPlatform()}`} style={{ width: '100%', height: '100%' }}>
+      <div className={`graph-workspace ${Capacitor.getPlatform()}`} style={{ width: '100%', height: '100%' }} onDoubleClick={onPaneDoubleClick}>
         {isLoading ? (
           <div style={{display:'flex', flexDirection: 'column', height:'100%', width:'100%', alignItems:'center', justifyContent:'center', gap: '16px'}}>
              <div>{t('loading')}</div>
@@ -1273,6 +1290,7 @@ const FamilyGraph = () => {
             onEdgesChange={onEdgesChange}
             onMoveEnd={handleMoveEnd}
             onPaneClick={onPaneClick}
+            onPaneDoubleClick={onPaneDoubleClick}
             onNodeClick={onNodeClick}
             onNodeDoubleClick={onNodeDoubleClick}
             zoomOnDoubleClick={false}
