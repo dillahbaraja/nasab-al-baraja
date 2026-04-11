@@ -50,5 +50,11 @@ export const translations = {
   updateSuccess: { id: "Data berhasil diperbarui!", en: "Data updated successfully!", ar: "تم تحديث البيانات بنجاح!" },
   passwordsDontMatch: { id: "Password tidak cocok!", en: "Passwords don't match!", ar: "كلمات المرور غير متطابقة!" },
   totalNodes: { id: "Jumlah Orang", en: "Total Persons", ar: "عدد الأشخاص" },
-  expandAll: { id: "Buka Semua", en: "Expand All", ar: "توسيع الكل" }
+  expandAll: { id: "Buka Semua", en: "Expand All", ar: "توسيع الكل" },
+  settings: { id: "Pengaturan", en: "Settings", ar: "الإعدادات" },
+  animations: { id: "Efek Animasi", en: "Animation Effects", ar: "تأثيرات الحركة" },
+  cameraEnabled: { id: "Animasi Kamera", en: "Camera Movement", ar: "حركة الكاميرا" },
+  expandEnabled: { id: "Animasi Transisi Shajarah", en: "Tree Transitions", ar: "حركات الشجرة" },
+  glowEnabled: { id: "Efek Cahaya (Glow)", en: "Glow Effects", ar: "تأثيرات التوهج" },
+  allAnimations: { id: "Aktifkan Semua Animasi", en: "Enable All Animations", ar: "تفعيل جميع الحركات" }
 };

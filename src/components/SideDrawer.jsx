@@ -1,4 +1,4 @@
-import { X, User, Bell, Info, Shield, Key, LogOut } from 'lucide-react';
+import { X, User, Bell, Info, Shield, Key, LogOut, Settings } from 'lucide-react';
 
 const SideDrawer = ({ isOpen, onClose, onMenuClick, t, lang, currentUser, unreadCount = 0 }) => {
   return (
@@ -19,6 +19,11 @@ const SideDrawer = ({ isOpen, onClose, onMenuClick, t, lang, currentUser, unread
         </div>
 
         <nav className="drawer-menu">
+          <div className="drawer-item" onClick={() => { onMenuClick('Settings'); onClose(); }}>
+            <Settings size={20} />
+            <span>{t('settings')}</span>
+          </div>
+
           {!currentUser ? (
             <>
               <div className="drawer-item" onClick={() => { onMenuClick('Sign In'); onClose(); }}>

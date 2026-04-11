@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Shield, Info, Bell, UserPlus, Edit, Trash2, Key, MapPin, Phone, Mail, User } from 'lucide-react';
+import { X, Shield, Info, Bell, UserPlus, Edit, Trash2, Key, MapPin, Phone, Mail, User, Settings } from 'lucide-react';
 
 const InfoModal = ({ 
   isOpen, 
@@ -13,7 +13,9 @@ const InfoModal = ({
   currentUser,
   notices = [],
   onViewNotice,
-  onDeleteNotice
+  onDeleteNotice,
+  appSettings,
+  setAppSettings
 }) => {
   const [formData, setFormData] = useState({
     email: '',
@@ -164,6 +166,61 @@ const InfoModal = ({
               </div>
               <button type="submit" className="login-button" style={{ marginTop: '10px' }}>{t('save')}</button>
             </form>
+          </div>
+        );
+      case 'settings':
+        const SettingRow = ({ label, value, onChange, disabled }) => (
+          <div className={`setting-row ${disabled ? 'disabled' : ''}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid var(--panel-border)' }}>
+            <span style={{ fontSize: '14px', fontWeight: '500' }}>{label}</span>
+            <label className="switch">
+              <input 
+                type="checkbox" 
+                checked={value} 
+                onChange={(e) => onChange(e.target.checked)} 
+                disabled={disabled}
+              />
+              <span className="slider round"></span>
+            </label>
+          </div>
+        );
+
+        return (
+          <div className="info-modal-body" style={{ padding: '0 8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
+              <Settings size={48} color="var(--accent)" />
+            </div>
+            <div className="settings-container">
+              <div style={{ marginBottom: '16px' }}>
+                <h3 style={{ fontSize: '12px', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em', marginBottom: '8px' }}>
+                  {t('animations')}
+                </h3>
+                <div className="glass-panel" style={{ padding: '0 16px' }}>
+                  <SettingRow 
+                    label={t('allAnimations')} 
+                    value={appSettings.animationsEnabled} 
+                    onChange={(val) => setAppSettings(prev => ({ ...prev, animationsEnabled: val }))} 
+                  />
+                  <SettingRow 
+                    label={t('cameraEnabled')} 
+                    value={appSettings.cameraEnabled} 
+                    onChange={(val) => setAppSettings(prev => ({ ...prev, cameraEnabled: val }))}
+                    disabled={!appSettings.animationsEnabled}
+                  />
+                  <SettingRow 
+                    label={t('expandEnabled')} 
+                    value={appSettings.expandEnabled} 
+                    onChange={(val) => setAppSettings(prev => ({ ...prev, expandEnabled: val }))}
+                    disabled={!appSettings.animationsEnabled}
+                  />
+                  <SettingRow 
+                    label={t('glowEnabled')} 
+                    value={appSettings.glowEnabled} 
+                    onChange={(val) => setAppSettings(prev => ({ ...prev, glowEnabled: val }))}
+                    disabled={!appSettings.animationsEnabled}
+                  />
+                </div>
+              </div>
+            </div>
           </div>
         );
       default:

@@ -108,9 +108,34 @@ const FamilyGraph = () => {
   const [ancestorPath, setAncestorPath] = useState({ nodeIds: new Set(), edgeIds: new Set() });
   
   // Info Modals State
-  const [activeInfoModal, setActiveInfoModal] = useState(null); // 'signin', 'about', 'notice', 'adminManager', 'adminForm', 'changePassword'
+  const [activeInfoModal, setActiveInfoModal] = useState(null); // 'signin', 'about', 'notice', 'adminManager', 'adminForm', 'changePassword', 'settings'
+
+  const [appSettings, setAppSettings] = useState(() => {
+    try {
+      const saved = localStorage.getItem('rf-app-settings');
+      return saved ? JSON.parse(saved) : {
+        animationsEnabled: true,
+        cameraEnabled: true,
+        expandEnabled: true,
+        glowEnabled: true
+      };
+    } catch (e) {
+      return {
+        animationsEnabled: true,
+        cameraEnabled: true,
+        expandEnabled: true,
+        glowEnabled: true
+      };
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('rf-app-settings', JSON.stringify(appSettings));
+  }, [appSettings]);
+
 
   const triggerGlow = useCallback((nodeId) => {
+    if (!appSettings.glowEnabled) return;
     if (glowTimeoutRef.current) clearTimeout(glowTimeoutRef.current);
 
     setNodes((nds) => nds.map(n => {
@@ -129,7 +154,7 @@ const FamilyGraph = () => {
       }));
       glowTimeoutRef.current = null;
     }, 1200);
-  }, []);
+  }, [appSettings.glowEnabled]);
 
   const calculateAncestorPath = useCallback((nodeId) => {
     if (!nodeId) return { nodeIds: new Set(), edgeIds: new Set() };
@@ -403,7 +428,8 @@ const FamilyGraph = () => {
           const nextY = lastViewport.y + (lastPos.y - currentPos.y) * lastViewport.zoom;
           
           // Instant adjustments to prevent visual jumps
-          setViewport({ x: nextX, y: nextY, zoom: lastViewport.zoom }, { duration: 0 });
+          const isInstant = !appSettings.animationsEnabled || !appSettings.expandEnabled;
+          setViewport({ x: nextX, y: nextY, zoom: lastViewport.zoom }, { duration: isInstant ? 0 : 400 });
         }
         
         if (!toggledNodeInfo.isPersistent) {
@@ -523,6 +549,11 @@ const FamilyGraph = () => {
     
     // Adaptive Duration: clamp(distance * factor, 280ms, 700ms)
     let duration = customDuration || Math.min(Math.max(distance * 0.45, 280), 700);
+    
+    // Check Settings
+    if (!appSettings.animationsEnabled || !appSettings.cameraEnabled) {
+      duration = 0;
+    }
     
     // Fast snap for local movements with same zoom
     if (!customDuration && Math.abs(currentZoom - finalZoom) < 0.01 && distance < 1500) {
@@ -1030,6 +1061,7 @@ const FamilyGraph = () => {
   };
 
   const handleMenuClick = (item) => {
+    if (item === 'Settings') setActiveInfoModal('settings');
     if (item === 'Sign In') setActiveInfoModal('signin');
     if (item === 'About') setActiveInfoModal('about');
 
@@ -1146,7 +1178,7 @@ const FamilyGraph = () => {
   };
 
   return (
-    <>
+    <div className={`app-root-container ${!appSettings.animationsEnabled ? 'no-animations' : ''}`}>
       <MobileHeader 
         title={t('appName') || "Nasab Al-Baraja"} 
         onMenuClick={handleMenuClick}
@@ -1170,7 +1202,7 @@ const FamilyGraph = () => {
         isOpen={!!activeInfoModal} 
         onClose={() => setActiveInfoModal(null)} 
         type={activeInfoModal}
-        title={t(activeInfoModal === 'signin' ? 'signIn' : activeInfoModal === 'about' ? 'about' : activeInfoModal === 'notice' ? 'notice' : 'changePassword')}
+        title={t(activeInfoModal === 'signin' ? 'signIn' : activeInfoModal === 'about' ? 'about' : activeInfoModal === 'notice' ? 'notice' : activeInfoModal === 'changePassword' ? 'changePassword' : 'settings')}
         t={t}
         lang={lang}
         onSignIn={handleSignIn}
@@ -1180,6 +1212,8 @@ const FamilyGraph = () => {
         notices={notices}
         onViewNotice={handleViewNotice}
         onDeleteNotice={handleDeleteNotice}
+        appSettings={appSettings}
+        setAppSettings={setAppSettings}
       />
 
       {/* Toast Notification */}
@@ -1291,7 +1325,7 @@ const FamilyGraph = () => {
           </ReactFlow>
         )}
       </div>
-    </>
+    </div>
   );
 };
 
