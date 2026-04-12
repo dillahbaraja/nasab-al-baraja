@@ -990,3 +990,18 @@ input:checked + .slider:before {
 .slider.round:before {
   border-radius: 50%;
 }
+
+/* Dynamic Low Graphics Mode for Zoom Out Performance */
+body.low-graphics-mode .family-node {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: var(--node-bg) !important;
+}
+
+body.low-graphics-mode .family-node.has-collapsed-lineage::before,
+body.low-graphics-mode .family-node.has-collapsed-lineage::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+  background: var(--node-bg) !important;
+}

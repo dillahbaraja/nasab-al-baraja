@@ -5,7 +5,8 @@ import {
   Background,
   applyNodeChanges,
   applyEdgeChanges,
-  useReactFlow
+  useReactFlow,
+  useOnViewportChange
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Search, Palette, Database, Bell, ListTree, ArrowRight, ArrowLeft, Maximize } from 'lucide-react';
@@ -78,6 +79,21 @@ const FamilyGraph = () => {
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
   const { setCenter, fitView, setViewport, getViewport, updateNodeData, zoomIn, getNode } = useReactFlow();
+  
+  useOnViewportChange({
+    onChange: (viewport) => {
+      if (viewport.zoom < 0.55) {
+        if (!document.body.classList.contains('low-graphics-mode')) {
+          document.body.classList.add('low-graphics-mode');
+        }
+      } else {
+        if (document.body.classList.contains('low-graphics-mode')) {
+          document.body.classList.remove('low-graphics-mode');
+        }
+      }
+    }
+  });
+
   const animationRef = useRef(null);
   const [collapsedStateById, setCollapsedStateById] = useState(() => {
     try {

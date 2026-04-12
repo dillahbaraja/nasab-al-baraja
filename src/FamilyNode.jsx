@@ -103,7 +103,6 @@ const FamilyNode = ({ id, data, selected }) => {
             opacity: 0.75,
             marginBottom: '6px',
             fontStyle: 'italic',
-            lineHeight: '1.3',
             lineHeight: '1.3'
           }}>
             {data.info}
@@ -120,9 +119,6 @@ const FamilyNode = ({ id, data, selected }) => {
         </div>
         {data.englishName && (
           <div className="node-name-latin" style={{
-            fontSize: '14px',
-            color: 'var(--text-secondary)',
-            marginTop: '12px',
             fontSize: '14px',
             color: 'var(--text-secondary)',
             marginTop: '12px'
