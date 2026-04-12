@@ -58,6 +58,10 @@ export const translations = {
   glowEnabled: { id: "Efek Cahaya (Glow)", en: "Glow Effects", ar: "تأثيرات التوهج" },
   allAnimations: { id: "Aktifkan Semua Animasi", en: "Enable All Animations", ar: "تفعيل جميع الحركات" },
   showLineageOnly: { id: "Tampilkan Hanya Garis Keturunan Ini", en: "Show Only This Lineage", ar: "عرض هذا النسب فقط" },
+  layoutStyle: { id: "Model Tampilan Node", en: "Node Layout Model", ar: "نموذج تخطيط العقد" },
+  layoutOriginal: { id: "Terpisah (Tanpa Tabrakan)", en: "Spaced (No Overlaps)", ar: "متباعد (بدون تداخل)" },
+  layoutTidy: { id: "Rapat & Rapi (Tidy)", en: "Compact & Clean (Tidy)", ar: "مدمج ونظيف" },
+  layoutPyramid: { id: "Piramida (Melebar)", en: "Pyramid (Wider)", ar: "هرمي (أوسع)" },
   goToRightmost: { id: "Pergi ke node paling kanan", en: "Go to rightmost node", ar: "الانتقال إلى العقدة الأقصى يمينًا" },
   goToLeftmost: { id: "Pergi ke node paling kiri", en: "Go to leftmost node", ar: "الانتقال إلى العقدة الأقصى يسارًا" }
 };

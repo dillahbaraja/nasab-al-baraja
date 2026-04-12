@@ -184,12 +184,15 @@ const InfoModal = ({
           </div>
         );
 
+
+
         return (
           <div className="info-modal-body" style={{ padding: '0 8px' }}>
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
               <Settings size={48} color="var(--accent)" />
             </div>
             <div className="settings-container">
+
               <div style={{ marginBottom: '16px' }}>
                 <h3 style={{ fontSize: '12px', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em', marginBottom: '8px' }}>
                   {t('animations')}

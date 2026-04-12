@@ -19,11 +19,6 @@ const SideDrawer = ({ isOpen, onClose, onMenuClick, t, lang, currentUser, unread
         </div>
 
         <nav className="drawer-menu">
-          <div className="drawer-item" onClick={() => { onMenuClick('Settings'); onClose(); }}>
-            <Settings size={20} />
-            <span>{t('settings')}</span>
-          </div>
-
           {!currentUser ? (
             <>
               <div className="drawer-item" onClick={() => { onMenuClick('Sign In'); onClose(); }}>
@@ -36,6 +31,10 @@ const SideDrawer = ({ isOpen, onClose, onMenuClick, t, lang, currentUser, unread
                   <span>{t('notice')}</span>
                   {unreadCount > 0 && <span className="notice-badge" style={{ marginLeft: 'auto' }}>{unreadCount}</span>}
                 </div>
+              </div>
+              <div className="drawer-item" onClick={() => { onMenuClick('Settings'); onClose(); }}>
+                <Settings size={20} />
+                <span>{t('settings')}</span>
               </div>
               <div className="drawer-item" onClick={() => { onMenuClick('About'); onClose(); }}>
                 <Info size={20} />
@@ -59,6 +58,10 @@ const SideDrawer = ({ isOpen, onClose, onMenuClick, t, lang, currentUser, unread
                   <span>{t('notice')}</span>
                   {unreadCount > 0 && <span className="notice-badge" style={{ marginLeft: 'auto' }}>{unreadCount}</span>}
                 </div>
+              </div>
+              <div className="drawer-item" onClick={() => { onMenuClick('Settings'); onClose(); }}>
+                <Settings size={20} />
+                <span>{t('settings')}</span>
               </div>
               <div className="drawer-item" onClick={() => { onMenuClick('About'); onClose(); }}>
                 <Info size={20} />

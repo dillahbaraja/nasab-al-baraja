@@ -8,7 +8,7 @@ import {
   useReactFlow
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Search, Palette, Database, Bell, ListTree, ArrowRight, ArrowLeft } from 'lucide-react';
+import { Search, Palette, Database, Bell, ListTree, ArrowRight, ArrowLeft, Maximize } from 'lucide-react';
 import FamilyNode from './FamilyNode';
 import { initialFamilyData, generateEdges } from './data';
 import { getLayoutedElements, createNodesFromData } from './layout';
@@ -73,11 +73,11 @@ const cleanText = (text) => {
 
 const FamilyGraph = () => {
   const [theme, setTheme] = useState(() => localStorage.getItem('rf-theme') || 'light');
-  const [lang, setLang] = useState(() => localStorage.getItem('rf-lang') || 'ar');
+  const [lang, setLang] = useState(() => localStorage.getItem('rf-lang') || 'en');
   const [familyData, setFamilyData] = useState([]);
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
-  const { setCenter, fitView, setViewport, getViewport, updateNodeData, zoomIn } = useReactFlow();
+  const { setCenter, fitView, setViewport, getViewport, updateNodeData, zoomIn, getNode } = useReactFlow();
   const animationRef = useRef(null);
   const [collapsedStateById, setCollapsedStateById] = useState(() => {
     try {
@@ -154,6 +154,7 @@ const FamilyGraph = () => {
   
   // Info Modals State
   const [activeInfoModal, setActiveInfoModal] = useState(null); // 'signin', 'about', 'notice', 'adminManager', 'adminForm', 'changePassword', 'settings'
+  const [isIntroRunning, setIsIntroRunning] = useState(false);
 
   const [appSettings, setAppSettings] = useState(() => {
     try {
@@ -162,14 +163,16 @@ const FamilyGraph = () => {
         animationsEnabled: true,
         cameraEnabled: true,
         expandEnabled: true,
-        glowEnabled: true
+        glowEnabled: true,
+        layoutStyle: 'tidy'
       };
     } catch (e) {
       return {
         animationsEnabled: true,
         cameraEnabled: true,
         expandEnabled: true,
-        glowEnabled: true
+        glowEnabled: true,
+        layoutStyle: 'tidy'
       };
     }
   });
@@ -177,6 +180,19 @@ const FamilyGraph = () => {
   useEffect(() => {
     localStorage.setItem('rf-app-settings', JSON.stringify(appSettings));
   }, [appSettings]);
+
+  // Trigger fitView whenever layout changes
+  const prevLayoutRef = useRef(appSettings.layoutStyle || 'tidy');
+  useEffect(() => {
+    const currentLayout = appSettings.layoutStyle || 'tidy';
+    if (prevLayoutRef.current !== currentLayout) {
+      prevLayoutRef.current = currentLayout;
+      // Delay slightly so layout change resolves before computing bounds
+      setTimeout(() => {
+        fitView({ duration: 800 });
+      }, 150);
+    }
+  }, [appSettings.layoutStyle, fitView]);
 
 
   const triggerGlow = useCallback((nodeId) => {
@@ -385,7 +401,7 @@ const FamilyGraph = () => {
       const rawNodes = createNodesFromData(visibleData);
       const rawEdges = generateEdges(visibleData);
       
-      const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(rawNodes, rawEdges, 'TB');
+      const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(rawNodes, rawEdges, appSettings.layoutStyle || 'tidy');
       
       // Index existing nodes and layout nodes for O(1) override lookups
       const nodesMap = new Map(nodes.map(n => [String(n.id), n]));
@@ -521,7 +537,7 @@ const FamilyGraph = () => {
     } catch (err) {
       console.error("Layout Rendering Crash Prevented:", err);
     }
-  }, [familyData, collapsedStateById, isLoading, collapsingParentId, handleNodeLongPress]); // handleNodeLongPress is stable (useCallback [])
+  }, [familyData, collapsedStateById, isLoading, collapsingParentId, handleNodeLongPress, appSettings.layoutStyle]); // handleNodeLongPress is stable (useCallback [])
 
   // Highlight Ancestor Path
   useEffect(() => {
@@ -962,7 +978,7 @@ const FamilyGraph = () => {
     }
   }, [nodes, pendingFocusTarget, smoothFocusNode]);
 
-  // Auto-focus root node on very first data load (if no saved viewport)
+  // CINEMATIC INTRO SEQUENCE
   useEffect(() => {
     if (isLoading || nodes.length === 0 || hasInitialFocusedRef.current) return;
     if (initialViewport) {
@@ -971,21 +987,163 @@ const FamilyGraph = () => {
       return;
     }
 
-    // Find root person (no fatherId)
-    const rootPerson = familyData.find(p => !p.fatherId);
+    if (familyData.length === 0) return;
+    
+    // User request: Focus intro explicitly on "Muhammad bin Mas'ud ... al-Mulaqqab bi-Abi Raja'"
+    const rootPerson = familyData.find(p => p.arabicName && p.arabicName.includes('الملقب بأبي رجاء')) 
+                       || familyData.find(p => !p.fatherId);
+                       
     if (!rootPerson) return;
 
+    // Step 0: Ensure the tree is forcefully collapsed before cinematic starts
+    const hasBeenForced = sessionStorage.getItem('rf-cinematic-forced');
+    if (!hasBeenForced) {
+        // Collect descendants of Muhammad to collapse them
+        const parentToChildrenMap = new Map();
+        familyData.forEach(p => {
+          const fid = p.fatherId ? String(p.fatherId) : null;
+          if (fid) {
+            if (!parentToChildrenMap.has(fid)) parentToChildrenMap.set(fid, []);
+            parentToChildrenMap.get(fid).push(p);
+          }
+        });
+        
+        const gatherDescendantIds = (parentId) => {
+          let results = [];
+          const children = parentToChildrenMap.get(String(parentId)) || [];
+          children.forEach(child => {
+            const cid = String(child.id);
+            results.push(cid);
+            results = results.concat(gatherDescendantIds(cid));
+          });
+          return results;
+        };
+        
+        const descendants = gatherDescendantIds(rootPerson.id);
+        
+        setCollapsedStateById(prev => {
+           let newState = { ...prev };
+           newState[rootPerson.id] = true; // Collapse his immediate children
+           descendants.forEach(cid => { newState[cid] = true; }); // Collapse all descendant branches
+           localStorage.setItem('rf-collapsed-state', JSON.stringify(newState));
+           return newState;
+        });
+        sessionStorage.setItem('rf-cinematic-forced', '1');
+        return; // Wait for the next React render tick with a heavily tightened map
+    }
+
+    // Now layout is truly tight and recalculation is done
     const rootNode = nodes.find(n => n.id === String(rootPerson.id));
     const isLayoutReady = rootNode && (Math.abs(rootNode.position.x) > 1 || Math.abs(rootNode.position.y) > 1);
     if (!isLayoutReady) return;
 
     hasInitialFocusedRef.current = true;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        smoothFocusNode(rootNode.id, { targetZoom: 1.0, forceGlow: false });
-      });
+    setIsIntroRunning(true);
+    
+    // Build tier arrays for dynamic popping
+    const parentToChildrenMap = new Map();
+    familyData.forEach(p => {
+      const fid = p.fatherId ? String(p.fatherId) : null;
+      if (fid) {
+        if (!parentToChildrenMap.has(fid)) parentToChildrenMap.set(fid, []);
+        parentToChildrenMap.get(fid).push(p);
+      }
     });
-  }, [isLoading, nodes, familyData, initialViewport, smoothFocusNode]);
+
+    const tier1 = [String(rootPerson.id)]; // Root opens first
+    const tier2 = (parentToChildrenMap.get(String(rootPerson.id)) || []).map(c => String(c.id));
+    const tier3 = tier2.flatMap(id => parentToChildrenMap.get(id) || []).map(c => String(c.id));
+    const tier4 = tier3.flatMap(id => parentToChildrenMap.get(id) || []).map(c => String(c.id));
+    const tier5 = tier4.flatMap(id => parentToChildrenMap.get(id) || []).map(c => String(c.id));
+
+    // Phase 1: Sinkronisasi Snap Awal ke Center persis tanpa menggunakan setCenter (menghindari Glitch)
+    const initW = rootNode.measured?.width || rootNode.width || 260;
+    const initH = rootNode.measured?.height || rootNode.height || 100;
+    const initCX = rootNode.position.x + (initW / 2);
+    const initCY = rootNode.position.y + (initH / 2);
+    
+    setViewport({ 
+        x: (window.innerWidth / 2) - (initCX * 2.5), 
+        y: (window.innerHeight / 2) - (initCY * 2.5), 
+        zoom: 2.5 
+    });
+
+    const popGroup = (ids, delay) => {
+        if (!ids || ids.length === 0) return;
+        setTimeout(() => {
+            setCollapsedStateById(prev => {
+                const next = { ...prev };
+                let changed = false;
+                ids.forEach(id => {
+                    if (next[id]) { next[id] = false; changed = true; }
+                });
+                if (changed) localStorage.setItem('rf-collapsed-state', JSON.stringify(next));
+                return next;
+            });
+        }, delay);
+    };
+
+    const duration = 14500;
+    const startT = window.performance.now();
+
+    const animateCamera = (timestamp) => {
+        const elapsed = timestamp - startT;
+        const progress = Math.min(elapsed / duration, 1);
+        
+        const liveRoot = getNode(String(rootPerson.id));
+        if (!liveRoot) return;
+        
+        // Memperbaiki Zoom Out Maksimum sampai 0.05 (sangat jauh)
+        let currentZoom;
+        if (progress < 0.25) {
+             currentZoom = 2.5 - (progress / 0.25) * 1.5; // 0->25%: 2.5 to 1.0
+        } else if (progress < 0.6) {
+             currentZoom = 1.0 - ((progress - 0.25) / 0.35) * 0.7; // 25->60%: 1.0 to 0.3
+        } else {
+             currentZoom = 0.3 - ((progress - 0.6) / 0.4) * 0.25; // 60->100%: 0.3 to 0.05
+        }
+        
+        // Kamera melengkung ayunan drone
+        const panCurve = Math.sin(progress * Math.PI); 
+        const offsetX = panCurve * 800; // max shift 800px
+        const offsetY = panCurve * 800; 
+
+        const activeW = liveRoot.measured?.width || liveRoot.width || 260;
+        const activeH = liveRoot.measured?.height || liveRoot.height || 100;
+        const nodeCenterX = liveRoot.position.x + (activeW / 2);
+        const nodeCenterY = liveRoot.position.y + (activeH / 2);
+
+        const flowElem = document.querySelector('.react-flow');
+        const vpW = flowElem ? flowElem.clientWidth : window.innerWidth;
+        const vpH = flowElem ? flowElem.clientHeight : window.innerHeight;
+        
+        const targetX = (vpW / 2) - ((nodeCenterX + offsetX) * currentZoom);
+        const targetY = (vpH / 2) - ((nodeCenterY + offsetY) * currentZoom);
+        
+        setViewport({ x: targetX, y: targetY, zoom: currentZoom });
+        
+        if (progress < 1) {
+            requestAnimationFrame(animateCamera);
+        } else {
+            setIsIntroRunning(false); 
+        }
+    };
+
+    // Eksekusi Animasi Kamera Continuous
+    requestAnimationFrame(animateCamera);
+
+    // Buka node bertahap layer by layer
+    popGroup(tier1, 1000); 
+    popGroup(tier2, 2800); 
+    popGroup(tier3, 5000); 
+    popGroup(tier4, 7500); 
+    popGroup(tier5, 9500); 
+
+    // Langkah Terakhir: Pastikan SEMUA sisa nodes tanpa terkecuali mengembang persis di ujung penarikan
+    const allIds = familyData.map(d => String(d.id));
+    popGroup(allIds, 11500);
+
+  }, [isLoading, nodes, familyData, initialViewport, setCenter]);
 
 
 
@@ -1100,7 +1258,7 @@ const FamilyGraph = () => {
           englishName,
           arabicName,
           fatherId: parent.id,
-          info: `${t('descendantOf')}${parent.englishName}`
+          info: ''
         };
         await setDoc(newDocRef, newPerson);
         
@@ -1255,47 +1413,80 @@ const FamilyGraph = () => {
     }
   };
 
-  const handleExpandAll = useCallback(() => {
-    // --- Triple-click detection (3 clicks within 2 seconds = Expand All deep) ---
-    expandClickCountRef.current += 1;
-    const newCount = expandClickCountRef.current;
-    setExpandClickCount(newCount);
+  const handleCustomFitView = useCallback(() => {
+    if (!familyData || familyData.length === 0) return;
+    
+    // Override absolute root; user explicitly targets this specific node as the visual center
+    const targetPerson = familyData.find(p => p.arabicName && p.arabicName.includes('الملقب بأبي رجاء')) 
+                         || familyData.find(p => !p.fatherId);
+    if (!targetPerson) return;
+    
+    const liveRoot = getNode(String(targetPerson.id));
+    if (!liveRoot) return;
 
-    // Reset timer on every click
+    const activeW = liveRoot.measured?.width || liveRoot.width || 260;
+    const activeH = liveRoot.measured?.height || liveRoot.height || 100;
+    const nodeCenterX = liveRoot.position.x + (activeW / 2);
+    const nodeCenterY = liveRoot.position.y + (activeH / 2);
+    
+    const flowElem = document.querySelector('.react-flow');
+    const vpW = flowElem ? flowElem.clientWidth : window.innerWidth;
+    const vpH = flowElem ? flowElem.clientHeight : window.innerHeight;
+    
+    const currentZoom = 0.05;
+    const targetX = (vpW / 2) - (nodeCenterX * currentZoom);
+    // Presisi di tengah layar canvas yang sebenarnya
+    const targetY = (vpH / 2) - (nodeCenterY * currentZoom);
+
+    // Langsung tembakViewport tanpa setCenter karena setCenter membuang node keluar dimensi
+    setViewport({ x: targetX, y: targetY, zoom: currentZoom }, { duration: 1200 });
+  }, [familyData, getNode, setViewport]);
+
+  const handleExpandAll = useCallback(() => {
+    // --- Manual Multi-Click Counter (Click 1 = Visible Only, Click 2 within 2s = Everything) ---
+    expandClickCountRef.current += 1;
+    const clickIteration = expandClickCountRef.current;
+    setExpandClickCount(clickIteration);
+
+    // Reset timer on every interaction
     if (expandClickTimerRef.current) clearTimeout(expandClickTimerRef.current);
 
-    if (newCount >= 3) {
-      // TRIPLE CLICK: Expand every single node in the tree
+    if (clickIteration >= 2) {
+      // CLICK 2: Deep Expand (All nodes in database) + Center View
       expandClickCountRef.current = 0;
       setExpandClickCount(0);
 
-      setCollapsedStateById(prev => {
-        const next = { ...prev };
-        Object.keys(next).forEach(id => { next[id] = false; });
+      setCollapsedStateById(() => {
+        const next = {};
+        // Open every single person in the database
+        familyData.forEach(p => { next[p.id] = false; });
         localStorage.setItem('rf-collapsed-state', JSON.stringify(next));
         return next;
       });
 
-      // Fit view after a brief delay to let layout settle
-      setTimeout(() => fitView({ duration: 800, padding: 0.15 }), 200);
+      // Fit view using cinematic target (Muhammad bin Mas'ud)
+      setTimeout(() => handleCustomFitView(), 250);
       return;
     }
 
-    // Schedule reset if no 3rd click arrives within 2 seconds
+    // CLICK 1: Shallow Expand (Only visible collapsed nodes)
     expandClickTimerRef.current = setTimeout(() => {
       expandClickCountRef.current = 0;
       setExpandClickCount(0);
     }, 2000);
 
-    // SINGLE / DOUBLE CLICK: Expand only visible nodes
-    const { x, y, zoom } = getViewport();
+    const flowElem = document.querySelector('.react-flow');
+    const vpW = flowElem ? flowElem.clientWidth : window.innerWidth;
+    const vpH = flowElem ? flowElem.clientHeight : window.innerHeight;
     
-    // Calculate viewport bounds in flow coordinates
-    const padding = 100; // Extra padding to include nodes partially off-screen
+    const { x, y, zoom } = getViewport();
+    const padding = 50; 
+    
+    // Bounds in flow-space
     const minX = (-x - padding) / zoom;
     const minY = (-y - padding) / zoom;
-    const maxX = (window.innerWidth - x + padding) / zoom;
-    const maxY = (window.innerHeight - y + padding) / zoom;
+    const maxX = (vpW - x + padding) / zoom;
+    const maxY = (vpH - y + padding) / zoom;
 
     const visibleCollapsedNodes = nodes.filter(node => {
       const isVisible = 
@@ -1304,10 +1495,7 @@ const FamilyGraph = () => {
         node.position.y >= minY && 
         node.position.y <= maxY;
       
-      const isCollapsed = !!collapsedStateById[node.id];
-      const hasChildren = node.data?.hasChildren;
-
-      return isVisible && isCollapsed && hasChildren;
+      return isVisible && !!collapsedStateById[node.id] && node.data?.hasChildren;
     });
 
     if (visibleCollapsedNodes.length === 0) return;
@@ -1315,12 +1503,13 @@ const FamilyGraph = () => {
     setCollapsedStateById(prev => {
       const next = { ...prev };
       visibleCollapsedNodes.forEach(node => {
-        next[node.id] = false;
+        next[node.id] = false; // Just open this node, not its descendants
       });
       localStorage.setItem('rf-collapsed-state', JSON.stringify(next));
       return next;
     });
-  }, [getViewport, nodes, collapsedStateById, fitView]);
+  }, [getViewport, nodes, collapsedStateById, handleCustomFitView, familyData]);
+
 
   const handleViewPerson = (personId) => {
     setActiveInfoModal(null);
@@ -1606,7 +1795,7 @@ const FamilyGraph = () => {
       {/* Only show standalone search for Android (since it's in the header for Web) */}
       {Capacitor.getPlatform() === 'android' && renderSearchForm()}
 
-      <div className={`graph-workspace ${Capacitor.getPlatform()}`} style={{ width: '100%', height: '100%' }} onDoubleClick={onPaneDoubleClick}>
+      <div className={`graph-workspace ${Capacitor.getPlatform()}`} style={{ width: '100%', height: '100%', pointerEvents: isIntroRunning ? 'none' : 'auto' }} onDoubleClick={onPaneDoubleClick}>
         {isLoading ? (
           <div style={{display:'flex', flexDirection: 'column', height:'100%', width:'100%', alignItems:'center', justifyContent:'center', gap: '16px'}}>
              <div>{t('loading')}</div>
@@ -1631,7 +1820,7 @@ const FamilyGraph = () => {
               }
             }}
             nodeTypes={nodeTypes}
-            minZoom={0.1}
+            minZoom={0.05}
             maxZoom={3}
             fitView={!initialViewport}
             fitViewOptions={{ padding: 0.2, duration: 800, maxZoom: 1 }}
@@ -1639,15 +1828,23 @@ const FamilyGraph = () => {
             nodesDraggable={false}
             nodesConnectable={false}
             onlyRenderVisibleElements={true}
-            defaultEdgeOptions={{ type: 'smoothstep' }}
+            defaultEdgeOptions={{ type: 'smoothstep', animated: true }}
             proOptions={{ hideAttribution: true }}
           >
             <Background color="var(--panel-border)" gap={24} size={2} />
-            <Controls position="bottom-right" showInteractive={false} fitViewOptions={{ duration: 800, padding: 0.2 }}>
+            <Controls position="bottom-right" showInteractive={false} showFitView={false}>
+              <button 
+                className="react-flow__controls-button" 
+                onClick={handleCustomFitView} 
+                title={t('fitView') || 'Fit View'}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Maximize size={14} />
+              </button>
               <button 
                 className="react-flow__controls-button" 
                 onClick={handleExpandAll} 
-                title={expandClickCount === 0 ? t('expandAll') : expandClickCount === 1 ? '2 more clicks = Expand All' : '1 more click = Expand All!'}
+                title={expandClickCount === 0 ? t('expandAll') : '1 more click = Expand All!'}
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}
               >
                 <ListTree size={14} />

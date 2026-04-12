@@ -104,10 +104,7 @@ const FamilyNode = ({ id, data, selected }) => {
             marginBottom: '6px',
             fontStyle: 'italic',
             lineHeight: '1.3',
-            display: '-webkit-box',
-            WebkitLineClamp: 1,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden'
+            lineHeight: '1.3'
           }}>
             {data.info}
           </div>
@@ -126,10 +123,9 @@ const FamilyNode = ({ id, data, selected }) => {
             fontSize: '14px',
             color: 'var(--text-secondary)',
             marginTop: '12px',
-            display: '-webkit-box',
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden'
+            fontSize: '14px',
+            color: 'var(--text-secondary)',
+            marginTop: '12px'
           }}>
             {data.englishName}
           </div>
