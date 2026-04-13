@@ -12,7 +12,10 @@ const SideDrawer = ({ isOpen, onClose, onMenuClick, t, lang, currentUser, unread
       {/* Drawer Panel */}
       <div className={`side-drawer ${isOpen ? 'open' : ''}`} dir={lang === 'ar' ? 'rtl' : 'ltr'}>
         <div className="drawer-header">
-          <div className="drawer-title">{t('appName')}</div>
+          <div>
+            <div className="drawer-title">{t('appName')}</div>
+            <div className="drawer-subtitle">{t('modalTitle')}</div>
+          </div>
           <button className="close-button" onClick={onClose} aria-label={t('closeMenu')}>
             <X size={24} />
           </button>
@@ -43,9 +46,9 @@ const SideDrawer = ({ isOpen, onClose, onMenuClick, t, lang, currentUser, unread
             </>
           ) : (
             <>
-              <div className="drawer-item" style={{ background: 'var(--panel-highlight-bg)', marginBottom: '10px', borderRadius: '8px', cursor: 'default' }}>
+              <div className="drawer-profile-card">
                 <User size={20} color="var(--accent)" />
-                <span style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--accent)' }}>{currentUser.email}</span>
+                <span className="drawer-profile-email">{currentUser.email}</span>
               </div>
 
               <div className="drawer-item" onClick={() => { onMenuClick('Change Password'); onClose(); }}>
@@ -67,7 +70,7 @@ const SideDrawer = ({ isOpen, onClose, onMenuClick, t, lang, currentUser, unread
                 <Info size={20} />
                 <span>{t('about')}</span>
               </div>
-              <div className="drawer-item" style={{ marginTop: '20px', borderTop: '1px solid var(--panel-border)', paddingTop: '20px' }} onClick={() => { onMenuClick('Sign Out'); onClose(); }}>
+              <div className="drawer-item drawer-signout" onClick={() => { onMenuClick('Sign Out'); onClose(); }}>
                 <LogOut size={20} color="#ff4444" />
                 <span style={{ color: '#ff4444' }}>{t('signOut')}</span>
               </div>

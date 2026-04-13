@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Shield, Info, Bell, UserPlus, Edit, Trash2, Key, MapPin, Phone, Mail, User, Settings } from 'lucide-react';
+import { X, Shield, Info, Bell, Trash2, Key, Settings } from 'lucide-react';
 
 const InfoModal = ({ 
   isOpen, 
@@ -29,8 +29,6 @@ const InfoModal = ({
   });
 
   const [errorMsg, setErrorMsg] = useState('');
-
-
 
   if (!isOpen) return null;
 
@@ -92,33 +90,34 @@ const InfoModal = ({
         );
       case 'notice':
         return (
-          <div className="info-modal-body" style={type === 'notice' ? { paddingLeft: '12px', paddingRight: '12px' } : {}}>
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
+          <div className="info-modal-body notice-modal-body" style={type === 'notice' ? { paddingLeft: '12px', paddingRight: '12px' } : {}}>
+            <div className="notice-modal-hero" style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
               <Bell size={48} color="var(--accent)" />
             </div>
             <div className="notice-list-container" style={{ maxHeight: '400px', overflowY: 'auto' }}>
               {notices.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                <div className="notice-empty-state" style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
                   <Bell size={32} opacity={0.3} />
                   <p>{t('noticeEmpty')}</p>
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div className="notice-feed">
                   {notices.map((n, idx) => {
                     const meta = getNoticeMeta(n);
                     return (
-                    <div key={n.id || idx} className="glass-panel" style={{ padding: '12px 16px', borderLeft: `4px solid ${meta.borderColor}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 8px', borderRadius: '999px', fontSize: '10px', fontWeight: 'bold', marginBottom: '8px', background: meta.badgeBg, color: meta.badgeColor }}>
+                    <div key={n.id || idx} className="glass-panel notice-card" style={{ borderLeft: `4px solid ${meta.borderColor}` }}>
+                      <div className="notice-card-main" style={{ flex: 1 }}>
+                        <div className="notice-card-badge" style={{ background: meta.badgeBg, color: meta.badgeColor }}>
                           {meta.label}
                         </div>
-                        <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '4px' }}>{n.text}</div>
-                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                        <div className="notice-card-text">{n.text}</div>
+                        <div className="notice-card-time">
                           {new Date(n.timestamp).toLocaleString(lang === 'id' ? 'id-ID' : lang === 'ar' ? 'ar-SA' : 'en-US')}
                         </div>
                       </div>
-                      <div style={{ display: 'flex', gap: '8px', marginLeft: '12px' }}>
+                      <div className="notice-card-actions">
                         <button 
+                          className="notice-view-button"
                           onClick={() => onViewNotice && onViewNotice(n)}
                           style={{ background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '4px', padding: '6px 10px', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold' }}
                         >
@@ -126,6 +125,7 @@ const InfoModal = ({
                         </button>
                         {currentUser && (
                           <button 
+                            className="notice-delete-button"
                             onClick={() => {
                               if (window.confirm(t('deleteBtn') + '?')) {
                                 onDeleteNotice && onDeleteNotice(n.id);
@@ -180,18 +180,38 @@ const InfoModal = ({
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
               <Key size={48} color="var(--accent)" />
             </div>
-            <form className="login-form" onSubmit={(e) => {
+            {errorMsg && (
+              <div style={{ color: '#ff4444', textAlign: 'center', marginBottom: '16px', fontSize: '13px', background: 'rgba(255, 68, 68, 0.1)', padding: '8px', borderRadius: '4px' }}>
+                {errorMsg}
+              </div>
+            )}
+            <div style={{ fontSize: '13px', color: 'var(--text-secondary)', textAlign: 'center', marginBottom: '16px', lineHeight: '1.5', background: 'var(--panel-highlight-bg)', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--panel-border)' }}>
+              {t('passwordMinLengthRule')}
+            </div>
+            <form className="login-form" onSubmit={async (e) => {
               e.preventDefault();
-              if (pwData.newPassword !== pwData.confirmPassword) return alert(t('passwordsDontMatch'));
-              onChangePassword(pwData.newPassword);
+              setErrorMsg('');
+              if ((pwData.newPassword || '').length < 6) {
+                setErrorMsg(t('passwordMinLengthRule'));
+                return;
+              }
+              if (pwData.newPassword !== pwData.confirmPassword) {
+                setErrorMsg(t('passwordsDontMatch'));
+                return;
+              }
+              try {
+                await onChangePassword(pwData.newPassword);
+              } catch (err) {
+                setErrorMsg(err?.message || 'Failed to change password.');
+              }
             }}>
               <div className="input-group">
                 <label style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>{t('newPassword')}</label>
-                <input type="password" name="newPassword" value={pwData.newPassword} onChange={handlePwChange} className="login-input" style={{ width: '100%' }} required />
+                <input type="password" name="newPassword" minLength={6} value={pwData.newPassword} onChange={handlePwChange} className="login-input" style={{ width: '100%' }} required />
               </div>
               <div className="input-group">
                 <label style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>{t('confirmPassword')}</label>
-                <input type="password" name="confirmPassword" value={pwData.confirmPassword} onChange={handlePwChange} className="login-input" style={{ width: '100%' }} required />
+                <input type="password" name="confirmPassword" minLength={6} value={pwData.confirmPassword} onChange={handlePwChange} className="login-input" style={{ width: '100%' }} required />
               </div>
               <button type="submit" className="login-button" style={{ marginTop: '10px' }}>{t('save')}</button>
             </form>
@@ -213,15 +233,12 @@ const InfoModal = ({
           </div>
         );
 
-
-
         return (
           <div className="info-modal-body" style={{ padding: '0 8px' }}>
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
               <Settings size={48} color="var(--accent)" />
             </div>
             <div className="settings-container">
-
               <div style={{ marginBottom: '16px' }}>
                 <h3 style={{ fontSize: '12px', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em', marginBottom: '8px' }}>
                   {t('animations')}

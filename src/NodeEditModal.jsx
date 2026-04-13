@@ -192,6 +192,7 @@ const NodeEditModal = ({
         arabicName: proposalNameForm.arab.trim()
       });
       setActiveSuggestionMode(null);
+      onClose();
     } catch (err) {
       console.error('Pending Proposal Update Error:', err);
     } finally {
@@ -199,23 +200,49 @@ const NodeEditModal = ({
     }
   };
 
-  const handleRemoveCurrentPerson = () => {
+  const handleRemoveCurrentPerson = async () => {
     if (personHasDescendants) return;
     if (!window.confirm(`${t('confirmDeleteLeafPerson')} ${displayName}?`)) {
       return;
     }
-    onRemoveChild(person.id);
-    onClose();
+    if (isSaving) return;
+
+    setIsSaving(true);
+    try {
+      await onRemoveChild(person.id);
+      onClose();
+    } catch (err) {
+      console.error('Delete Current Person Error:', err);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleEditCurrentPersonName = () => {
-    const arab = window.prompt(t('updateArab'), person.arabicName || '');
-    if (!arab) return;
-    const latin = window.prompt(`${t('updateLatin')} ${t('skipLabel')}`, person.englishName || '');
-    const finalLatin = latin === null ? person.englishName : latin;
-    Promise.resolve(onUpdateChild(person.id, { englishName: finalLatin, arabicName: arab }))
-      .then(() => onClose())
-      .catch((err) => console.error('Edit Current Person Error:', err));
+    setProposalNameForm({
+      latin: person.englishName || '',
+      arab: person.arabicName || ''
+    });
+    setActiveSuggestionMode('adminEdit');
+  };
+
+  const handleSaveAdminEdit = async (e) => {
+    e.preventDefault();
+    if (!proposalNameForm.arab.trim() || isSaving) return;
+
+    setIsSaving(true);
+    try {
+      await onUpdateChild(person.id, {
+        englishName: proposalNameForm.latin.trim(),
+        arabicName: proposalNameForm.arab.trim()
+      });
+      setActiveSuggestionMode(null);
+      onClose();
+    } catch (err) {
+      console.error('Edit Current Person Error:', err);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const saveInfo = () => {
@@ -227,18 +254,18 @@ const NodeEditModal = ({
     }
   };
 
-  const renderNameForm = (onSubmit, submitLabel) => (
-    <form ref={suggestionFormRef} onSubmit={onSubmit} style={{ borderTop: '1px solid var(--panel-border)', paddingTop: '20px' }}>
-      <h3 style={{ fontSize: '16px', marginBottom: '12px' }}>
-        {isPendingAddSuggestion ? t('editPendingSuggestion') : t('suggestNameChange')}
+  const renderNameForm = (title, onSubmit, submitLabel) => (
+    <form ref={suggestionFormRef} onSubmit={onSubmit} className="lineage-modal-form">
+      <h3 className="lineage-section-title">
+        {title}
       </h3>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <div className="lineage-form-stack">
         <input
           ref={primarySuggestionInputRef}
           type="text"
           placeholder={`${t('placeholderArab')} *`}
           className="search-input"
-          style={{ padding: '10px 12px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '6px', color: 'var(--text-primary)' }}
+          style={{ padding: '12px 14px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', color: 'var(--text-primary)' }}
           value={proposalNameForm.arab}
           onChange={(e) => setProposalNameForm((prev) => ({ ...prev, arab: e.target.value }))}
           required
@@ -247,15 +274,15 @@ const NodeEditModal = ({
           type="text"
           placeholder={`${t('placeholderLatin')} ${t('optional')}`}
           className="search-input"
-          style={{ padding: '10px 12px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '6px', color: 'var(--text-primary)' }}
+          style={{ padding: '12px 14px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', color: 'var(--text-primary)' }}
           value={proposalNameForm.latin}
           onChange={(e) => setProposalNameForm((prev) => ({ ...prev, latin: e.target.value }))}
         />
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button type="button" onClick={() => setActiveSuggestionMode(null)} style={{ padding: '12px', background: 'var(--btn-secondary-bg)', color: 'var(--btn-secondary-text)', border: '1px solid var(--panel-border)', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', flex: 1 }}>
+        <div className="lineage-button-row">
+          <button type="button" onClick={() => setActiveSuggestionMode(null)} className="lineage-secondary-button" style={{ flex: 1 }}>
             {t('cancel')}
           </button>
-          <button type="submit" className="search-button" style={{ padding: '12px', fontSize: '15px', fontWeight: 'bold', flex: 2 }}>
+          <button type="submit" className="search-button lineage-primary-button" style={{ flex: 2 }}>
             {submitLabel}
           </button>
         </div>
@@ -264,11 +291,11 @@ const NodeEditModal = ({
   );
 
   const renderChildSuggestionForm = () => (
-    <form ref={suggestionFormRef} onSubmit={handleSubmitChildSuggestionForm} style={{ borderTop: '1px solid var(--panel-border)', paddingTop: '20px' }}>
-      <h3 style={{ fontSize: '16px', marginBottom: '12px' }}>{t('suggestAddChildFor')}{displayName}</h3>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+    <form ref={suggestionFormRef} onSubmit={handleSubmitChildSuggestionForm} className="lineage-modal-form">
+      <h3 className="lineage-section-title">{t('suggestAddChildFor')}{displayName}</h3>
+      <div className="lineage-form-stack">
         {childrenInputs.map((childInput, idx) => (
-          <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingBottom: '12px', borderBottom: idx < childrenInputs.length - 1 ? '1px dashed var(--panel-border)' : 'none' }}>
+          <div key={idx} className="lineage-child-form-card" style={{ borderBottom: idx < childrenInputs.length - 1 ? '1px dashed var(--panel-border)' : 'none' }}>
             {childrenInputs.length > 1 && (
               <div style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between' }}>
                 <span>{t('childLabel')} #{idx + 1}</span>
@@ -284,7 +311,7 @@ const NodeEditModal = ({
               type="text"
               placeholder={`${t('placeholderArab')} *`}
               className="search-input"
-              style={{ padding: '10px 12px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '6px', color: 'var(--text-primary)' }}
+              style={{ padding: '12px 14px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', color: 'var(--text-primary)' }}
               value={childInput.arab}
               onChange={(e) => {
                 const newArr = [...childrenInputs];
@@ -297,7 +324,7 @@ const NodeEditModal = ({
               type="text"
               placeholder={`${t('placeholderLatin')} ${t('optional')}`}
               className="search-input"
-              style={{ padding: '10px 12px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '6px', color: 'var(--text-primary)' }}
+              style={{ padding: '12px 14px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', color: 'var(--text-primary)' }}
               value={childInput.latin}
               onChange={(e) => {
                 const newArr = [...childrenInputs];
@@ -307,14 +334,14 @@ const NodeEditModal = ({
             />
           </div>
         ))}
-        <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-          <button type="button" onClick={() => setChildrenInputs([...childrenInputs, createEmptyChildInput()])} style={{ padding: '12px', background: 'var(--btn-secondary-bg)', color: 'var(--btn-secondary-text)', border: '1px solid var(--panel-border)', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', flex: 1 }}>
+        <div className="lineage-button-row">
+          <button type="button" onClick={() => setChildrenInputs([...childrenInputs, createEmptyChildInput()])} className="lineage-secondary-button" style={{ flex: 1 }}>
             +
           </button>
-          <button type="button" onClick={() => setActiveSuggestionMode(null)} style={{ padding: '12px', background: 'var(--btn-secondary-bg)', color: 'var(--btn-secondary-text)', border: '1px solid var(--panel-border)', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', flex: 2 }}>
+          <button type="button" onClick={() => setActiveSuggestionMode(null)} className="lineage-secondary-button" style={{ flex: 2 }}>
             {t('cancel')}
           </button>
-          <button type="submit" className="search-button" style={{ padding: '12px', fontSize: '15px', fontWeight: 'bold', flex: 4 }}>
+          <button type="submit" className="search-button lineage-primary-button" style={{ flex: 4 }}>
             {t('saveSuggestion')} ({childrenInputs.length})
           </button>
         </div>
@@ -323,25 +350,25 @@ const NodeEditModal = ({
   );
 
   return (
-    <div className="modal-overlay" onClick={onClose} style={{
+    <div className="modal-overlay lineage-modal-overlay" onClick={onClose} style={{
       position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
       backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1000,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       backdropFilter: 'blur(4px)'
     }}>
-      <div className="glass-panel" onClick={(e) => e.stopPropagation()} style={{
+      <div className="glass-panel lineage-modal-sheet" onClick={(e) => e.stopPropagation()} style={{
         width: '90%', maxWidth: '600px', padding: '24px', position: 'relative',
         maxHeight: '85vh', overflowY: 'auto'
       }}>
-        <button onClick={onClose} style={{
+        <button className="lineage-modal-close" onClick={onClose} style={{
           position: 'absolute', top: '16px', right: '16px',
           background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '18px'
         }}>✕</button>
 
-        <h2 style={{ marginBottom: '16px' }}>{t('modalTitle')}</h2>
+        <h2 className="lineage-modal-title" style={{ marginBottom: '16px' }}>{t('modalTitle')}</h2>
 
         {hasPendingProposal && (
-          <div style={{
+          <div className="lineage-pending-panel" style={{
             marginBottom: '16px',
             padding: '12px 14px',
             borderRadius: '10px',
@@ -367,7 +394,7 @@ const NodeEditModal = ({
           </div>
         )}
 
-        <div style={{ textAlign: 'center', marginBottom: '16px', fontSize: '14px', color: 'var(--text-secondary)', fontStyle: 'italic', background: 'var(--panel-highlight-bg)', padding: '8px', borderRadius: '4px' }}>
+        <div className="lineage-info-strip" style={{ textAlign: 'center', marginBottom: '16px', fontSize: '14px', color: 'var(--text-secondary)', fontStyle: 'italic', background: 'var(--panel-highlight-bg)', padding: '8px', borderRadius: '4px' }}>
           {isEditingInfo ? (
             <input
               autoFocus
@@ -388,15 +415,16 @@ const NodeEditModal = ({
           )}
         </div>
 
-        <div style={{ background: 'var(--panel-highlight-bg)', padding: '16px', borderRadius: '8px', marginBottom: '24px', textAlign: 'center', border: '1px solid var(--panel-border)' }}>
-          <div style={{ fontSize: '24px', fontWeight: 'bold', fontFamily: 'serif', color: 'var(--text-primary)', marginBottom: '8px', lineHeight: '1.4' }}>
+        <div className="lineage-hero-card" style={{ background: 'var(--panel-highlight-bg)', padding: '16px', borderRadius: '8px', marginBottom: '24px', textAlign: 'center', border: '1px solid var(--panel-border)' }}>
+          <div className="lineage-hero-arabic" style={{ fontSize: '24px', fontWeight: 'bold', fontFamily: 'serif', color: 'var(--text-primary)', marginBottom: '8px', lineHeight: '1.4' }}>
             {getFullNasab(person, 'ar', showFullNasab)}
           </div>
-          <div style={{ fontSize: '16px', color: 'var(--text-secondary)', fontStyle: 'italic', lineHeight: '1.4' }}>
+          <div className="lineage-hero-latin" style={{ fontSize: '16px', color: 'var(--text-secondary)', fontStyle: 'italic', lineHeight: '1.4' }}>
             {getFullNasab(person, lang !== 'ar' ? lang : 'en', showFullNasab)}
           </div>
           {getAncestorCount(person) >= 5 && !showFullNasab && (
             <button
+              className="lineage-hero-link"
               onClick={() => setShowFullNasab(true)}
               style={{ background: 'transparent', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '13px', marginTop: '16px', fontWeight: 'bold', textDecoration: 'underline' }}
             >
@@ -408,6 +436,7 @@ const NodeEditModal = ({
         <div style={{ marginBottom: '16px', textAlign: 'center' }}>
           <button
             onClick={() => onShowLineageOnly && onShowLineageOnly(person.id)}
+            className="lineage-primary-action"
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -435,14 +464,15 @@ const NodeEditModal = ({
         </div>
 
         {isAdmin && !hasPendingProposal && (
-          <div style={{ background: 'rgba(255,255,255,0.05)', padding: '16px', borderRadius: '8px', marginBottom: '24px' }}>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button onClick={handleEditCurrentPersonName} style={{
+          <div className="lineage-action-card" style={{ background: 'rgba(255,255,255,0.05)', padding: '16px', borderRadius: '8px', marginBottom: '24px' }}>
+            <div className="lineage-button-row">
+              <button onClick={handleEditCurrentPersonName} className="lineage-primary-button" style={{
                 padding: '6px 12px', background: 'var(--accent)', color: '#ffffff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold'
               }}>{t('editPerson')}</button>
               {!personHasDescendants && (
                 <button
                   onClick={handleRemoveCurrentPerson}
+                  className="lineage-danger-button"
                   style={{
                     padding: '6px 12px',
                     background: '#ef4444',
@@ -460,7 +490,7 @@ const NodeEditModal = ({
         )}
 
         {hasPendingProposal && (
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', flexWrap: 'wrap' }}>
+          <div className="lineage-action-card lineage-pending-actions" style={{ display: 'flex', gap: '8px', marginBottom: '24px', flexWrap: 'wrap' }}>
             <button
               onClick={() => {
                 setProposalNameForm({
@@ -469,25 +499,30 @@ const NodeEditModal = ({
                 });
                 setActiveSuggestionMode('editPending');
               }}
-              style={{ padding: '10px 14px', background: 'var(--btn-secondary-bg)', color: 'var(--btn-secondary-text)', border: '1px solid var(--panel-border)', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', flex: 1 }}
+              className="lineage-secondary-button"
+              style={{ flex: 1 }}
             >
               {t('editPendingSuggestion')}
             </button>
-            <button
-              onClick={async () => {
-                if (!window.confirm(t('confirmCancelSuggestion'))) return;
-                await onCancelProposal(person);
-                onClose();
-              }}
-              style={{ padding: '10px 14px', background: '#b91c1c', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', flex: 1 }}
-            >
-              {t('cancelSuggestion')}
-            </button>
+            {!isAdmin && (
+              <button
+                onClick={async () => {
+                  if (!window.confirm(t('confirmCancelSuggestion'))) return;
+                  await onCancelProposal(person);
+                  onClose();
+                }}
+                className="lineage-danger-button"
+                style={{ flex: 1 }}
+              >
+                {t('cancelSuggestion')}
+              </button>
+            )}
             {isAdmin && (
               <>
                 <button
                   onClick={() => onSkipPending && onSkipPending(person.id)}
-                  style={{ padding: '10px 14px', background: '#475569', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', flex: 1 }}
+                  className="lineage-neutral-button"
+                  style={{ flex: 1 }}
                 >
                   {t('skipVerification')}
                 </button>
@@ -495,7 +530,8 @@ const NodeEditModal = ({
                   onClick={async () => {
                     await onApproveProposal(person);
                   }}
-                  style={{ padding: '10px 14px', background: '#15803d', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', flex: 1 }}
+                  className="lineage-success-button"
+                  style={{ flex: 1 }}
                 >
                   {t('approveSuggestion')}
                 </button>
@@ -505,7 +541,8 @@ const NodeEditModal = ({
                     await onRejectProposal(person);
                     onClose();
                   }}
-                  style={{ padding: '10px 14px', background: '#7f1d1d', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', flex: 1 }}
+                  className="lineage-danger-button"
+                  style={{ flex: 1 }}
                 >
                   {t('rejectSuggestion')}
                 </button>
@@ -514,14 +551,14 @@ const NodeEditModal = ({
           </div>
         )}
 
-        <div style={{ marginBottom: '24px' }}>
-          <h3 style={{ fontSize: '16px', marginBottom: '12px' }}>{t('childrenOf')}{displayName}</h3>
+        <div className="lineage-children-section" style={{ marginBottom: '24px' }}>
+          <h3 className="lineage-section-title" style={{ fontSize: '16px', marginBottom: '12px' }}>{t('childrenOf')}{displayName}</h3>
           {children.length === 0 ? (
-            <div style={{ color: 'var(--text-secondary)', fontSize: '14px', fontStyle: 'italic' }}>{t('noChildren')}</div>
+            <div className="lineage-empty-state" style={{ color: 'var(--text-secondary)', fontSize: '14px', fontStyle: 'italic' }}>{t('noChildren')}</div>
           ) : (
             <ul style={{ listStyle: 'none', padding: 0 }}>
               {children.map((c) => (
-                <li key={c.id} style={{
+                <li key={c.id} className="lineage-child-item" style={{
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                   padding: '10px 12px', background: 'var(--panel-highlight-bg)',
                   marginBottom: '8px', borderRadius: '8px', border: c?.moderation?.status === 'pending' ? '1px solid rgba(239, 68, 68, 0.55)' : '1px solid var(--panel-border)'
@@ -535,6 +572,7 @@ const NodeEditModal = ({
                   </div>
 
                   <button
+                    className="lineage-view-button"
                     onClick={() => onViewPerson && onViewPerson(c.id)}
                     style={{
                       background: 'var(--accent)',
@@ -559,17 +597,19 @@ const NodeEditModal = ({
         </div>
 
         {activeSuggestionMode === 'suggestChild' && renderChildSuggestionForm()}
-        {activeSuggestionMode === 'suggestName' && renderNameForm(handleSubmitNameSuggestionForm, t('saveSuggestion'))}
-        {activeSuggestionMode === 'editPending' && renderNameForm(handleSavePendingProposal, t('saveSuggestionChanges'))}
+        {activeSuggestionMode === 'suggestName' && renderNameForm(t('suggestNameChange'), handleSubmitNameSuggestionForm, t('saveSuggestion'))}
+        {activeSuggestionMode === 'editPending' && renderNameForm(t('editPendingSuggestion'), handleSavePendingProposal, t('saveSuggestionChanges'))}
+        {activeSuggestionMode === 'adminEdit' && renderNameForm(t('editPerson'), handleSaveAdminEdit, t('save'))}
 
         {!isAdmin && !hasPendingProposal && activeSuggestionMode === null && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', borderTop: '1px solid var(--panel-border)', paddingTop: '20px' }}>
+          <div className="lineage-action-card" style={{ display: 'flex', flexDirection: 'column', gap: '10px', borderTop: '1px solid var(--panel-border)', paddingTop: '20px' }}>
             <button
               onClick={() => {
                 setChildrenInputs([createEmptyChildInput()]);
                 setActiveSuggestionMode('suggestChild');
               }}
-              style={{ width: '100%', padding: '12px', background: '#991b1b', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
+              className="lineage-danger-button"
+              style={{ width: '100%' }}
             >
               {t('suggestAddChild')}
             </button>
@@ -581,7 +621,8 @@ const NodeEditModal = ({
                 });
                 setActiveSuggestionMode('suggestName');
               }}
-              style={{ width: '100%', padding: '12px', background: '#b91c1c', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
+              className="lineage-danger-button"
+              style={{ width: '100%' }}
             >
               {t('suggestNameChange')}
             </button>
@@ -589,11 +630,11 @@ const NodeEditModal = ({
         )}
 
         {isAdmin && !hasPendingProposal && (
-          <form onSubmit={handleAdd} style={{ borderTop: '1px solid var(--panel-border)', paddingTop: '20px', marginTop: '20px' }}>
-            <h3 style={{ fontSize: '16px', marginBottom: '12px' }}>{t('addChildTitle')}{displayName}</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <form onSubmit={handleAdd} className="lineage-modal-form" style={{ marginTop: '20px' }}>
+            <h3 className="lineage-section-title" style={{ fontSize: '16px', marginBottom: '12px' }}>{t('addChildTitle')}{displayName}</h3>
+            <div className="lineage-form-stack">
               {childrenInputs.map((childInput, idx) => (
-                <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingBottom: '12px', borderBottom: idx < childrenInputs.length - 1 ? '1px dashed var(--panel-border)' : 'none' }}>
+                <div key={idx} className="lineage-child-form-card" style={{ borderBottom: idx < childrenInputs.length - 1 ? '1px dashed var(--panel-border)' : 'none' }}>
                   {childrenInputs.length > 1 && (
                     <div style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between' }}>
                       <span>{t('childLabel')} #{idx + 1}</span>
@@ -606,7 +647,7 @@ const NodeEditModal = ({
                     type="text"
                     placeholder={`${t('placeholderArab')} *`}
                     className="search-input"
-                    style={{ padding: '10px 12px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '6px', color: 'var(--text-primary)' }}
+                    style={{ padding: '12px 14px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', color: 'var(--text-primary)' }}
                     value={childInput.arab}
                     onChange={(e) => {
                       const newArr = [...childrenInputs];
@@ -619,7 +660,7 @@ const NodeEditModal = ({
                     type="text"
                     placeholder={`${t('placeholderLatin')} ${t('optional')}`}
                     className="search-input"
-                    style={{ padding: '10px 12px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '6px', color: 'var(--text-primary)' }}
+                    style={{ padding: '12px 14px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', color: 'var(--text-primary)' }}
                     value={childInput.latin}
                     onChange={(e) => {
                       const newArr = [...childrenInputs];
@@ -629,11 +670,11 @@ const NodeEditModal = ({
                   />
                 </div>
               ))}
-              <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-                <button type="button" onClick={() => setChildrenInputs([...childrenInputs, createEmptyChildInput()])} style={{ padding: '12px', background: 'var(--btn-secondary-bg)', color: 'var(--btn-secondary-text)', border: '1px solid var(--panel-border)', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', flex: '1' }}>
+              <div className="lineage-button-row">
+                <button type="button" onClick={() => setChildrenInputs([...childrenInputs, createEmptyChildInput()])} className="lineage-secondary-button" style={{ flex: '1' }}>
                   +
                 </button>
-                <button type="submit" className="search-button" style={{ padding: '12px', fontSize: '15px', fontWeight: 'bold', flex: '4' }}>
+                <button type="submit" className="search-button lineage-primary-button" style={{ flex: '4' }}>
                   {t('saveChild')} ({childrenInputs.length})
                 </button>
               </div>

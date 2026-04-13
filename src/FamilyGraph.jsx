@@ -36,16 +36,16 @@ const TimeoutWarning = () => {
   const handleReset = async () => {
     localStorage.clear();
     sessionStorage.clear();
-    // Attempt to clear cached IndexedDB databases that might be deadlocked
+    // Best-effort cache cleanup for browsers that may keep stale local DB state.
     try {
       const dbs = await window.indexedDB.databases();
       for (let i = 0; i < dbs.length; i++) {
         window.indexedDB.deleteDatabase(dbs[i].name);
       }
-    } catch(e) {
-      // Fallback if indexedDB.databases is not supported
+    } catch (e) {
+      // Ignore browsers that do not expose indexedDB.databases().
     }
-    window.location.reload(true);
+    window.location.reload();
   };
 
   if (!show) return null;
@@ -57,6 +57,23 @@ const TimeoutWarning = () => {
       <button onClick={handleReset} style={{ background: 'var(--accent)', color: '#fff', padding: '8px 16px', borderRadius: '4px', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}>
         {translate('resetCacheReload')}
       </button>
+    </div>
+  );
+};
+
+const LoadingScreen = ({ t }) => {
+  return (
+    <div className="loading-screen-shell">
+      <div className="loading-screen-card glass-panel">
+        <div className="loading-dots" aria-hidden="true">
+          <span className="loading-dot loading-dot-a" />
+          <span className="loading-dot loading-dot-b" />
+          <span className="loading-dot loading-dot-c" />
+        </div>
+        <div className="loading-screen-title">{t('loading')}</div>
+        <div className="loading-screen-subtitle">{t('loadingHint')}</div>
+      </div>
+      <TimeoutWarning />
     </div>
   );
 };
@@ -122,8 +139,8 @@ const FamilyGraph = () => {
   const [familyData, setFamilyData] = useState([]);
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
-  const { setCenter, fitView, setViewport, getViewport, updateNodeData, zoomIn, getNode } = useReactFlow();
-  
+  const { setCenter, fitView, setViewport, getViewport, updateNodeData, zoomIn, getNode, getNodes } = useReactFlow();
+
   useOnViewportChange({
     onChange: (viewport) => {
       if (viewport.zoom < 0.55) {
@@ -139,6 +156,7 @@ const FamilyGraph = () => {
   });
 
   const animationRef = useRef(null);
+  const lineageTourTokenRef = useRef(0);
   const [collapsedStateById, setCollapsedStateById] = useState(() => {
     try {
       const saved = localStorage.getItem('rf-collapsed-state');
@@ -212,6 +230,10 @@ const FamilyGraph = () => {
   const [lastNoticeOpen, setLastNoticeOpen] = useState(() => Number(localStorage.getItem('rf-last-notice-open')) || 0);
   const [toast, setToast] = useState(null);
   const toastTimeoutRef = useRef(null);
+  const nodesSyncInFlightRef = useRef(false);
+  const nodeFetchVersionRef = useRef(0);
+  const noticesSyncInFlightRef = useRef(false);
+  const pendingDeletedIdsRef = useRef(new Set());
   const [pendingFocusTarget, setPendingFocusTarget] = useState(null);
   const [toggledNodeInfo, setToggledNodeInfo] = useState(null); // { id, lastPos, lastViewport }
   const [collapsingParentId, setCollapsingParentId] = useState(null);
@@ -243,7 +265,7 @@ const FamilyGraph = () => {
       })
       .map((person) => String(person.id));
   }, [familyData, personMap]);
-  
+
   // Info Modals State
   const [activeInfoModal, setActiveInfoModal] = useState(null); // 'signin', 'about', 'notice', 'adminManager', 'adminForm', 'changePassword', 'settings'
   const [isIntroRunning, setIsIntroRunning] = useState(false);
@@ -299,7 +321,7 @@ const FamilyGraph = () => {
     // Turn on current glow
     updateNodeData(nodeId, { isGlowing: true });
     lastGlowNodeIdRef.current = nodeId;
-    
+
     glowTimeoutRef.current = setTimeout(() => {
       updateNodeData(nodeId, { isGlowing: false });
       lastGlowNodeIdRef.current = null;
@@ -307,13 +329,138 @@ const FamilyGraph = () => {
     }, 1200);
   }, [appSettings.glowEnabled, updateNodeData]);
 
+  const wait = useCallback((ms) => new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  }), []);
+
+  const stopCameraMotion = useCallback(() => {
+    lineageTourTokenRef.current += 1;
+    if (animationRef.current) {
+      cancelAnimationFrame(animationRef.current);
+      animationRef.current = null;
+    }
+
+    const currentViewport = getViewport();
+    setViewport(currentViewport, { duration: 0 });
+  }, [getViewport, setViewport]);
+
+  const getViewportForVisibleNodes = useCallback((targetNodes) => {
+    const visibleNodes = (targetNodes || []).filter(Boolean);
+    if (visibleNodes.length === 0) return null;
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    visibleNodes.forEach((node) => {
+      const width = Math.max(node.width || node.measured?.width || 180, 120);
+      const height = Math.max(node.height || node.measured?.height || 72, 56);
+      minX = Math.min(minX, node.position.x);
+      minY = Math.min(minY, node.position.y);
+      maxX = Math.max(maxX, node.position.x + width);
+      maxY = Math.max(maxY, node.position.y + height);
+    });
+
+    const viewportWidth = Math.max(window.innerWidth, 320);
+    const viewportHeight = Math.max(window.innerHeight, 320);
+    const paddingRatio = viewportWidth < 768 ? 0.16 : 0.12;
+    const paddedWidth = Math.max(maxX - minX, 240) * (1 + paddingRatio * 2);
+    const paddedHeight = Math.max(maxY - minY, 180) * (1 + paddingRatio * 2);
+    const zoomX = viewportWidth / paddedWidth;
+    const zoomY = viewportHeight / paddedHeight;
+    const zoom = Math.min(Math.max(Math.min(zoomX, zoomY), 0.42), 1.05);
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+
+    return {
+      x: viewportWidth / 2 - centerX * zoom,
+      y: viewportHeight / 2 - centerY * zoom,
+      zoom
+    };
+  }, []);
+
+  const runLineageCameraTour = useCallback(async (selectedId, chainIds) => {
+    const tourToken = Date.now();
+    lineageTourTokenRef.current = tourToken;
+
+    await wait(appSettings.animationsEnabled && appSettings.cameraEnabled ? 520 : 60);
+    if (lineageTourTokenRef.current !== tourToken) return;
+
+    const liveNodes = getNodes();
+    if (!liveNodes || liveNodes.length === 0) return;
+
+    const selectedNode = getNode(String(selectedId));
+    const visibleNodes = liveNodes.filter((node) => node && !node.hidden);
+    const overviewViewport = getViewportForVisibleNodes(visibleNodes);
+
+    if (!selectedNode || !overviewViewport) {
+      fitView({ duration: appSettings.animationsEnabled && appSettings.cameraEnabled ? 700 : 0, padding: 0.18 });
+      return;
+    }
+
+    const transitionsEnabled = appSettings.animationsEnabled && appSettings.cameraEnabled;
+    const totalSteps = Math.max(chainIds.length - 1, 1);
+    const startZoom = Math.min(Math.max(overviewViewport.zoom + 0.34, 0.95), 1.3);
+    const endZoom = overviewViewport.zoom;
+
+    const centerNode = async (nodeId, zoom, duration) => {
+      const liveNode = getNode(String(nodeId));
+      if (!liveNode) return;
+      const nodeWidth = liveNode.width || liveNode.measured?.width || 180;
+      const nodeHeight = liveNode.height || liveNode.measured?.height || 72;
+      const targetX = liveNode.position.x + nodeWidth / 2;
+      const targetY = liveNode.position.y + nodeHeight / 2;
+      setCenter(targetX, targetY, { zoom, duration });
+      await wait(duration + 70);
+    };
+
+    if (!transitionsEnabled) {
+      setCenter(
+        selectedNode.position.x + ((selectedNode.width || selectedNode.measured?.width || 180) / 2),
+        selectedNode.position.y + ((selectedNode.height || selectedNode.measured?.height || 72) / 2),
+        { zoom: startZoom, duration: 0 }
+      );
+      setViewport(overviewViewport, { duration: 0 });
+      return;
+    }
+
+    await centerNode(selectedId, startZoom, 560);
+    if (lineageTourTokenRef.current !== tourToken) return;
+
+    for (let index = 1; index < chainIds.length; index += 1) {
+      if (lineageTourTokenRef.current !== tourToken) return;
+      const progress = index / totalSteps;
+      const stepZoom = startZoom + (endZoom - startZoom) * progress;
+      const stepDuration = index === chainIds.length - 1 ? 700 : 620;
+      await centerNode(chainIds[index], stepZoom, stepDuration);
+    }
+
+    if (lineageTourTokenRef.current !== tourToken) return;
+    await centerNode(selectedId, overviewViewport.zoom, 760);
+  }, [appSettings.animationsEnabled, appSettings.cameraEnabled, fitView, getNode, getNodes, getViewportForVisibleNodes, setCenter, setViewport, wait]);
+
+  useEffect(() => {
+    const interruptCamera = () => {
+      stopCameraMotion();
+    };
+
+    window.addEventListener('pointerdown', interruptCamera, { passive: true });
+    window.addEventListener('touchstart', interruptCamera, { passive: true });
+
+    return () => {
+      window.removeEventListener('pointerdown', interruptCamera);
+      window.removeEventListener('touchstart', interruptCamera);
+    };
+  }, [stopCameraMotion]);
+
   const calculateAncestorPath = useCallback((nodeId) => {
     if (!nodeId) return { nodeIds: new Set(), edgeIds: new Set() };
     const nodeIds = new Set([nodeId]);
     const edgeIds = new Set();
     let currentId = nodeId;
     let iterations = 0;
-    
+
     while (currentId && iterations < 100) {
       const person = personMap.get(currentId); // O(1) lookup instead of O(N) find()
       if (person && person.fatherId) {
@@ -341,7 +488,7 @@ const FamilyGraph = () => {
           await StatusBar.setStyle({
             style: theme === 'dark' ? Style.Dark : Style.Light
           });
-        } catch(e) { console.warn("StatusBar error:", e); }
+        } catch (e) { console.warn("StatusBar error:", e); }
       };
       updateStatusBar();
     }
@@ -430,14 +577,20 @@ const FamilyGraph = () => {
     };
   }, [resolveAdminStatus]);
 
-   // 1. Family Nodes (Initial fetch + Realtime subscription)
-  useEffect(() => {
-        const fetchInitialData = async () => {
+  const sortNoticesNewestFirst = useCallback((items) => {
+    return [...items].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  }, []);
+
+  const fetchAllNodes = useCallback(async ({ markLoaded = true } = {}) => {
+    if (nodesSyncInFlightRef.current) return;
+    nodesSyncInFlightRef.current = true;
+    const requestVersion = ++nodeFetchVersionRef.current;
+
+    try {
       let allData = [];
       let from = 0;
       let to = 999;
       let finished = false;
-      let errorOccurred = false;
 
       while (!finished) {
         const { data, error } = await supabase
@@ -445,45 +598,92 @@ const FamilyGraph = () => {
           .select('*')
           .range(from, to);
 
-        if (error) {
-          console.error("Error fetching nodes:", error);
-          errorOccurred = true;
+        if (error) throw error;
+
+        allData = [...allData, ...(data || [])];
+        if (!data || data.length < 1000) {
           finished = true;
         } else {
-          allData = [...allData, ...data];
-          if (data.length < 1000) {
-            finished = true;
-          } else {
-            from += 1000;
-            to += 1000;
-          }
+          from += 1000;
+          to += 1000;
         }
       }
 
-      if (!errorOccurred) {
-        const mappedData = allData.map(n => ({
-          ...n,
-          fatherId: n.father_id,
-          arabicName: n.arabic_name,
-          englishName: n.english_name
-        }));
-        setFamilyData(mappedData);
-        setIsLoading(false);
-      }
-    };
+      const mappedData = allData.map(n => ({
+        ...n,
+        fatherId: n.father_id,
+        arabicName: n.arabic_name,
+        englishName: n.english_name
+      }));
+      const filteredData = mappedData.filter((person) => !pendingDeletedIdsRef.current.has(String(person.id)));
 
-    fetchInitialData();
+      if (requestVersion === nodeFetchVersionRef.current) {
+        setFamilyData(filteredData);
+      }
+      if (markLoaded) setIsLoading(false);
+    } catch (error) {
+      console.error("Error fetching nodes:", error);
+      if (markLoaded) setIsLoading(false);
+    } finally {
+      nodesSyncInFlightRef.current = false;
+    }
+  }, []);
+
+  const fetchLatestNotices = useCallback(async () => {
+    if (noticesSyncInFlightRef.current) return;
+    noticesSyncInFlightRef.current = true;
+
+    try {
+      const { data, error } = await supabase
+        .from('notices')
+        .select('*')
+        .order('timestamp', { descending: true })
+        .limit(30);
+
+      if (error) throw error;
+
+      const mappedNotices = (data || []).map(n => ({
+        ...n,
+        targetId: n.target_id,
+        targetPersonId: n.target_person_id
+      }));
+      setNotices(sortNoticesNewestFirst(mappedNotices));
+    } catch (error) {
+      console.error("Error fetching notices:", error);
+    } finally {
+      noticesSyncInFlightRef.current = false;
+    }
+  }, [sortNoticesNewestFirst]);
+
+  const syncVisibleAppData = useCallback(async () => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    await Promise.all([
+      fetchAllNodes({ markLoaded: false }),
+      fetchLatestNotices()
+    ]);
+  }, [fetchAllNodes, fetchLatestNotices]);
+
+  const removeLocalNoticeById = useCallback((noticeId) => {
+    setNotices((prev) => prev.filter((notice) => String(notice.id) !== String(noticeId)));
+  }, []);
+
+  // 1. Family Nodes (Initial fetch + Realtime subscription)
+  useEffect(() => {
+    fetchAllNodes();
 
     const channel = supabase
       .channel('nodes_changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'nodes' }, (payload) => {
         if (payload.eventType === 'INSERT') {
           const newDoc = { ...payload.new, fatherId: payload.new.father_id, arabicName: payload.new.arabic_name, englishName: payload.new.english_name };
+          if (pendingDeletedIdsRef.current.has(String(newDoc.id))) return;
           setFamilyData(prev => [...prev.filter(p => p.id !== newDoc.id), newDoc]);
         } else if (payload.eventType === 'UPDATE') {
           const updatedDoc = { ...payload.new, fatherId: payload.new.father_id, arabicName: payload.new.arabic_name, englishName: payload.new.english_name };
+          if (pendingDeletedIdsRef.current.has(String(updatedDoc.id))) return;
           setFamilyData(prev => prev.map(p => p.id === updatedDoc.id ? updatedDoc : p));
         } else if (payload.eventType === 'DELETE') {
+          pendingDeletedIdsRef.current.delete(String(payload.old.id));
           setFamilyData(prev => prev.filter(p => p.id !== payload.old.id));
         }
       })
@@ -492,49 +692,50 @@ const FamilyGraph = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [fetchAllNodes]);
 
   // 2. Notices Listener
   useEffect(() => {
-    const fetchInitialNotices = async () => {
-      const { data, error } = await supabase
-        .from('notices')
-        .select('*')
-        .order('timestamp', { descending: true })
-        .limit(30);
-      
-      if (error) console.error("Error fetching notices:", error);
-      else {
-        const mappedNotices = data.map(n => ({
-          ...n,
-          targetId: n.target_id,
-          targetPersonId: n.target_person_id
-        }));
-        setNotices(mappedNotices);
-      }
-    };
-
-    fetchInitialNotices();
+    fetchLatestNotices();
 
     const channel = supabase
       .channel('notices_changes')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notices' }, (payload) => {
-        const newNotice = { 
-          ...payload.new, 
-          targetId: payload.new.target_id, 
-          targetPersonId: payload.new.target_person_id 
-        };
-        
-        setNotices(prev => [newNotice, ...prev].slice(0, 30));
-        
-        // Trigger toast
-        if (Date.now() - (newNotice.timestamp || 0) < 15000) {
-          if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
-          setToast(newNotice);
-          toastTimeoutRef.current = setTimeout(() => {
-            setToast(null);
-            toastTimeoutRef.current = null;
-          }, 8000);
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notices' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          const newNotice = {
+            ...payload.new,
+            targetId: payload.new.target_id,
+            targetPersonId: payload.new.target_person_id
+          };
+
+          setNotices((prev) => sortNoticesNewestFirst([newNotice, ...prev]).slice(0, 30));
+
+          if (Date.now() - (newNotice.timestamp || 0) < 15000) {
+            if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+            setToast(newNotice);
+            toastTimeoutRef.current = setTimeout(() => {
+              setToast(null);
+              toastTimeoutRef.current = null;
+            }, 8000);
+          }
+          return;
+        }
+
+        if (payload.eventType === 'UPDATE') {
+          const updatedNotice = {
+            ...payload.new,
+            targetId: payload.new.target_id,
+            targetPersonId: payload.new.target_person_id
+          };
+          setNotices((prev) => sortNoticesNewestFirst([
+            updatedNotice,
+            ...prev.filter((notice) => String(notice.id) !== String(updatedNotice.id))
+          ]).slice(0, 30));
+          return;
+        }
+
+        if (payload.eventType === 'DELETE') {
+          removeLocalNoticeById(payload.old.id);
         }
       })
       .subscribe();
@@ -543,7 +744,38 @@ const FamilyGraph = () => {
       supabase.removeChannel(channel);
       if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
     };
-  }, []);
+  }, [fetchLatestNotices, removeLocalNoticeById, sortNoticesNewestFirst]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void syncVisibleAppData();
+      }
+    };
+
+    const handleWindowFocus = () => {
+      void syncVisibleAppData();
+    };
+
+    const handleOnline = () => {
+      void syncVisibleAppData();
+    };
+
+    const intervalId = window.setInterval(() => {
+      void syncVisibleAppData();
+    }, 60000);
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleWindowFocus);
+    window.addEventListener('online', handleOnline);
+
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleWindowFocus);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [syncVisibleAppData]);
 
   // 3. Reactive Unread Count Calculation
   useEffect(() => {
@@ -576,12 +808,72 @@ const FamilyGraph = () => {
     if (error) console.error("Create Notice Error:", error);
     return data
       ? {
-          ...data,
-          targetId: data.target_id,
-          targetPersonId: data.target_person_id
-        }
+        ...data,
+        targetId: data.target_id,
+        targetPersonId: data.target_person_id
+      }
       : null;
   }, []);
+
+  const removeProposalNoticesLocally = useCallback((person, proposalType = null) => {
+    setNotices((prev) => prev.filter((notice) => {
+      const noticeTypeMatches = proposalType ? notice.type === proposalType : (
+        notice.type === 'proposal_add_child' || notice.type === 'proposal_name_change'
+      );
+
+      if (!noticeTypeMatches) return true;
+
+      if (proposalType === 'proposal_add_child' || isPendingAddChildNode(person)) {
+        return !(notice.type === 'proposal_add_child' && String(notice.targetId) === String(person.id));
+      }
+
+      return !(notice.type === 'proposal_name_change' && String(notice.targetId) === String(person.id));
+    }));
+  }, []);
+
+  const removeMemberNoticesLocally = useCallback((targetIds) => {
+    const targetSet = new Set((targetIds || []).map((id) => String(id)));
+    setNotices((prev) => prev.filter((notice) => {
+      if (notice.type !== 'new_member') return true;
+      return !targetSet.has(String(notice.targetId));
+    }));
+  }, []);
+
+  const deleteProposalNotices = useCallback(async (person, proposalType = null) => {
+    let query = supabase.from('notices').delete();
+
+    if (proposalType === 'proposal_add_child' || isPendingAddChildNode(person)) {
+      query = query.eq('type', 'proposal_add_child').eq('target_id', person.id);
+    } else {
+      query = query.eq('type', 'proposal_name_change').eq('target_id', person.id);
+    }
+
+    const { error } = await query;
+    if (error) {
+      console.error('Delete Proposal Notice Error:', error);
+      throw error;
+    }
+
+    removeProposalNoticesLocally(person, proposalType);
+  }, [removeProposalNoticesLocally]);
+
+  const deleteMemberNotices = useCallback(async (targetIds) => {
+    const normalizedIds = (targetIds || []).map((id) => String(id)).filter(Boolean);
+    if (normalizedIds.length === 0) return;
+
+    const { error } = await supabase
+      .from('notices')
+      .delete()
+      .eq('type', 'new_member')
+      .in('target_id', normalizedIds);
+
+    if (error) {
+      console.error('Delete Member Notice Error:', error);
+      throw error;
+    }
+
+    removeMemberNoticesLocally(normalizedIds);
+  }, [removeMemberNoticesLocally]);
 
   const upsertLocalPerson = useCallback((person) => {
     setFamilyData((prev) => {
@@ -610,8 +902,11 @@ const FamilyGraph = () => {
   }, []);
 
   const appendLocalNotice = useCallback((notice) => {
-    setNotices((prev) => [notice, ...prev.filter((item) => String(item.id) !== String(notice.id || ''))].slice(0, 30));
-  }, []);
+    setNotices((prev) => sortNoticesNewestFirst([
+      notice,
+      ...prev.filter((item) => String(item.id) !== String(notice.id || ''))
+    ]).slice(0, 30));
+  }, [sortNoticesNewestFirst]);
 
 
 
@@ -657,7 +952,7 @@ const FamilyGraph = () => {
         const isCurrentlyCollapsing = collapsingParentId === pid;
         const displayNames = getDisplayNames(person);
         const pending = isPersonPending(person);
-        
+
         visibleData.push({
           ...person,
           displayArabicName: displayNames.arabicName,
@@ -679,9 +974,9 @@ const FamilyGraph = () => {
 
       const rawNodes = createNodesFromData(visibleData);
       const rawEdges = generateEdges(visibleData);
-      
+
       const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(rawNodes, rawEdges, appSettings.layoutStyle || 'tidy');
-      
+
       // Index existing nodes and layout nodes for O(1) override lookups
       const nodesMap = new Map(nodes.map(n => [String(n.id), n]));
       const layoutNodesMap = new Map(layoutedNodes.map(n => [String(n.id), n]));
@@ -714,28 +1009,28 @@ const FamilyGraph = () => {
             }
           }
         }
-        
+
         // Ungrouping/Expand Animation Overlay
         const isNew = !prevVisibleSetRef.current.has(nid);
         if (isNew && person && person.fatherId) {
           const fid = String(person.fatherId);
           const parentNode = nodesMap.get(fid) || layoutNodesMap.get(fid);
           if (parentNode) {
-             return { ...n, position: { ...parentNode.position }, opacity: 0 };
+            return { ...n, position: { ...parentNode.position }, opacity: 0 };
           }
         }
 
         return n;
       });
-      
+
       // 2. Expansion & Collapse Glow Detection
       const currentVisibleIds = new Set(visibleData.map(p => p.id));
       const newlyVisibleIds = new Set([...currentVisibleIds].filter(id => !prevVisibleSetRef.current.has(id)));
-      
+
       setNodes(finalNodes.map(n => {
         const isNew = newlyVisibleIds.has(n.id);
         const isToggled = toggledNodeInfo && toggledNodeInfo.id === n.id;
-        
+
         // #7: Preserve nav glow (from triggerGlow) across layout re-renders
         const nid2 = String(n.id);
         const isNavGlowing = lastGlowNodeIdRef.current === nid2;
@@ -746,7 +1041,7 @@ const FamilyGraph = () => {
         if (isNew && toggledNodeInfo && !toggledNodeInfo.isPersistent) {
           initialPos = { ...toggledNodeInfo.lastPos };
         }
-        
+
         return {
           ...n,
           data: {
@@ -758,23 +1053,23 @@ const FamilyGraph = () => {
         };
       }));
       setEdges([...layoutedEdges]);
-      
+
       // 3. Stabilization: Keep the toggled node at the same screen position
       if (toggledNodeInfo) {
         const targetNode = layoutNodesMap.get(String(toggledNodeInfo.id));
         if (targetNode) {
           const { lastPos, lastViewport } = toggledNodeInfo;
           const currentPos = targetNode.position;
-          
+
           // Formula: vpOffset_new = vpOffset_old + (nodePos_old - nodePos_new) * zoom
           const nextX = lastViewport.x + (lastPos.x - currentPos.x) * lastViewport.zoom;
           const nextY = lastViewport.y + (lastPos.y - currentPos.y) * lastViewport.zoom;
-          
+
           // Instant adjustments to prevent visual jumps
           const isInstant = !appSettings.animationsEnabled || !appSettings.expandEnabled;
           setViewport({ x: nextX, y: nextY, zoom: lastViewport.zoom }, { duration: isInstant ? 0 : 400 });
         }
-        
+
         if (!toggledNodeInfo.isPersistent) {
           setToggledNodeInfo(null);
         }
@@ -805,8 +1100,8 @@ const FamilyGraph = () => {
             const isCollapsed = !!collapsedStateById[node.id];
             return {
               ...node,
-              data: { 
-                ...node.data, 
+              data: {
+                ...node.data,
                 isGlowing: isCollapsed // Permanent glow for collapsed branches, clear for others
               }
             };
@@ -857,11 +1152,11 @@ const FamilyGraph = () => {
     }
     return null;
   });
-  
+
 
   const smoothFocusNode = useCallback((nodeId, options = {}) => {
-    const { 
-      targetZoom, 
+    const {
+      targetZoom,
       forceGlow = true,
       customDuration
     } = options;
@@ -876,7 +1171,7 @@ const FamilyGraph = () => {
 
     // Use current zoom if targetZoom not provided
     const finalZoom = targetZoom || currentZoom;
-    
+
     // Viewport dimensions
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
@@ -889,18 +1184,18 @@ const FamilyGraph = () => {
     const dx = targetX - currentX;
     const dy = targetY - currentY;
     const distance = Math.hypot(dx, dy);
-    
+
     // Adaptive Duration: clamp(distance * factor, 280ms, 700ms)
     let duration = customDuration || Math.min(Math.max(distance * 0.45, 280), 700);
-    
+
     // Check Settings
     if (!appSettings.animationsEnabled || !appSettings.cameraEnabled) {
       duration = 0;
     }
-    
+
     // Fast snap for local movements with same zoom
     if (!customDuration && Math.abs(currentZoom - finalZoom) < 0.01 && distance < 1500) {
-        duration = Math.min(duration, 400); 
+      duration = Math.min(duration, 400);
     }
 
     const startTime = performance.now();
@@ -910,8 +1205,8 @@ const FamilyGraph = () => {
       const progress = Math.min(elapsed / duration, 1);
 
       // easeInOutCubic
-      const easing = progress < 0.5 
-        ? 4 * progress * progress * progress 
+      const easing = progress < 0.5
+        ? 4 * progress * progress * progress
         : 1 - Math.pow(-2 * progress + 2, 3) / 2;
 
       const nextX = currentX + (targetX - currentX) * easing;
@@ -925,13 +1220,13 @@ const FamilyGraph = () => {
       } else {
         animationRef.current = null;
         if (forceGlow) {
-           triggerGlow(nodeId);
+          triggerGlow(nodeId);
         }
       }
     };
 
     animationRef.current = requestAnimationFrame(animate);
-    
+
     // Select the node
     setNodes((nds) => nds.map(n => ({ ...n, selected: n.id === nodeId })));
     setAncestorPath(calculateAncestorPath(nodeId));
@@ -1046,11 +1341,11 @@ const FamilyGraph = () => {
 
   const onNodeDoubleClick = useCallback((_, node) => {
     const wasExpanded = !collapsedStateById[node.id];
-    
+
     if (wasExpanded) {
       // 1. Start Grouping animation (Recursive Collapse)
       setCollapsingParentId(node.id);
-      
+
       // Build parent-children map for O(1) recursion
       const parentToChildrenMap = new Map();
       familyData.forEach(p => {
@@ -1079,7 +1374,7 @@ const FamilyGraph = () => {
         id: node.id,
         lastPos: { ...node.position },
         lastViewport: { ...view },
-        isPersistent: true 
+        isPersistent: true
       });
 
       setTimeout(() => {
@@ -1114,9 +1409,9 @@ const FamilyGraph = () => {
         });
         return results;
       };
-      
+
       const descendants = gatherDescendantIds(node.id);
-      
+
       // Viewport Stabilization (Snap only once for expand)
       const view = getViewport();
       setToggledNodeInfo({
@@ -1144,11 +1439,8 @@ const FamilyGraph = () => {
   const onPaneClick = useCallback(() => {
     setSelectedPerson(null);
     setAncestorPath({ nodeIds: new Set(), edgeIds: new Set() });
-    if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-        animationRef.current = null;
-    }
-  }, []);
+    stopCameraMotion();
+  }, [stopCameraMotion]);
 
   const onNodesChange = useCallback(
     (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
@@ -1171,11 +1463,11 @@ const FamilyGraph = () => {
   useEffect(() => {
     let lastWidth = window.innerWidth;
     let lastHeight = window.innerHeight;
-    
+
     const handleResize = () => {
       const currentWidth = window.innerWidth;
       const currentHeight = window.innerHeight;
-      
+
       // Only adjust center if the width changes significantly (e.g. orientation change),
       // avoiding jumpiness when the mobile keyboard pops up.
       if (Math.abs(currentWidth - lastWidth) > 50) {
@@ -1183,16 +1475,16 @@ const FamilyGraph = () => {
         const { x, y, zoom } = getViewport();
         const oldCenterX = lastWidth / 2;
         const oldCenterY = lastHeight / 2;
-        
+
         const flowCenterX = (oldCenterX - x) / zoom;
         const flowCenterY = (oldCenterY - y) / zoom;
-        
+
         // Re-apply so that the old flowCenter becomes the new screen center
         setTimeout(() => {
           setCenter(flowCenterX, flowCenterY, { zoom, duration: 400 });
         }, 150);
       }
-      
+
       lastWidth = currentWidth;
       lastHeight = currentHeight;
     };
@@ -1223,7 +1515,7 @@ const FamilyGraph = () => {
     // 2. Check synchronously (against current state snapshot) whether any are collapsed
     //    This avoids the async setState stale-closure bug where `changed` was always false.
     const anyCollapsed = ancestorsToExpand.some(id => !!collapsedStateById[id]);
-    
+
     if (!anyCollapsed) return false;
 
     // 3. Expand all collapsed ancestors
@@ -1257,20 +1549,29 @@ const FamilyGraph = () => {
     }
   }, [ensurePathVisible, nodes, personMap, smoothFocusNode]);
 
+  const getNextPendingIdForAdmin = useCallback((excludeId = null) => {
+    if (!isAdmin || pendingQueueIds.length === 0) {
+      return null;
+    }
+
+    return pendingQueueIds.find((id) => id !== String(excludeId || '')) || null;
+  }, [isAdmin, pendingQueueIds]);
+
   const openNextPendingForAdmin = useCallback((excludeId = null) => {
     if (!isAdmin || pendingQueueIds.length === 0) {
       adminWalkthroughEnabledRef.current = false;
-      return;
+      return false;
     }
 
-    const nextId = pendingQueueIds.find((id) => id !== String(excludeId || ''));
+    const nextId = getNextPendingIdForAdmin(excludeId);
     if (!nextId) {
       adminWalkthroughEnabledRef.current = false;
-      return;
+      return false;
     }
 
     openPersonModalById(nextId, { targetZoom: 1.25 });
-  }, [isAdmin, openPersonModalById, pendingQueueIds]);
+    return true;
+  }, [getNextPendingIdForAdmin, isAdmin, openPersonModalById, pendingQueueIds]);
 
   // Auto-focus when pending target becomes visible in nodes array
   useEffect(() => {
@@ -1316,48 +1617,48 @@ const FamilyGraph = () => {
     }
 
     if (familyData.length === 0) return;
-    
+
     // User request: Focus intro explicitly on "Muhammad bin Mas'ud ... al-Mulaqqab bi-Abi Raja'"
-    const rootPerson = familyData.find(p => p.arabicName && p.arabicName.includes('الملقب بأبي رجاء')) 
-                       || familyData.find(p => !p.fatherId);
-                       
+    const rootPerson = familyData.find(p => p.arabicName && p.arabicName.includes('الملقب بأبي رجاء'))
+      || familyData.find(p => !p.fatherId);
+
     if (!rootPerson) return;
 
     // Step 0: Ensure the tree is forcefully collapsed before cinematic starts
     const hasBeenForced = sessionStorage.getItem('rf-cinematic-forced');
     if (!hasBeenForced) {
-        // Collect descendants of Muhammad to collapse them
-        const parentToChildrenMap = new Map();
-        familyData.forEach(p => {
-          const fid = p.fatherId ? String(p.fatherId) : null;
-          if (fid) {
-            if (!parentToChildrenMap.has(fid)) parentToChildrenMap.set(fid, []);
-            parentToChildrenMap.get(fid).push(p);
-          }
+      // Collect descendants of Muhammad to collapse them
+      const parentToChildrenMap = new Map();
+      familyData.forEach(p => {
+        const fid = p.fatherId ? String(p.fatherId) : null;
+        if (fid) {
+          if (!parentToChildrenMap.has(fid)) parentToChildrenMap.set(fid, []);
+          parentToChildrenMap.get(fid).push(p);
+        }
+      });
+
+      const gatherDescendantIds = (parentId) => {
+        let results = [];
+        const children = parentToChildrenMap.get(String(parentId)) || [];
+        children.forEach(child => {
+          const cid = String(child.id);
+          results.push(cid);
+          results = results.concat(gatherDescendantIds(cid));
         });
-        
-        const gatherDescendantIds = (parentId) => {
-          let results = [];
-          const children = parentToChildrenMap.get(String(parentId)) || [];
-          children.forEach(child => {
-            const cid = String(child.id);
-            results.push(cid);
-            results = results.concat(gatherDescendantIds(cid));
-          });
-          return results;
-        };
-        
-        const descendants = gatherDescendantIds(rootPerson.id);
-        
-        setCollapsedStateById(prev => {
-           let newState = { ...prev };
-           newState[rootPerson.id] = true; // Collapse his immediate children
-           descendants.forEach(cid => { newState[cid] = true; }); // Collapse all descendant branches
-           localStorage.setItem('rf-collapsed-state', JSON.stringify(newState));
-           return newState;
-        });
-        sessionStorage.setItem('rf-cinematic-forced', '1');
-        return; // Wait for the next React render tick with a heavily tightened map
+        return results;
+      };
+
+      const descendants = gatherDescendantIds(rootPerson.id);
+
+      setCollapsedStateById(prev => {
+        let newState = { ...prev };
+        newState[rootPerson.id] = true; // Collapse his immediate children
+        descendants.forEach(cid => { newState[cid] = true; }); // Collapse all descendant branches
+        localStorage.setItem('rf-collapsed-state', JSON.stringify(newState));
+        return newState;
+      });
+      sessionStorage.setItem('rf-cinematic-forced', '1');
+      return; // Wait for the next React render tick with a heavily tightened map
     }
 
     // Now layout is truly tight and recalculation is done
@@ -1367,7 +1668,7 @@ const FamilyGraph = () => {
 
     hasInitialFocusedRef.current = true;
     setIsIntroRunning(true);
-    
+
     // Build tier arrays for dynamic popping
     const parentToChildrenMap = new Map();
     familyData.forEach(p => {
@@ -1389,83 +1690,83 @@ const FamilyGraph = () => {
     const initH = rootNode.measured?.height || rootNode.height || 100;
     const initCX = rootNode.position.x + (initW / 2);
     const initCY = rootNode.position.y + (initH / 2);
-    
-    setViewport({ 
-        x: (window.innerWidth / 2) - (initCX * 2.5), 
-        y: (window.innerHeight / 2) - (initCY * 2.5), 
-        zoom: 2.5 
+
+    setViewport({
+      x: (window.innerWidth / 2) - (initCX * 2.5),
+      y: (window.innerHeight / 2) - (initCY * 2.5),
+      zoom: 2.5
     });
 
     const popGroup = (ids, delay) => {
-        if (!ids || ids.length === 0) return;
-        setTimeout(() => {
-            setCollapsedStateById(prev => {
-                const next = { ...prev };
-                let changed = false;
-                ids.forEach(id => {
-                    if (next[id]) { next[id] = false; changed = true; }
-                });
-                if (changed) localStorage.setItem('rf-collapsed-state', JSON.stringify(next));
-                return next;
-            });
-        }, delay);
+      if (!ids || ids.length === 0) return;
+      setTimeout(() => {
+        setCollapsedStateById(prev => {
+          const next = { ...prev };
+          let changed = false;
+          ids.forEach(id => {
+            if (next[id]) { next[id] = false; changed = true; }
+          });
+          if (changed) localStorage.setItem('rf-collapsed-state', JSON.stringify(next));
+          return next;
+        });
+      }, delay);
     };
 
     const duration = 14500;
     const startT = window.performance.now();
 
     const animateCamera = (timestamp) => {
-        const elapsed = timestamp - startT;
-        const progress = Math.min(elapsed / duration, 1);
-        
-        const liveRoot = getNode(String(rootPerson.id));
-        if (!liveRoot) return;
-        
-        // Memperbaiki Zoom Out Maksimum sampai 0.05 (sangat jauh)
-        let currentZoom;
-        if (progress < 0.25) {
-             currentZoom = 2.5 - (progress / 0.25) * 1.5; // 0->25%: 2.5 to 1.0
-        } else if (progress < 0.6) {
-             currentZoom = 1.0 - ((progress - 0.25) / 0.35) * 0.7; // 25->60%: 1.0 to 0.3
-        } else {
-             currentZoom = 0.3 - ((progress - 0.6) / 0.4) * 0.25; // 60->100%: 0.3 to 0.05
-        }
-        
-        // Kamera melengkung ayunan drone
-        const panCurve = Math.sin(progress * Math.PI); 
-        const offsetX = panCurve * 800; // max shift 800px
-        const offsetY = panCurve * 800; 
+      const elapsed = timestamp - startT;
+      const progress = Math.min(elapsed / duration, 1);
 
-        const activeW = liveRoot.measured?.width || liveRoot.width || 260;
-        const activeH = liveRoot.measured?.height || liveRoot.height || 100;
-        const nodeCenterX = liveRoot.position.x + (activeW / 2);
-        const nodeCenterY = liveRoot.position.y + (activeH / 2);
+      const liveRoot = getNode(String(rootPerson.id));
+      if (!liveRoot) return;
 
-        const flowElem = document.querySelector('.react-flow');
-        const vpW = flowElem ? flowElem.clientWidth : window.innerWidth;
-        const vpH = flowElem ? flowElem.clientHeight : window.innerHeight;
-        
-        const targetX = (vpW / 2) - ((nodeCenterX + offsetX) * currentZoom);
-        const targetY = (vpH / 2) - ((nodeCenterY + offsetY) * currentZoom);
-        
-        setViewport({ x: targetX, y: targetY, zoom: currentZoom });
-        
-        if (progress < 1) {
-            requestAnimationFrame(animateCamera);
-        } else {
-            setIsIntroRunning(false); 
-        }
+      // Memperbaiki Zoom Out Maksimum sampai 0.05 (sangat jauh)
+      let currentZoom;
+      if (progress < 0.25) {
+        currentZoom = 2.5 - (progress / 0.25) * 1.5; // 0->25%: 2.5 to 1.0
+      } else if (progress < 0.6) {
+        currentZoom = 1.0 - ((progress - 0.25) / 0.35) * 0.7; // 25->60%: 1.0 to 0.3
+      } else {
+        currentZoom = 0.3 - ((progress - 0.6) / 0.4) * 0.25; // 60->100%: 0.3 to 0.05
+      }
+
+      // Kamera melengkung ayunan drone
+      const panCurve = Math.sin(progress * Math.PI);
+      const offsetX = panCurve * 800; // max shift 800px
+      const offsetY = panCurve * 800;
+
+      const activeW = liveRoot.measured?.width || liveRoot.width || 260;
+      const activeH = liveRoot.measured?.height || liveRoot.height || 100;
+      const nodeCenterX = liveRoot.position.x + (activeW / 2);
+      const nodeCenterY = liveRoot.position.y + (activeH / 2);
+
+      const flowElem = document.querySelector('.react-flow');
+      const vpW = flowElem ? flowElem.clientWidth : window.innerWidth;
+      const vpH = flowElem ? flowElem.clientHeight : window.innerHeight;
+
+      const targetX = (vpW / 2) - ((nodeCenterX + offsetX) * currentZoom);
+      const targetY = (vpH / 2) - ((nodeCenterY + offsetY) * currentZoom);
+
+      setViewport({ x: targetX, y: targetY, zoom: currentZoom });
+
+      if (progress < 1) {
+        requestAnimationFrame(animateCamera);
+      } else {
+        setIsIntroRunning(false);
+      }
     };
 
     // Eksekusi Animasi Kamera Continuous
     requestAnimationFrame(animateCamera);
 
     // Buka node bertahap layer by layer
-    popGroup(tier1, 1000); 
-    popGroup(tier2, 2800); 
-    popGroup(tier3, 5000); 
-    popGroup(tier4, 7500); 
-    popGroup(tier5, 9500); 
+    popGroup(tier1, 1000);
+    popGroup(tier2, 2800);
+    popGroup(tier3, 5000);
+    popGroup(tier4, 7500);
+    popGroup(tier5, 9500);
 
     // Langkah Terakhir: Pastikan SEMUA sisa nodes tanpa terkecuali mengembang persis di ujung penarikan
     const allIds = familyData.map(d => String(d.id));
@@ -1479,7 +1780,7 @@ const FamilyGraph = () => {
     let parts = [];
     let current = personMap.get(String(person.fatherId)); // O(1) vs O(N) find()
     let count = 0;
-    while(current && count < 2) {
+    while (current && count < 2) {
       const currentDisplay = getDisplayNames(current);
       parts.push(lang === 'ar' ? currentDisplay.arabicName : (currentDisplay.englishName || currentDisplay.arabicName));
       current = personMap.get(String(current.fatherId));
@@ -1492,7 +1793,7 @@ const FamilyGraph = () => {
   const handleQueryChange = (e) => {
     const val = e.target.value;
     setSearchQuery(val);
-    
+
     if (val.trim() === '') {
       setShowSuggestions(false);
       return;
@@ -1501,15 +1802,15 @@ const FamilyGraph = () => {
     if (val.length >= 3) {
       const queryLatin = cleanText(val.toLowerCase());
       const queryArab = cleanText(normalizeArabic(val));
-      
+
       const suggestions = familyData.filter(person => {
         const displayNames = getDisplayNames(person);
         const latinRaw = displayNames.englishName || '';
         const arabRaw = displayNames.arabicName || '';
         const infoRaw = person.info || '';
-        return cleanText(latinRaw.toLowerCase()).includes(queryLatin) || 
-               cleanText(normalizeArabic(arabRaw)).includes(queryArab) ||
-               infoRaw.toLowerCase().includes(val.toLowerCase());
+        return cleanText(latinRaw.toLowerCase()).includes(queryLatin) ||
+          cleanText(normalizeArabic(arabRaw)).includes(queryArab) ||
+          infoRaw.toLowerCase().includes(val.toLowerCase());
       });
       setSearchSuggestions(suggestions.slice(0, 10)); // Limit 10
       setShowSuggestions(true);
@@ -1522,7 +1823,7 @@ const FamilyGraph = () => {
     const displayNames = getDisplayNames(person);
     setSearchQuery(displayNames.englishName || displayNames.arabicName);
     setShowSuggestions(false);
-    
+
     const wasHidden = ensurePathVisible(person.id);
     if (wasHidden) {
       setPendingFocusTarget({ id: person.id, options: { targetZoom: 1.2 } });
@@ -1535,7 +1836,7 @@ const FamilyGraph = () => {
     e.preventDefault();
     if (!searchQuery.trim()) return;
     setShowSuggestions(false);
-    
+
     const isSameQuery = searchQuery === lastSearchQuery;
     const queryLatinClean = cleanText(searchQuery.toLowerCase());
     const queryArabClean = cleanText(normalizeArabic(searchQuery));
@@ -1559,7 +1860,7 @@ const FamilyGraph = () => {
       const matchId = matches[nextIndex];
       setCurrentSearchIndex(nextIndex);
       setLastSearchQuery(searchQuery);
-      
+
       const wasHidden = ensurePathVisible(matchId);
       if (wasHidden) {
         setPendingFocusTarget({ id: matchId, options: { targetZoom: 1.2 } });
@@ -1577,17 +1878,17 @@ const FamilyGraph = () => {
 
   // ----- FIRESTORE CRUD -----
 
-    // ----- SUPABASE CRUD -----
+  // ----- SUPABASE CRUD -----
 
   const handleAddChild = useCallback(async (parent, childrenList) => {
     if (!isAdmin) return;
     try {
       const list = Array.isArray(childrenList) ? childrenList : [childrenList];
       const reservedIds = reserveNextNodeIds(list.length);
-      
+
       for (const [index, child] of list.entries()) {
         const { englishName, arabicName } = child;
-        
+
         const { data: newNodes, error: nodeError } = await supabase
           .from('nodes')
           .insert({
@@ -1608,13 +1909,13 @@ const FamilyGraph = () => {
         };
         const newNodeId = createdNode.id;
         upsertLocalPerson(createdNode);
-        
+
         // CREATE NOTICE
         const grandfather = familyData.find(p => p.id === parent.fatherId);
         const gfName = grandfather ? (lang === 'ar' ? grandfather.arabicName : grandfather.englishName) : '-';
         const fatherName = lang === 'ar' ? parent.arabicName : parent.englishName;
         const childName = lang === 'ar' ? arabicName : englishName;
-        
+
         const noticeText = buildNoticeText({
           type: 'new_member',
           lang,
@@ -1639,7 +1940,7 @@ const FamilyGraph = () => {
     }
   }, [appendLocalNotice, createNotice, familyData, lang, t, isAdmin, reserveNextNodeIds, upsertLocalPerson]);
 
-    const handleUpdateChild = async (childId, updates) => {
+  const handleUpdateChild = async (childId, updates) => {
     if (!isAdmin) return;
     try {
       const dbUpdates = {};
@@ -1656,14 +1957,17 @@ const FamilyGraph = () => {
 
       if (error) throw error;
       patchLocalPerson(childId, updates);
+      await fetchAllNodes({ markLoaded: false });
     } catch (err) {
       console.error(err);
       alert(t('updateFailed'));
+      throw err;
     }
   };
 
-    const handleRemoveChild = async (childId) => {
+  const handleRemoveChild = async (childId) => {
     if (!isAdmin) return;
+    let idsToDelete = [];
     try {
       const parentToChildrenMap = new Map();
       familyData.forEach((person) => {
@@ -1678,25 +1982,37 @@ const FamilyGraph = () => {
         return directChildren.flatMap((descendantId) => [descendantId, ...gatherDescendantIds(descendantId)]);
       };
 
-      const idsToDelete = [String(childId), ...gatherDescendantIds(childId)];
+      idsToDelete = [String(childId), ...gatherDescendantIds(childId)];
+      idsToDelete.forEach((id) => pendingDeletedIdsRef.current.add(String(id)));
+      removeLocalPersons(idsToDelete);
+      removeMemberNoticesLocally(idsToDelete);
+
+      if (selectedPerson && idsToDelete.includes(String(selectedPerson.id))) {
+        setIsModalOpen(false);
+      }
+
       const { error } = await supabase
         .from('nodes')
         .delete()
         .in('id', idsToDelete);
 
       if (error) throw error;
-      removeLocalPersons(idsToDelete);
-
-      if (selectedPerson && idsToDelete.includes(String(selectedPerson.id))) {
-        setIsModalOpen(false); 
-      }
+      await deleteMemberNotices(idsToDelete);
+      await fetchAllNodes({ markLoaded: false });
+      idsToDelete.forEach((id) => pendingDeletedIdsRef.current.delete(String(id)));
     } catch (err) {
       console.error(err);
+      idsToDelete.forEach((id) => pendingDeletedIdsRef.current.delete(String(id)));
+      await Promise.all([
+        fetchAllNodes({ markLoaded: false }),
+        fetchLatestNotices()
+      ]);
       alert(t('deleteFailed'));
+      throw err;
     }
   };
 
-    const handleSubmitChildSuggestion = useCallback(async (parent, childrenList) => {
+  const handleSubmitChildSuggestion = useCallback(async (parent, childrenList) => {
     try {
       const list = Array.isArray(childrenList) ? childrenList : [childrenList];
       const actorId = getActorId();
@@ -1767,7 +2083,7 @@ const FamilyGraph = () => {
     }
   }, [appendLocalNotice, createNotice, getActorId, lang, personMap, reserveNextNodeIds, t, upsertLocalPerson]);
 
-    const handleSubmitNameSuggestion = useCallback(async (personId, updates) => {
+  const handleSubmitNameSuggestion = useCallback(async (personId, updates) => {
     try {
       const actorId = getActorId();
       const now = Date.now();
@@ -1833,7 +2149,7 @@ const FamilyGraph = () => {
     }
   }, [appendLocalNotice, createNotice, getActorId, lang, patchLocalPerson, personMap, t]);
 
-    const handleUpdateProposal = async (person, updates) => {
+  const handleUpdateProposal = async (person, updates) => {
     try {
       const actorId = getActorId();
       const now = Date.now();
@@ -1905,16 +2221,20 @@ const FamilyGraph = () => {
     }
   };
 
-    const handleCancelProposal = async (person) => {
+  const handleCancelProposal = async (person) => {
     try {
       if (isPendingAddChildNode(person)) {
         const { error } = await supabase.from('nodes').delete().eq('id', person.id);
         if (error) throw error;
+        removeLocalPersons([person.id]);
+        await deleteProposalNotices(person, 'proposal_add_child');
       } else if (getPendingNameChange(person)) {
         const newMod = { ...(person.moderation || {}) };
         delete newMod.nameChange;
         const { error } = await supabase.from('nodes').update({ moderation: newMod }).eq('id', person.id);
         if (error) throw error;
+        patchLocalPerson(person.id, { moderation: newMod });
+        await deleteProposalNotices(person, 'proposal_name_change');
       }
       alert(t('suggestionCanceled'));
     } catch (err) {
@@ -1924,7 +2244,7 @@ const FamilyGraph = () => {
     }
   };
 
-    const handleApproveProposal = async (person) => {
+  const handleApproveProposal = async (person) => {
     if (!isAdmin) return;
     try {
       if (isPendingAddChildNode(person)) {
@@ -1932,15 +2252,16 @@ const FamilyGraph = () => {
         const { error } = await supabase.from('nodes').update({ moderation: newMod }).eq('id', person.id);
         if (error) throw error;
         patchLocalPerson(person.id, { moderation: newMod });
+        await deleteProposalNotices(person, 'proposal_add_child');
       } else {
         const pendingNameChange = getPendingNameChange(person);
         if (!pendingNameChange) return;
         const newMod = { ...(person.moderation || {}) };
         delete newMod.nameChange;
-        const { error } = await supabase.from('nodes').update({ 
-          english_name: pendingNameChange.proposedEnglishName || '', 
+        const { error } = await supabase.from('nodes').update({
+          english_name: pendingNameChange.proposedEnglishName || '',
           arabic_name: pendingNameChange.proposedArabicName || '',
-          moderation: newMod 
+          moderation: newMod
         }).eq('id', person.id);
         if (error) throw error;
         patchLocalPerson(person.id, {
@@ -1948,8 +2269,10 @@ const FamilyGraph = () => {
           arabicName: pendingNameChange.proposedArabicName || '',
           moderation: newMod
         });
+        await deleteProposalNotices(person, 'proposal_name_change');
       }
       alert(t('suggestionApproved'));
+      continueAdminVerification(person.id);
     } catch (err) {
       console.error(err);
       alert(t('updateFailed'));
@@ -1957,21 +2280,24 @@ const FamilyGraph = () => {
     }
   };
 
-    const handleRejectProposal = async (person) => {
+  const handleRejectProposal = async (person) => {
     if (!isAdmin) return;
     try {
       if (isPendingAddChildNode(person)) {
         const { error } = await supabase.from('nodes').delete().eq('id', person.id);
         if (error) throw error;
         removeLocalPersons([person.id]);
+        await deleteProposalNotices(person, 'proposal_add_child');
       } else if (getPendingNameChange(person)) {
         const newMod = { ...(person.moderation || {}) };
         delete newMod.nameChange;
         const { error } = await supabase.from('nodes').update({ moderation: newMod }).eq('id', person.id);
         if (error) throw error;
         patchLocalPerson(person.id, { moderation: newMod });
+        await deleteProposalNotices(person, 'proposal_name_change');
       }
       alert(t('suggestionRejected'));
+      continueAdminVerification(person.id);
     } catch (err) {
       console.error(err);
       alert(t('deleteFailed'));
@@ -1991,6 +2317,7 @@ const FamilyGraph = () => {
       }));
       const { error } = await supabase.from('nodes').insert(payload);
       if (error) throw error;
+      await fetchAllNodes({ markLoaded: false });
       alert(t('seedSuccess'));
     } catch (error) {
       console.error(error);
@@ -2000,7 +2327,7 @@ const FamilyGraph = () => {
 
   // ----- ADMIN LOGIC -----
 
-    const handleSignIn = async (email, password) => {
+  const handleSignIn = async (email, password) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       if (error.message?.toLowerCase().includes('invalid login credentials')) {
@@ -2018,7 +2345,7 @@ const FamilyGraph = () => {
     setActiveInfoModal(null);
   };
 
-    const handleSignOut = async () => {
+  const handleSignOut = async () => {
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
     const { error: anonError } = await supabase.auth.signInAnonymously();
@@ -2027,9 +2354,11 @@ const FamilyGraph = () => {
 
 
 
-    const handleChangePassword = async (newPassword) => {
+  const handleChangePassword = async (newPassword) => {
     const { error } = await supabase.auth.updateUser({ password: newPassword });
-    if (error) throw error;
+    if (error) {
+      throw new Error(error.message || 'Failed to change password.');
+    }
     alert(t('passwordChangedSuccess'));
     setActiveInfoModal(null);
   };
@@ -2041,7 +2370,7 @@ const FamilyGraph = () => {
 
     if (item === 'Change Password') setActiveInfoModal('changePassword');
     if (item === 'Sign Out') handleSignOut();
-    
+
     if (item === 'Notice') {
       setActiveInfoModal('notice');
       // Fix: Use the max timestamp from the actual data to avoid local clock skew issues
@@ -2054,12 +2383,12 @@ const FamilyGraph = () => {
 
   const handleCustomFitView = useCallback(() => {
     if (!familyData || familyData.length === 0) return;
-    
+
     // Override absolute root; user explicitly targets this specific node as the visual center
-    const targetPerson = familyData.find(p => p.arabicName && p.arabicName.includes('الملقب بأبي رجاء')) 
-                         || familyData.find(p => !p.fatherId);
+    const targetPerson = familyData.find(p => p.arabicName && p.arabicName.includes('الملقب بأبي رجاء'))
+      || familyData.find(p => !p.fatherId);
     if (!targetPerson) return;
-    
+
     const liveRoot = getNode(String(targetPerson.id));
     if (!liveRoot) return;
 
@@ -2067,11 +2396,11 @@ const FamilyGraph = () => {
     const activeH = liveRoot.measured?.height || liveRoot.height || 100;
     const nodeCenterX = liveRoot.position.x + (activeW / 2);
     const nodeCenterY = liveRoot.position.y + (activeH / 2);
-    
+
     const flowElem = document.querySelector('.react-flow');
     const vpW = flowElem ? flowElem.clientWidth : window.innerWidth;
     const vpH = flowElem ? flowElem.clientHeight : window.innerHeight;
-    
+
     const currentZoom = 0.05;
     const targetX = (vpW / 2) - (nodeCenterX * currentZoom);
     // Presisi di tengah layar canvas yang sebenarnya
@@ -2117,10 +2446,10 @@ const FamilyGraph = () => {
     const flowElem = document.querySelector('.react-flow');
     const vpW = flowElem ? flowElem.clientWidth : window.innerWidth;
     const vpH = flowElem ? flowElem.clientHeight : window.innerHeight;
-    
+
     const { x, y, zoom } = getViewport();
-    const padding = 50; 
-    
+    const padding = 50;
+
     // Bounds in flow-space
     const minX = (-x - padding) / zoom;
     const minY = (-y - padding) / zoom;
@@ -2128,12 +2457,12 @@ const FamilyGraph = () => {
     const maxY = (vpH - y + padding) / zoom;
 
     const visibleCollapsedNodes = nodes.filter(node => {
-      const isVisible = 
-        node.position.x >= minX && 
-        node.position.x <= maxX && 
-        node.position.y >= minY && 
+      const isVisible =
+        node.position.x >= minX &&
+        node.position.x <= maxX &&
+        node.position.y >= minY &&
         node.position.y <= maxY;
-      
+
       return isVisible && !!collapsedStateById[node.id] && node.data?.hasChildren;
     });
 
@@ -2150,29 +2479,36 @@ const FamilyGraph = () => {
   }, [getViewport, nodes, collapsedStateById, handleCustomFitView, familyData]);
 
   const handleModalClose = useCallback(() => {
-    const closingId = selectedPerson?.id || null;
-    const latestClosingPerson = closingId ? personMap.get(String(closingId)) : null;
+    adminWalkthroughEnabledRef.current = false;
     setIsModalOpen(false);
     setSelectedPerson(null);
-
-    if (isAdmin && adminWalkthroughEnabledRef.current && closingId && !isPersonPending(latestClosingPerson)) {
-      setTimeout(() => {
-        openNextPendingForAdmin(closingId);
-      }, 250);
-    }
-  }, [isAdmin, openNextPendingForAdmin, personMap, selectedPerson]);
+  }, []);
 
   const handleSkipPending = useCallback((personId) => {
     if (!isAdmin) return;
     adminWalkthroughEnabledRef.current = true;
-    openNextPendingForAdmin(personId);
+    const hasNextPending = openNextPendingForAdmin(personId);
+    if (!hasNextPending) {
+      setIsModalOpen(false);
+      setSelectedPerson(null);
+    }
+  }, [isAdmin, openNextPendingForAdmin]);
+
+  const continueAdminVerification = useCallback((currentPersonId) => {
+    if (!isAdmin) return;
+    adminWalkthroughEnabledRef.current = true;
+    setIsModalOpen(false);
+    setSelectedPerson(null);
+    setTimeout(() => {
+      openNextPendingForAdmin(currentPersonId);
+    }, 250);
   }, [isAdmin, openNextPendingForAdmin]);
 
 
   const handleViewPerson = (personId) => {
     setActiveInfoModal(null);
-    setIsModalOpen(false); 
-    
+    setIsModalOpen(false);
+
     if (!personId) return;
 
     const wasHidden = ensurePathVisible(personId);
@@ -2315,12 +2651,20 @@ const FamilyGraph = () => {
     setAncestorPath(calculateAncestorPath(selectedId));
     setNodes(nds => nds.map(n => ({ ...n, selected: n.id === selectedId })));
 
-    // Tutup modal, lalu fitView agar seluruh lineage terlihat centered
+    const ancestorChain = [selectedId];
+    let climbId = selectedPerson?.fatherId || null;
+    let safety = 0;
+    while (climbId && safety < 200) {
+      const normalizedId = String(climbId);
+      ancestorChain.push(normalizedId);
+      climbId = personMapLocal.get(normalizedId)?.fatherId || null;
+      safety += 1;
+    }
+
+    // Tutup modal, lalu jalankan tur kamera dari selected node ke atas hingga framing akhir pas.
     setIsModalOpen(false);
-    setTimeout(() => {
-      fitView({ duration: 700, padding: 0.18 });
-    }, 300);
-  }, [familyData, fitView, calculateAncestorPath]);
+    runLineageCameraTour(selectedId, ancestorChain);
+  }, [familyData, calculateAncestorPath, runLineageCameraTour]);
 
   const handleViewNotice = (notice) => {
     handleViewPerson(notice.targetId);
@@ -2333,13 +2677,13 @@ const FamilyGraph = () => {
       <form onSubmit={handleSearch} style={{ display: 'flex', width: '100%', gap: '12px', alignItems: 'center' }} className="search-form">
         <Search size={20} className="search-icon" style={{ flexShrink: 0 }} />
         <div style={{ position: 'relative', width: '100%' }}>
-          <input 
-            type="text" 
-            placeholder={t('searchPlaceholder')} 
-            className="search-input" 
-            value={searchQuery} 
-            onChange={handleQueryChange} 
-            onFocus={() => { if(searchQuery.length >= 3) setShowSuggestions(true) }}
+          <input
+            type="text"
+            placeholder={t('searchPlaceholder')}
+            className="search-input"
+            value={searchQuery}
+            onChange={handleQueryChange}
+            onFocus={() => { if (searchQuery.length >= 3) setShowSuggestions(true) }}
             onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
           />
           {showSuggestions && searchSuggestions.length > 0 && (
@@ -2348,7 +2692,7 @@ const FamilyGraph = () => {
                 <div key={s.id} onClick={() => selectSuggestion(s)} className="suggestion-item" style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--panel-border)' }}>
                   <div style={{ fontWeight: 'bold' }}>{lang === 'ar' ? getDisplayNames(s).arabicName : (getDisplayNames(s).englishName || getDisplayNames(s).arabicName)}</div>
                   <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                     {(lang === 'ar' ? getDisplayNames(s).arabicName : (getDisplayNames(s).englishName || getDisplayNames(s).arabicName)) + getNasabDesc(s)}
+                    {(lang === 'ar' ? getDisplayNames(s).arabicName : (getDisplayNames(s).englishName || getDisplayNames(s).arabicName)) + getNasabDesc(s)}
                   </div>
                 </div>
               ))}
@@ -2365,6 +2709,7 @@ const FamilyGraph = () => {
     try {
       const { error } = await supabase.from('notices').delete().eq('id', id);
       if (error) throw error;
+      removeLocalNoticeById(id);
     } catch (err) {
       console.error("Delete Notice Error:", err);
     }
@@ -2372,16 +2717,16 @@ const FamilyGraph = () => {
 
   return (
     <div className={`app-root-container ${!appSettings.animationsEnabled ? 'no-animations' : ''}`}>
-      <MobileHeader 
-        title={t('appName')} 
+      <MobileHeader
+        title={t('appName')}
         onMenuClick={handleMenuClick}
         t={t}
         lang={lang}
         currentUser={adminUser}
         unreadCount={unreadCount}
       />
-      
-      <WebsiteHeader 
+
+      <WebsiteHeader
         onMenuClick={handleMenuClick}
         t={t}
         lang={lang}
@@ -2391,9 +2736,9 @@ const FamilyGraph = () => {
         {renderSearchForm()}
       </WebsiteHeader>
 
-      <InfoModal 
-        isOpen={!!activeInfoModal} 
-        onClose={() => setActiveInfoModal(null)} 
+      <InfoModal
+        isOpen={!!activeInfoModal}
+        onClose={() => setActiveInfoModal(null)}
         type={activeInfoModal}
         title={t(activeInfoModal === 'signin' ? 'signIn' : activeInfoModal === 'about' ? 'about' : activeInfoModal === 'notice' ? 'notice' : activeInfoModal === 'changePassword' ? 'changePassword' : 'settings')}
         t={t}
@@ -2431,12 +2776,12 @@ const FamilyGraph = () => {
 
       {/* Render Seed Button if DB is totally empty and not loading */}
       {!isLoading && familyData.length === 0 && isAdmin && (
-        <button className="theme-toggle top-actions" onClick={seedDatabase} title={t('seedTooltip')} style={{top: 24, right: 24, color: 'var(--accent)'}}>
+        <button className="theme-toggle top-actions" onClick={seedDatabase} title={t('seedTooltip')} style={{ top: 24, right: 24, color: 'var(--accent)' }}>
           <Database size={20} />
         </button>
       )}
 
-      <NodeEditModal 
+      <NodeEditModal
         isOpen={isModalOpen}
         onClose={handleModalClose}
         person={selectedPerson}
@@ -2464,10 +2809,7 @@ const FamilyGraph = () => {
 
       <div className={`graph-workspace ${Capacitor.getPlatform()}`} style={{ width: '100%', height: '100%', pointerEvents: isIntroRunning ? 'none' : 'auto' }} onDoubleClick={onPaneDoubleClick}>
         {isLoading ? (
-          <div style={{display:'flex', flexDirection: 'column', height:'100%', width:'100%', alignItems:'center', justifyContent:'center', gap: '16px'}}>
-             <div>{t('loading')}</div>
-             <TimeoutWarning />
-          </div>
+          <LoadingScreen t={t} />
         ) : (
           <ReactFlow
             nodes={nodes}
@@ -2476,14 +2818,12 @@ const FamilyGraph = () => {
             onEdgesChange={onEdgesChange}
             onMoveEnd={handleMoveEnd}
             onPaneClick={onPaneClick}
-            onPaneDoubleClick={onPaneDoubleClick}
             onNodeClick={onNodeClick}
             onNodeDoubleClick={onNodeDoubleClick}
             zoomOnDoubleClick={false}
             onMoveStart={(e) => {
-              if (e && e.type !== 'animation' && animationRef.current) {
-                  cancelAnimationFrame(animationRef.current);
-                  animationRef.current = null;
+              if (e && e.type !== 'animation') {
+                stopCameraMotion();
               }
             }}
             nodeTypes={nodeTypes}
@@ -2500,17 +2840,17 @@ const FamilyGraph = () => {
           >
             <Background color="var(--panel-border)" gap={24} size={2} />
             <Controls position="bottom-right" showInteractive={false} showFitView={false}>
-              <button 
-                className="react-flow__controls-button" 
-                onClick={handleCustomFitView} 
+              <button
+                className="react-flow__controls-button"
+                onClick={handleCustomFitView}
                 title={t('fitView')}
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               >
                 <Maximize size={14} />
               </button>
-              <button 
-                className="react-flow__controls-button" 
-                onClick={handleExpandAll} 
+              <button
+                className="react-flow__controls-button"
+                onClick={handleExpandAll}
                 title={expandClickCount === 0 ? t('expandAll') : t('expandAllHint')}
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}
               >
@@ -2537,17 +2877,17 @@ const FamilyGraph = () => {
               >
                 {navDirection === 'right' ? <ArrowRight size={14} /> : <ArrowLeft size={14} />}
               </button>
-              <button 
-                className="react-flow__controls-button" 
-                onClick={toggleTheme} 
+              <button
+                className="react-flow__controls-button"
+                onClick={toggleTheme}
                 title={t('themeTitle')}
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               >
                 <Palette size={14} />
               </button>
-              <button 
-                className="react-flow__controls-button" 
-                onClick={toggleLang} 
+              <button
+                className="react-flow__controls-button"
+                onClick={toggleLang}
                 title={t('langTitle')}
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 'bold' }}
               >
