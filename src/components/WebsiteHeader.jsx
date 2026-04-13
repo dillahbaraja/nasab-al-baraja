@@ -3,7 +3,7 @@ import { Menu } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import SideDrawer from './SideDrawer';
 
-const WebsiteHeader = ({ onMenuClick, children, t, lang, currentUser, unreadCount = 0 }) => {
+const WebsiteHeader = ({ onMenuClick, children, t, lang, currentUser, role = 'guest', unreadCount = 0 }) => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const platform = Capacitor.getPlatform();
 
@@ -43,6 +43,7 @@ const WebsiteHeader = ({ onMenuClick, children, t, lang, currentUser, unreadCoun
         t={t}
         lang={lang}
         currentUser={currentUser}
+        role={role}
         unreadCount={unreadCount}
       />
     </>

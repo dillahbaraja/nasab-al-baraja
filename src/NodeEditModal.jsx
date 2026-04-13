@@ -22,7 +22,13 @@ const NodeEditModal = ({
   lang,
   t,
   currentUser,
-  isAdmin
+  isAdmin,
+  canModerateProposals = false,
+  currentRole,
+  memberClaimStatus = 'none',
+  allowMemberClaim = false,
+  currentMemberClaimStatus = 'none',
+  onSubmitMemberClaim
 }) => {
   const person = initialPerson ? (familyData.find((p) => p.id === initialPerson.id) || initialPerson) : null;
   const [childrenInputs, setChildrenInputs] = useState([createEmptyChildInput()]);
@@ -32,6 +38,7 @@ const NodeEditModal = ({
   const [isSaving, setIsSaving] = useState(false);
   const [activeSuggestionMode, setActiveSuggestionMode] = useState(null);
   const [proposalNameForm, setProposalNameForm] = useState({ latin: '', arab: '' });
+  const [claimForm, setClaimForm] = useState({ email: '', password: '', phone: '', city: '' });
   const suggestionFormRef = useRef(null);
   const primarySuggestionInputRef = useRef(null);
 
@@ -64,6 +71,12 @@ const NodeEditModal = ({
     setProposalNameForm({
       latin: displayNames.englishName || '',
       arab: displayNames.arabicName || ''
+    });
+    setClaimForm({
+      email: '',
+      password: '',
+      phone: '',
+      city: ''
     });
   }, [person, displayNames]);
 
@@ -218,6 +231,30 @@ const NodeEditModal = ({
     }
   };
 
+  const handleSubmitMemberClaimForm = async (e) => {
+    e.preventDefault();
+    const payload = {
+      email: (claimForm.email || '').trim(),
+      password: claimForm.password || '',
+      phone: (claimForm.phone || '').trim(),
+      city: (claimForm.city || '').trim()
+    };
+
+    if (!payload.email || !payload.password || !payload.phone || !payload.city || isSaving) return;
+
+    setIsSaving(true);
+    try {
+      await onSubmitMemberClaim(person, payload);
+      setActiveSuggestionMode(null);
+      onClose();
+    } catch (err) {
+      console.error('Member Claim Save Error:', err);
+      alert(err?.message || t('claimFailed'));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleEditCurrentPersonName = () => {
     setProposalNameForm({
       latin: person.englishName || '',
@@ -349,6 +386,74 @@ const NodeEditModal = ({
     </form>
   );
 
+  const renderMemberClaimForm = () => (
+    <form ref={suggestionFormRef} onSubmit={handleSubmitMemberClaimForm} className="lineage-modal-form">
+      <h3 className="lineage-section-title">{t('claimFormTitle')}</h3>
+      <div className="lineage-form-stack">
+        <input
+          type="text"
+          value={displayNames.arabicName || ''}
+          className="search-input"
+          style={{ padding: '12px 14px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', color: 'var(--text-primary)' }}
+          disabled
+        />
+        <input
+          type="text"
+          value={displayNames.englishName || ''}
+          className="search-input"
+          style={{ padding: '12px 14px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', color: 'var(--text-primary)' }}
+          disabled
+        />
+        <input
+          ref={primarySuggestionInputRef}
+          type="email"
+          placeholder={`${t('email')} *`}
+          className="search-input"
+          style={{ padding: '12px 14px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', color: 'var(--text-primary)' }}
+          value={claimForm.email}
+          onChange={(e) => setClaimForm((prev) => ({ ...prev, email: e.target.value }))}
+          required
+        />
+        <input
+          type="password"
+          placeholder={`${t('password')} *`}
+          minLength={6}
+          className="search-input"
+          style={{ padding: '12px 14px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', color: 'var(--text-primary)' }}
+          value={claimForm.password}
+          onChange={(e) => setClaimForm((prev) => ({ ...prev, password: e.target.value }))}
+          required
+        />
+        <input
+          type="text"
+          placeholder={`${t('phone')} *`}
+          className="search-input"
+          style={{ padding: '12px 14px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', color: 'var(--text-primary)' }}
+          value={claimForm.phone}
+          onChange={(e) => setClaimForm((prev) => ({ ...prev, phone: e.target.value }))}
+          required
+        />
+        <input
+          type="text"
+          placeholder={`${t('city')} *`}
+          className="search-input"
+          style={{ padding: '12px 14px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', color: 'var(--text-primary)' }}
+          value={claimForm.city}
+          onChange={(e) => setClaimForm((prev) => ({ ...prev, city: e.target.value }))}
+          required
+        />
+        <div className="lineage-button-row">
+          <button type="button" onClick={() => setActiveSuggestionMode(null)} className="lineage-secondary-button" style={{ flex: 1 }}>
+            {t('cancel')}
+          </button>
+          <button type="submit" className="search-button lineage-primary-button" style={{ flex: 2 }} disabled={isSaving}>
+            {t('claimThisPerson')}
+          </button>
+        </div>
+      </div>
+    </form>
+  );
+
   return (
     <div className="modal-overlay lineage-modal-overlay" onClick={onClose} style={{
       position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
@@ -381,14 +486,16 @@ const NodeEditModal = ({
             <div style={{ fontSize: '13px' }}>
               {isPendingAddSuggestion ? t('pendingAddChildDescription') : t('pendingNameChangeDescription')}
             </div>
-            {isAdmin && (
+            {canModerateProposals && (
               <>
                 <div style={{ fontSize: '13px', marginTop: '10px', lineHeight: '1.5', color: '#7f1d1d' }}>
                   {t('adminVerificationHelp')}
                 </div>
-                <div style={{ fontSize: '12px', marginTop: '8px', lineHeight: '1.5', color: '#991b1b', fontWeight: '600' }}>
-                  {t('skipVerificationHelp')}
-                </div>
+                {isAdmin && (
+                  <div style={{ fontSize: '12px', marginTop: '8px', lineHeight: '1.5', color: '#991b1b', fontWeight: '600' }}>
+                    {t('skipVerificationHelp')}
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -463,6 +570,39 @@ const NodeEditModal = ({
           </button>
         </div>
 
+        {!isAdmin && (
+          <div className="glass-panel" style={{ padding: '14px', marginBottom: '20px', border: '1px solid var(--panel-border)' }}>
+            {memberClaimStatus === 'none' && currentRole === 'guest' && allowMemberClaim && activeSuggestionMode !== 'claimMember' && (
+              <button
+                onClick={() => setActiveSuggestionMode('claimMember')}
+                className="lineage-primary-button"
+                style={{ width: '100%' }}
+              >
+                {t('claimThisPerson')}
+              </button>
+            )}
+            {memberClaimStatus === 'pending' && (
+              <div style={{ color: 'var(--text-secondary)', textAlign: 'center', fontWeight: '600' }}>
+                {t('waitingMemberVerification')}
+              </div>
+            )}
+            {memberClaimStatus === 'approved' && (
+              <div style={{ color: 'var(--text-secondary)', textAlign: 'center', fontWeight: '600' }}>
+                {t('connectedAsMember')}
+              </div>
+            )}
+            {memberClaimStatus === 'none' && currentRole === 'guest' && !allowMemberClaim && activeSuggestionMode !== 'claimMember' && (
+              <div style={{ color: 'var(--text-secondary)', textAlign: 'center', fontWeight: '600' }}>
+                {currentMemberClaimStatus === 'approved'
+                  ? t('alreadyConnectedMember')
+                  : currentMemberClaimStatus === 'pending'
+                    ? t('alreadyHavePendingClaim')
+                    : t('claimThisPerson')}
+              </div>
+            )}
+          </div>
+        )}
+
         {isAdmin && !hasPendingProposal && (
           <div className="lineage-action-card" style={{ background: 'rgba(255,255,255,0.05)', padding: '16px', borderRadius: '8px', marginBottom: '24px' }}>
             <div className="lineage-button-row">
@@ -517,15 +657,17 @@ const NodeEditModal = ({
                 {t('cancelSuggestion')}
               </button>
             )}
-            {isAdmin && (
+            {canModerateProposals && (
               <>
-                <button
-                  onClick={() => onSkipPending && onSkipPending(person.id)}
-                  className="lineage-neutral-button"
-                  style={{ flex: 1 }}
-                >
-                  {t('skipVerification')}
-                </button>
+                {isAdmin && (
+                  <button
+                    onClick={() => onSkipPending && onSkipPending(person.id)}
+                    className="lineage-neutral-button"
+                    style={{ flex: 1 }}
+                  >
+                    {t('skipVerification')}
+                  </button>
+                )}
                 <button
                   onClick={async () => {
                     await onApproveProposal(person);
@@ -535,17 +677,19 @@ const NodeEditModal = ({
                 >
                   {t('approveSuggestion')}
                 </button>
-                <button
-                  onClick={async () => {
-                    if (!window.confirm(t('confirmRejectSuggestion'))) return;
-                    await onRejectProposal(person);
-                    onClose();
-                  }}
-                  className="lineage-danger-button"
-                  style={{ flex: 1 }}
-                >
-                  {t('rejectSuggestion')}
-                </button>
+                {isAdmin && (
+                  <button
+                    onClick={async () => {
+                      if (!window.confirm(t('confirmRejectSuggestion'))) return;
+                      await onRejectProposal(person);
+                      onClose();
+                    }}
+                    className="lineage-danger-button"
+                    style={{ flex: 1 }}
+                  >
+                    {t('rejectSuggestion')}
+                  </button>
+                )}
               </>
             )}
           </div>
@@ -600,6 +744,7 @@ const NodeEditModal = ({
         {activeSuggestionMode === 'suggestName' && renderNameForm(t('suggestNameChange'), handleSubmitNameSuggestionForm, t('saveSuggestion'))}
         {activeSuggestionMode === 'editPending' && renderNameForm(t('editPendingSuggestion'), handleSavePendingProposal, t('saveSuggestionChanges'))}
         {activeSuggestionMode === 'adminEdit' && renderNameForm(t('editPerson'), handleSaveAdminEdit, t('save'))}
+        {activeSuggestionMode === 'claimMember' && renderMemberClaimForm()}
 
         {!isAdmin && !hasPendingProposal && activeSuggestionMode === null && (
           <div className="lineage-action-card" style={{ display: 'flex', flexDirection: 'column', gap: '10px', borderTop: '1px solid var(--panel-border)', paddingTop: '20px' }}>

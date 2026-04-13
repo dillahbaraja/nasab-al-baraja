@@ -116,6 +116,8 @@ const getPendingCreatedAt = (person) => {
   return 0;
 };
 
+const INTRO_STRATEGY = 'lineage-bloom';
+
 const buildNoticeText = ({ type, lang, personName = '', parentName = '', grandParentName = '' }) => {
   if (type === 'proposal_add_child') {
     if (lang === 'ar') return `اقتراح ابن جديد: ${personName} بن ${parentName}${grandParentName ? ` بن ${grandParentName}` : ''}`;
@@ -157,6 +159,7 @@ const FamilyGraph = () => {
 
   const animationRef = useRef(null);
   const lineageTourTokenRef = useRef(0);
+  const introTimeoutsRef = useRef([]);
   const [collapsedStateById, setCollapsedStateById] = useState(() => {
     try {
       const saved = localStorage.getItem('rf-collapsed-state');
@@ -169,6 +172,17 @@ const FamilyGraph = () => {
   useEffect(() => {
     localStorage.setItem('rf-collapsed-state', JSON.stringify(collapsedStateById));
   }, [collapsedStateById]);
+
+  useEffect(() => {
+    return () => {
+      introTimeoutsRef.current.forEach((timeoutId) => clearTimeout(timeoutId));
+      introTimeoutsRef.current = [];
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+        animationRef.current = null;
+      }
+    };
+  }, []);
 
   const glowTimeoutRef = useRef(null);
   const lastGlowNodeIdRef = useRef(null);
@@ -224,7 +238,12 @@ const FamilyGraph = () => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState(null);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [currentMember, setCurrentMember] = useState(null);
+  const [userRole, setUserRole] = useState('guest');
+  const [isLegacyAdmin, setIsLegacyAdmin] = useState(false);
+  const [memberStatuses, setMemberStatuses] = useState({});
+  const [memberRecords, setMemberRecords] = useState([]);
+  const [isMemberDataLoading, setIsMemberDataLoading] = useState(false);
   const [notices, setNotices] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [lastNoticeOpen, setLastNoticeOpen] = useState(() => Number(localStorage.getItem('rf-last-notice-open')) || 0);
@@ -241,7 +260,18 @@ const FamilyGraph = () => {
   const adminWalkthroughEnabledRef = useRef(false);
   const wasAdminRef = useRef(false);
 
-  const adminUser = isAdmin ? currentUser : null;
+  const isSignedInUser = Boolean(currentUser && !currentUser.is_anonymous);
+  const effectiveRole = userRole === 'admin' || isLegacyAdmin
+    ? 'admin'
+    : userRole === 'verified'
+      ? 'verified'
+      : 'guest';
+  const isVerifiedMember = effectiveRole === 'verified' || effectiveRole === 'admin';
+  const isAdmin = effectiveRole === 'admin';
+  const canModerateProposals = isVerifiedMember;
+  const pendingMemberClaims = useMemo(() => memberRecords.filter((member) => member.claim_status === 'pending'), [memberRecords]);
+  const verifiedMembers = useMemo(() => memberRecords.filter((member) => member.claim_status === 'approved' && member.member_level === 'verified'), [memberRecords]);
+  const adminMembers = useMemo(() => memberRecords.filter((member) => member.claim_status === 'approved' && member.member_level === 'admin'), [memberRecords]);
 
   const pendingQueueIds = useMemo(() => {
     const getDepth = (id) => {
@@ -267,7 +297,7 @@ const FamilyGraph = () => {
   }, [familyData, personMap]);
 
   // Info Modals State
-  const [activeInfoModal, setActiveInfoModal] = useState(null); // 'signin', 'about', 'notice', 'adminManager', 'adminForm', 'changePassword', 'settings'
+  const [activeInfoModal, setActiveInfoModal] = useState(null); // 'signin', 'about', 'notice', 'profile', 'memberManager', 'listMember', 'listAdmin', 'settings'
   const [isIntroRunning, setIsIntroRunning] = useState(false);
 
   const [appSettings, setAppSettings] = useState(() => {
@@ -333,6 +363,15 @@ const FamilyGraph = () => {
     window.setTimeout(resolve, ms);
   }), []);
 
+  const showToast = useCallback((nextToast, duration = 2800) => {
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    setToast(nextToast);
+    toastTimeoutRef.current = setTimeout(() => {
+      setToast(null);
+      toastTimeoutRef.current = null;
+    }, duration);
+  }, []);
+
   const stopCameraMotion = useCallback(() => {
     lineageTourTokenRef.current += 1;
     if (animationRef.current) {
@@ -343,6 +382,44 @@ const FamilyGraph = () => {
     const currentViewport = getViewport();
     setViewport(currentViewport, { duration: 0 });
   }, [getViewport, setViewport]);
+
+  const clearIntroTimers = useCallback(() => {
+    introTimeoutsRef.current.forEach((timeoutId) => clearTimeout(timeoutId));
+    introTimeoutsRef.current = [];
+  }, []);
+
+  const scheduleIntroAction = useCallback((delay, action) => {
+    const timeoutId = window.setTimeout(action, delay);
+    introTimeoutsRef.current.push(timeoutId);
+    return timeoutId;
+  }, []);
+
+  const buildParentToChildrenMap = useCallback((people) => {
+    const map = new Map();
+    people.forEach((person) => {
+      const fatherId = person.fatherId ? String(person.fatherId) : null;
+      if (!fatherId) return;
+      if (!map.has(fatherId)) map.set(fatherId, []);
+      map.get(fatherId).push(person);
+    });
+    return map;
+  }, []);
+
+  const setCollapsedIds = useCallback((ids, collapsed) => {
+    if (!ids || ids.length === 0) return;
+    setCollapsedStateById((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      ids.forEach((id) => {
+        if (!!next[id] !== collapsed) {
+          next[id] = collapsed;
+          changed = true;
+        }
+      });
+      if (changed) localStorage.setItem('rf-collapsed-state', JSON.stringify(next));
+      return next;
+    });
+  }, []);
 
   const getViewportForVisibleNodes = useCallback((targetNodes) => {
     const visibleNodes = (targetNodes || []).filter(Boolean);
@@ -404,7 +481,7 @@ const FamilyGraph = () => {
     const startZoom = Math.min(Math.max(overviewViewport.zoom + 0.34, 0.95), 1.3);
     const endZoom = overviewViewport.zoom;
 
-    const centerNode = async (nodeId, zoom, duration) => {
+    const centerNode = async (nodeId, zoom, duration, holdMs = 0) => {
       const liveNode = getNode(String(nodeId));
       if (!liveNode) return;
       const nodeWidth = liveNode.width || liveNode.measured?.width || 180;
@@ -412,7 +489,7 @@ const FamilyGraph = () => {
       const targetX = liveNode.position.x + nodeWidth / 2;
       const targetY = liveNode.position.y + nodeHeight / 2;
       setCenter(targetX, targetY, { zoom, duration });
-      await wait(duration + 70);
+      await wait(duration + 110 + holdMs);
     };
 
     if (!transitionsEnabled) {
@@ -425,20 +502,135 @@ const FamilyGraph = () => {
       return;
     }
 
-    await centerNode(selectedId, startZoom, 560);
+    await centerNode(selectedId, startZoom, 780, 380);
     if (lineageTourTokenRef.current !== tourToken) return;
 
     for (let index = 1; index < chainIds.length; index += 1) {
       if (lineageTourTokenRef.current !== tourToken) return;
       const progress = index / totalSteps;
       const stepZoom = startZoom + (endZoom - startZoom) * progress;
-      const stepDuration = index === chainIds.length - 1 ? 700 : 620;
-      await centerNode(chainIds[index], stepZoom, stepDuration);
+      const stepDuration = index === chainIds.length - 1 ? 980 : 860;
+      const holdDuration = index === chainIds.length - 1 ? 420 : 340;
+      await centerNode(chainIds[index], stepZoom, stepDuration, holdDuration);
     }
 
     if (lineageTourTokenRef.current !== tourToken) return;
-    await centerNode(selectedId, overviewViewport.zoom, 760);
+    await centerNode(selectedId, overviewViewport.zoom, 920, 260);
   }, [appSettings.animationsEnabled, appSettings.cameraEnabled, fitView, getNode, getNodes, getViewportForVisibleNodes, setCenter, setViewport, wait]);
+
+  const runLineageBloomIntro = useCallback((rootPerson) => {
+    const rootId = String(rootPerson.id);
+    const rootNode = nodes.find((node) => node.id === rootId);
+    const isLayoutReady = rootNode && (Math.abs(rootNode.position.x) > 1 || Math.abs(rootNode.position.y) > 1);
+    if (!isLayoutReady) return false;
+
+    hasInitialFocusedRef.current = true;
+    setIsIntroRunning(true);
+
+    const parentToChildrenMap = buildParentToChildrenMap(familyData);
+    const tier1 = [rootId];
+    const tier2 = (parentToChildrenMap.get(rootId) || []).map((child) => String(child.id));
+    const tier3 = tier2.flatMap((id) => (parentToChildrenMap.get(id) || []).map((child) => String(child.id)));
+    const tier4 = tier3.flatMap((id) => (parentToChildrenMap.get(id) || []).map((child) => String(child.id)));
+    const tier5 = tier4.flatMap((id) => (parentToChildrenMap.get(id) || []).map((child) => String(child.id)));
+
+    const initW = rootNode.measured?.width || rootNode.width || 260;
+    const initH = rootNode.measured?.height || rootNode.height || 100;
+    const initCX = rootNode.position.x + (initW / 2);
+    const initCY = rootNode.position.y + (initH / 2);
+    const flowElem = document.querySelector('.react-flow');
+    const initialVpW = flowElem ? flowElem.clientWidth : window.innerWidth;
+    const initialVpH = flowElem ? flowElem.clientHeight : window.innerHeight;
+
+    setViewport({
+      x: (initialVpW / 2) - (initCX * 2.85),
+      y: (initialVpH / 2) - (initCY * 2.85),
+      zoom: 2.85
+    }, { duration: 0 });
+
+    const easeInOutCubic = (p) => (
+      p < 0.5
+        ? 4 * p * p * p
+        : 1 - ((-2 * p + 2) ** 3) / 2
+    );
+    const easeOutQuad = (p) => 1 - ((1 - p) * (1 - p));
+
+    if (animationRef.current) {
+      cancelAnimationFrame(animationRef.current);
+      animationRef.current = null;
+    }
+    clearIntroTimers();
+
+    const duration = 15400;
+    const startT = window.performance.now();
+
+    const animateCamera = (timestamp) => {
+      const rawProgress = Math.min(Math.max(timestamp - startT, 0) / duration, 1);
+      const progress = easeInOutCubic(rawProgress);
+      const liveRoot = getNode(rootId);
+      if (!liveRoot) {
+        setIsIntroRunning(false);
+        animationRef.current = null;
+        return;
+      }
+
+      let currentZoom;
+      if (progress < 0.08) {
+        currentZoom = 2.85 - easeOutQuad(progress / 0.08) * 1.95;
+      } else if (progress < 0.36) {
+        currentZoom = 0.90 - easeInOutCubic((progress - 0.08) / 0.28) * 0.42;
+      } else {
+        currentZoom = 0.48 - easeInOutCubic((progress - 0.36) / 0.64) * 0.30;
+      }
+
+      const driftX = Math.sin(progress * Math.PI * 0.9) * 80;
+      const driftY = Math.sin(progress * Math.PI) * 56;
+      const activeW = liveRoot.measured?.width || liveRoot.width || 260;
+      const activeH = liveRoot.measured?.height || liveRoot.height || 100;
+      const nodeCenterX = liveRoot.position.x + (activeW / 2);
+      const nodeCenterY = liveRoot.position.y + (activeH / 2);
+      const activeFlowElem = document.querySelector('.react-flow');
+      const vpW = activeFlowElem ? activeFlowElem.clientWidth : window.innerWidth;
+      const vpH = activeFlowElem ? activeFlowElem.clientHeight : window.innerHeight;
+
+      setViewport({
+        x: (vpW / 2) - ((nodeCenterX + driftX) * currentZoom),
+        y: (vpH / 2) - ((nodeCenterY + driftY) * currentZoom),
+        zoom: currentZoom
+      });
+
+      if (rawProgress < 1) {
+        animationRef.current = requestAnimationFrame(animateCamera);
+      } else {
+        animationRef.current = null;
+        clearIntroTimers();
+        fitView({ duration: 900, padding: 0.14 });
+        scheduleIntroAction(940, () => {
+          setIsIntroRunning(false);
+        });
+      }
+    };
+
+    animationRef.current = requestAnimationFrame(animateCamera);
+
+    scheduleIntroAction(3000, () => setCollapsedIds(tier1, false));
+    scheduleIntroAction(5300, () => setCollapsedIds(tier2, false));
+    scheduleIntroAction(7800, () => setCollapsedIds(tier3, false));
+    scheduleIntroAction(10300, () => setCollapsedIds(tier4, false));
+    scheduleIntroAction(12700, () => setCollapsedIds(tier5, false));
+    scheduleIntroAction(14500, () => setCollapsedIds(familyData.map((person) => String(person.id)), false));
+
+    return true;
+  }, [buildParentToChildrenMap, clearIntroTimers, familyData, fitView, getNode, nodes, scheduleIntroAction, setCollapsedIds, setViewport]);
+
+  const runIntroStrategy = useCallback((strategyName, rootPerson) => {
+    const strategies = {
+      'lineage-bloom': () => runLineageBloomIntro(rootPerson)
+    };
+
+    const strategy = strategies[strategyName] || strategies['lineage-bloom'];
+    return strategy();
+  }, [runLineageBloomIntro]);
 
   useEffect(() => {
     const interruptCamera = () => {
@@ -514,11 +706,61 @@ const FamilyGraph = () => {
     });
   };
 
-  const resolveAdminStatus = useCallback(async (user) => {
-    if (!user || user.is_anonymous || !user.email) {
-      setIsAdmin(false);
-      return false;
+  const fetchPublicMemberStatuses = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('baraja_member_public_status')
+      .select('*');
+
+    if (error) {
+      console.error('Member status lookup failed:', error);
+      return;
     }
+
+    const nextMap = {};
+    (data || []).forEach((item) => {
+      nextMap[String(item.person_id)] = item.claim_status || 'none';
+    });
+    setMemberStatuses(nextMap);
+  }, []);
+
+  const fetchCurrentMember = useCallback(async (user) => {
+    if (!user || user.is_anonymous) {
+      setCurrentMember(null);
+      setUserRole('guest');
+      setIsLegacyAdmin(false);
+      return null;
+    }
+
+    const { data, error } = await supabase
+      .from('baraja_member')
+      .select('*')
+      .eq('auth_user_id', user.id)
+      .order('id', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Current member lookup failed:', error);
+      setCurrentMember(null);
+      setUserRole('guest');
+      return null;
+    }
+
+    setCurrentMember(data || null);
+
+    if (!data || data.claim_status !== 'approved') {
+      setUserRole('guest');
+    } else if (data.member_level === 'admin') {
+      setUserRole('admin');
+    } else {
+      setUserRole('verified');
+    }
+
+    return data || null;
+  }, []);
+
+  const checkLegacyAdminUser = useCallback(async (user) => {
+    if (!user || user.is_anonymous || !user.email) return false;
 
     const { data, error } = await supabase
       .from('admin_users')
@@ -527,15 +769,62 @@ const FamilyGraph = () => {
       .maybeSingle();
 
     if (error) {
-      console.error('Admin lookup failed:', error);
-      setIsAdmin(false);
+      console.error('Legacy admin lookup failed:', error);
       return false;
     }
 
-    const nextIsAdmin = !!data;
-    setIsAdmin(nextIsAdmin);
-    return nextIsAdmin;
+    return Boolean(data);
   }, []);
+
+  const fetchManageableMembers = useCallback(async (roleOverride = effectiveRole) => {
+    if (!(roleOverride === 'verified' || roleOverride === 'admin')) {
+      setMemberRecords([]);
+      setIsMemberDataLoading(false);
+      return;
+    }
+
+    setIsMemberDataLoading(true);
+    const { data, error } = await supabase
+      .from('baraja_member')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Member manager lookup failed:', error);
+      setIsMemberDataLoading(false);
+      return;
+    }
+
+    setMemberRecords(data || []);
+    setIsMemberDataLoading(false);
+  }, [effectiveRole]);
+
+  const resolveMemberContext = useCallback(async (user) => {
+    if (!user || user.is_anonymous) {
+      setCurrentMember(null);
+      setUserRole('guest');
+      setIsLegacyAdmin(false);
+      setMemberRecords([]);
+      return { role: 'guest', member: null };
+    }
+
+    const member = await fetchCurrentMember(user);
+    const legacyAdmin = await checkLegacyAdminUser(user);
+    setIsLegacyAdmin(legacyAdmin);
+    const nextRole = !member || member.claim_status !== 'approved'
+      ? (legacyAdmin ? 'admin' : 'guest')
+      : member.member_level === 'admin'
+        ? 'admin'
+        : 'verified';
+
+    if (nextRole === 'verified' || nextRole === 'admin') {
+      await fetchManageableMembers(nextRole);
+    } else {
+      setMemberRecords([]);
+    }
+
+    return { role: nextRole, member, isLegacyAdmin: legacyAdmin };
+  }, [checkLegacyAdminUser, fetchCurrentMember, fetchManageableMembers]);
 
   // Auth State Listener
   useEffect(() => {
@@ -547,7 +836,7 @@ const FamilyGraph = () => {
 
       const user = session?.user || null;
       setCurrentUser(user);
-      await resolveAdminStatus(user);
+      await resolveMemberContext(user);
 
       if (!session) {
         const { data, error } = await supabase.auth.signInAnonymously();
@@ -558,24 +847,25 @@ const FamilyGraph = () => {
         if (!isMounted) return;
         const anonUser = data?.user || null;
         setCurrentUser(anonUser);
-        await resolveAdminStatus(anonUser);
+        await resolveMemberContext(anonUser);
       }
     };
 
+    fetchPublicMemberStatuses();
     ensureGuestSession();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!isMounted) return;
       const user = session?.user || null;
       setCurrentUser(user);
-      void resolveAdminStatus(user);
+      void resolveMemberContext(user);
     });
 
     return () => {
       isMounted = false;
       subscription.unsubscribe();
     };
-  }, [resolveAdminStatus]);
+  }, [fetchPublicMemberStatuses, resolveMemberContext]);
 
   const sortNoticesNewestFirst = useCallback((items) => {
     return [...items].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
@@ -711,12 +1001,7 @@ const FamilyGraph = () => {
           setNotices((prev) => sortNoticesNewestFirst([newNotice, ...prev]).slice(0, 30));
 
           if (Date.now() - (newNotice.timestamp || 0) < 15000) {
-            if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
-            setToast(newNotice);
-            toastTimeoutRef.current = setTimeout(() => {
-              setToast(null);
-              toastTimeoutRef.current = null;
-            }, 8000);
+            showToast(newNotice, 8000);
           }
           return;
         }
@@ -744,7 +1029,7 @@ const FamilyGraph = () => {
       supabase.removeChannel(channel);
       if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
     };
-  }, [fetchLatestNotices, removeLocalNoticeById, sortNoticesNewestFirst]);
+  }, [fetchLatestNotices, removeLocalNoticeById, showToast, sortNoticesNewestFirst]);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -912,9 +1197,10 @@ const FamilyGraph = () => {
 
   // Stable callback for node long-press — prevents child re-renders on every layout recalc
   const handleNodeLongPress = useCallback((nodeId, rawData) => {
+    void fetchPublicMemberStatuses();
     setSelectedPerson(rawData);
     setIsModalOpen(true);
-  }, []); // setSelectedPerson and setIsModalOpen are stable React setState functions
+  }, [fetchPublicMemberStatuses]); // setSelectedPerson and setIsModalOpen are stable React setState functions
 
   // Update layout diagram on data change
   useEffect(() => {
@@ -1535,6 +1821,7 @@ const FamilyGraph = () => {
     const person = personMap.get(targetId);
     if (!person) return;
 
+    void fetchPublicMemberStatuses();
     setSelectedPerson(person);
     setIsModalOpen(true);
 
@@ -1547,7 +1834,7 @@ const FamilyGraph = () => {
         smoothFocusNode(targetId, options);
       }
     }
-  }, [ensurePathVisible, nodes, personMap, smoothFocusNode]);
+  }, [ensurePathVisible, fetchPublicMemberStatuses, nodes, personMap, smoothFocusNode]);
 
   const getNextPendingIdForAdmin = useCallback((excludeId = null) => {
     if (!isAdmin || pendingQueueIds.length === 0) {
@@ -1624,18 +1911,10 @@ const FamilyGraph = () => {
 
     if (!rootPerson) return;
 
-    // Step 0: Ensure the tree is forcefully collapsed before cinematic starts
+    // Step 0: ensure the tree is forcefully collapsed before cinematic starts.
     const hasBeenForced = sessionStorage.getItem('rf-cinematic-forced');
     if (!hasBeenForced) {
-      // Collect descendants of Muhammad to collapse them
-      const parentToChildrenMap = new Map();
-      familyData.forEach(p => {
-        const fid = p.fatherId ? String(p.fatherId) : null;
-        if (fid) {
-          if (!parentToChildrenMap.has(fid)) parentToChildrenMap.set(fid, []);
-          parentToChildrenMap.get(fid).push(p);
-        }
-      });
+      const parentToChildrenMap = buildParentToChildrenMap(familyData);
 
       const gatherDescendantIds = (parentId) => {
         let results = [];
@@ -1649,130 +1928,13 @@ const FamilyGraph = () => {
       };
 
       const descendants = gatherDescendantIds(rootPerson.id);
-
-      setCollapsedStateById(prev => {
-        let newState = { ...prev };
-        newState[rootPerson.id] = true; // Collapse his immediate children
-        descendants.forEach(cid => { newState[cid] = true; }); // Collapse all descendant branches
-        localStorage.setItem('rf-collapsed-state', JSON.stringify(newState));
-        return newState;
-      });
+      setCollapsedIds([String(rootPerson.id), ...descendants], true);
       sessionStorage.setItem('rf-cinematic-forced', '1');
-      return; // Wait for the next React render tick with a heavily tightened map
+      return;
     }
 
-    // Now layout is truly tight and recalculation is done
-    const rootNode = nodes.find(n => n.id === String(rootPerson.id));
-    const isLayoutReady = rootNode && (Math.abs(rootNode.position.x) > 1 || Math.abs(rootNode.position.y) > 1);
-    if (!isLayoutReady) return;
-
-    hasInitialFocusedRef.current = true;
-    setIsIntroRunning(true);
-
-    // Build tier arrays for dynamic popping
-    const parentToChildrenMap = new Map();
-    familyData.forEach(p => {
-      const fid = p.fatherId ? String(p.fatherId) : null;
-      if (fid) {
-        if (!parentToChildrenMap.has(fid)) parentToChildrenMap.set(fid, []);
-        parentToChildrenMap.get(fid).push(p);
-      }
-    });
-
-    const tier1 = [String(rootPerson.id)]; // Root opens first
-    const tier2 = (parentToChildrenMap.get(String(rootPerson.id)) || []).map(c => String(c.id));
-    const tier3 = tier2.flatMap(id => parentToChildrenMap.get(id) || []).map(c => String(c.id));
-    const tier4 = tier3.flatMap(id => parentToChildrenMap.get(id) || []).map(c => String(c.id));
-    const tier5 = tier4.flatMap(id => parentToChildrenMap.get(id) || []).map(c => String(c.id));
-
-    // Phase 1: Sinkronisasi Snap Awal ke Center persis tanpa menggunakan setCenter (menghindari Glitch)
-    const initW = rootNode.measured?.width || rootNode.width || 260;
-    const initH = rootNode.measured?.height || rootNode.height || 100;
-    const initCX = rootNode.position.x + (initW / 2);
-    const initCY = rootNode.position.y + (initH / 2);
-
-    setViewport({
-      x: (window.innerWidth / 2) - (initCX * 2.5),
-      y: (window.innerHeight / 2) - (initCY * 2.5),
-      zoom: 2.5
-    });
-
-    const popGroup = (ids, delay) => {
-      if (!ids || ids.length === 0) return;
-      setTimeout(() => {
-        setCollapsedStateById(prev => {
-          const next = { ...prev };
-          let changed = false;
-          ids.forEach(id => {
-            if (next[id]) { next[id] = false; changed = true; }
-          });
-          if (changed) localStorage.setItem('rf-collapsed-state', JSON.stringify(next));
-          return next;
-        });
-      }, delay);
-    };
-
-    const duration = 14500;
-    const startT = window.performance.now();
-
-    const animateCamera = (timestamp) => {
-      const elapsed = timestamp - startT;
-      const progress = Math.min(elapsed / duration, 1);
-
-      const liveRoot = getNode(String(rootPerson.id));
-      if (!liveRoot) return;
-
-      // Memperbaiki Zoom Out Maksimum sampai 0.05 (sangat jauh)
-      let currentZoom;
-      if (progress < 0.25) {
-        currentZoom = 2.5 - (progress / 0.25) * 1.5; // 0->25%: 2.5 to 1.0
-      } else if (progress < 0.6) {
-        currentZoom = 1.0 - ((progress - 0.25) / 0.35) * 0.7; // 25->60%: 1.0 to 0.3
-      } else {
-        currentZoom = 0.3 - ((progress - 0.6) / 0.4) * 0.25; // 60->100%: 0.3 to 0.05
-      }
-
-      // Kamera melengkung ayunan drone
-      const panCurve = Math.sin(progress * Math.PI);
-      const offsetX = panCurve * 800; // max shift 800px
-      const offsetY = panCurve * 800;
-
-      const activeW = liveRoot.measured?.width || liveRoot.width || 260;
-      const activeH = liveRoot.measured?.height || liveRoot.height || 100;
-      const nodeCenterX = liveRoot.position.x + (activeW / 2);
-      const nodeCenterY = liveRoot.position.y + (activeH / 2);
-
-      const flowElem = document.querySelector('.react-flow');
-      const vpW = flowElem ? flowElem.clientWidth : window.innerWidth;
-      const vpH = flowElem ? flowElem.clientHeight : window.innerHeight;
-
-      const targetX = (vpW / 2) - ((nodeCenterX + offsetX) * currentZoom);
-      const targetY = (vpH / 2) - ((nodeCenterY + offsetY) * currentZoom);
-
-      setViewport({ x: targetX, y: targetY, zoom: currentZoom });
-
-      if (progress < 1) {
-        requestAnimationFrame(animateCamera);
-      } else {
-        setIsIntroRunning(false);
-      }
-    };
-
-    // Eksekusi Animasi Kamera Continuous
-    requestAnimationFrame(animateCamera);
-
-    // Buka node bertahap layer by layer
-    popGroup(tier1, 1000);
-    popGroup(tier2, 2800);
-    popGroup(tier3, 5000);
-    popGroup(tier4, 7500);
-    popGroup(tier5, 9500);
-
-    // Langkah Terakhir: Pastikan SEMUA sisa nodes tanpa terkecuali mengembang persis di ujung penarikan
-    const allIds = familyData.map(d => String(d.id));
-    popGroup(allIds, 11500);
-
-  }, [isLoading, nodes, familyData, initialViewport, setCenter]);
+    runIntroStrategy(INTRO_STRATEGY, rootPerson);
+  }, [buildParentToChildrenMap, familyData, initialViewport, isLoading, nodes, runIntroStrategy, setCollapsedIds]);
 
 
 
@@ -1795,6 +1957,7 @@ const FamilyGraph = () => {
     setSearchQuery(val);
 
     if (val.trim() === '') {
+      setSearchSuggestions([]);
       setShowSuggestions(false);
       return;
     }
@@ -1802,19 +1965,24 @@ const FamilyGraph = () => {
     if (val.length >= 3) {
       const queryLatin = cleanText(val.toLowerCase());
       const queryArab = cleanText(normalizeArabic(val));
+      const queryLower = val.toLowerCase();
 
-      const suggestions = familyData.filter(person => {
-        const displayNames = getDisplayNames(person);
-        const latinRaw = displayNames.englishName || '';
-        const arabRaw = displayNames.arabicName || '';
-        const infoRaw = person.info || '';
-        return cleanText(latinRaw.toLowerCase()).includes(queryLatin) ||
-          cleanText(normalizeArabic(arabRaw)).includes(queryArab) ||
-          infoRaw.toLowerCase().includes(val.toLowerCase());
-      });
-      setSearchSuggestions(suggestions.slice(0, 10)); // Limit 10
-      setShowSuggestions(true);
+      const suggestions = searchIndex
+        .filter((entry) =>
+          entry.info.includes(queryLower) ||
+          (queryLatin.length > 0 && entry.lineageLatin.startsWith(queryLatin)) ||
+          (queryArab.length > 0 && entry.lineageArab.startsWith(queryArab)) ||
+          cleanText((entry.englishName || '').toLowerCase()).includes(queryLatin) ||
+          cleanText(normalizeArabic(entry.arabicName || '')).includes(queryArab)
+        )
+        .slice(0, 10)
+        .map((entry) => personMap.get(String(entry.id)))
+        .filter(Boolean);
+
+      setSearchSuggestions(suggestions);
+      setShowSuggestions(suggestions.length > 0);
     } else {
+      setSearchSuggestions([]);
       setShowSuggestions(false);
     }
   };
@@ -2245,7 +2413,7 @@ const FamilyGraph = () => {
   };
 
   const handleApproveProposal = async (person) => {
-    if (!isAdmin) return;
+    if (!canModerateProposals) return;
     try {
       if (isPendingAddChildNode(person)) {
         const newMod = { ...(person.moderation || {}), status: 'approved', updatedAt: Date.now() };
@@ -2272,7 +2440,9 @@ const FamilyGraph = () => {
         await deleteProposalNotices(person, 'proposal_name_change');
       }
       alert(t('suggestionApproved'));
-      continueAdminVerification(person.id);
+      if (isAdmin) {
+        continueAdminVerification(person.id);
+      }
     } catch (err) {
       console.error(err);
       alert(t('updateFailed'));
@@ -2325,22 +2495,24 @@ const FamilyGraph = () => {
     }
   };
 
-  // ----- ADMIN LOGIC -----
+  const refreshMemberData = useCallback(async () => {
+    await fetchPublicMemberStatuses();
+    await resolveMemberContext(currentUser);
+  }, [currentUser, fetchPublicMemberStatuses, resolveMemberContext]);
+
+  // ----- MEMBER / AUTH LOGIC -----
 
   const handleSignIn = async (email, password) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       if (error.message?.toLowerCase().includes('invalid login credentials')) {
-        throw new Error(t('invalidAdminCredentials'));
+        throw new Error(t('invalidCredentials'));
       }
-      throw error;
+      throw new Error(error.message || t('invalidCredentials'));
     }
-    const nextIsAdmin = await resolveAdminStatus(data?.user || null);
-    if (!nextIsAdmin) {
-      await supabase.auth.signOut();
-      const { error: anonError } = await supabase.auth.signInAnonymously();
-      if (anonError) console.error('Anonymous auth after rejected admin sign-in failed:', anonError);
-      throw new Error(t('invalidAdminCredentials'));
+    const context = await resolveMemberContext(data?.user || null);
+    if (context?.member?.claim_status === 'pending') {
+      alert(t('signInPendingClaim'));
     }
     setActiveInfoModal(null);
   };
@@ -2363,12 +2535,206 @@ const FamilyGraph = () => {
     setActiveInfoModal(null);
   };
 
+  const handleUpdateProfile = async ({ phone, city, country }) => {
+    if (!currentMember?.id) return;
+    const trimmedPhone = (phone || '').trim();
+    const trimmedCity = (city || '').trim();
+    const trimmedCountry = (country || '').trim();
+    if (!trimmedPhone || !trimmedCity) {
+      throw new Error(t('fillAllFields'));
+    }
+
+    const { data, error } = await supabase
+      .from('baraja_member')
+      .update({
+        phone: trimmedPhone,
+        city: trimmedCity,
+        country: trimmedCountry
+      })
+      .eq('id', currentMember.id)
+      .select('*')
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(error.message || t('updateFailed'));
+    }
+
+    setCurrentMember(data || null);
+    setMemberRecords((prev) => prev.map((item) => (item.id === data?.id ? data : item)));
+    showToast({ text: t('profileUpdated') });
+    setActiveInfoModal(null);
+  };
+
+  const handleSubmitMemberClaim = useCallback(async (person, payload) => {
+    const email = (payload.email || '').trim().toLowerCase();
+    const password = payload.password || '';
+    const phone = (payload.phone || '').trim();
+    const city = (payload.city || '').trim();
+
+    if (!email || !password || !phone || !city) {
+      throw new Error(t('fillAllFields'));
+    }
+    if (password.length < 6) {
+      throw new Error(t('passwordMinLengthRule'));
+    }
+    if (currentMember?.claim_status === 'pending') {
+      throw new Error(t('alreadyHavePendingClaim'));
+    }
+    if (currentMember?.claim_status === 'approved') {
+      throw new Error(t('alreadyConnectedMember'));
+    }
+    if ((memberStatuses[String(person.id)] || 'none') !== 'none') {
+      throw new Error(
+        memberStatuses[String(person.id)] === 'approved'
+          ? t('personConnectedToMember')
+          : t('personVerificationInProgress')
+      );
+    }
+
+    let authUser = null;
+    const signUpResult = await supabase.auth.signUp({
+      email,
+      password
+    });
+
+    if (signUpResult.error) {
+      const message = signUpResult.error.message || '';
+      const alreadyRegistered = message.toLowerCase().includes('already registered');
+
+      if (!alreadyRegistered) {
+        throw new Error(message || t('claimFailed'));
+      }
+
+      const signInResult = await supabase.auth.signInWithPassword({ email, password });
+      if (signInResult.error) {
+        throw new Error(signInResult.error.message || t('invalidCredentials'));
+      }
+      authUser = signInResult.data?.user || null;
+      alert(t('existingAccountContinueClaim'));
+    } else {
+      authUser = signUpResult.data?.user || null;
+      if (!signUpResult.data?.session) {
+        const signInResult = await supabase.auth.signInWithPassword({ email, password });
+        if (signInResult.error) {
+          throw new Error(signInResult.error.message || t('claimFailed'));
+        }
+        authUser = signInResult.data?.user || authUser;
+      }
+    }
+
+    if (!authUser?.id) {
+      throw new Error(t('claimFailed'));
+    }
+
+    const { data: existingMember, error: existingMemberError } = await supabase
+      .from('baraja_member')
+      .select('*')
+      .eq('auth_user_id', authUser.id)
+      .order('id', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (existingMemberError) {
+      throw new Error(existingMemberError.message || t('claimFailed'));
+    }
+
+    if (existingMember?.claim_status === 'pending') {
+      await resolveMemberContext(authUser);
+      await fetchPublicMemberStatuses();
+      throw new Error(t('alreadyHavePendingClaim'));
+    }
+
+    if (existingMember?.claim_status === 'approved') {
+      await resolveMemberContext(authUser);
+      await fetchPublicMemberStatuses();
+      throw new Error(t('alreadyConnectedMember'));
+    }
+
+    const memberPayload = {
+      auth_user_id: authUser.id,
+      person_id: String(person.id),
+      email,
+      phone,
+      city,
+      claim_status: 'pending',
+      member_level: 'guest',
+      arabic_name_snapshot: person.arabicName || '',
+      english_name_snapshot: person.englishName || ''
+    };
+
+    const memberWriteQuery = existingMember
+      ? supabase.from('baraja_member').update(memberPayload).eq('id', existingMember.id)
+      : supabase.from('baraja_member').insert(memberPayload);
+
+    const { error } = await memberWriteQuery;
+
+    if (error) {
+      throw new Error(error.message || t('claimFailed'));
+    }
+
+    await fetchPublicMemberStatuses();
+    await resolveMemberContext(authUser);
+    alert(t('claimSaved'));
+  }, [currentMember, fetchPublicMemberStatuses, memberStatuses, resolveMemberContext, t]);
+
+  const handleApproveMember = useCallback(async (member) => {
+    const { error } = await supabase.rpc('approve_baraja_member_claim', {
+      target_member_id: member.id
+    });
+
+    if (error) {
+      throw new Error(error.message || t('updateFailed'));
+    }
+
+    await refreshMemberData();
+    alert(t('memberApproved'));
+  }, [refreshMemberData, t]);
+
+  const handleRejectMember = useCallback(async (member) => {
+    const { error } = await supabase
+      .from('baraja_member')
+      .delete()
+      .eq('id', member.id)
+      .eq('claim_status', 'pending');
+
+    if (error) {
+      throw new Error(error.message || t('deleteFailed'));
+    }
+
+    await refreshMemberData();
+    alert(t('memberRejected'));
+  }, [refreshMemberData, t]);
+
+  const handlePromoteAdmin = useCallback(async (member) => {
+    const { error } = await supabase.rpc('promote_baraja_member_admin', {
+      target_member_id: member.id
+    });
+
+    if (error) {
+      throw new Error(error.message || t('updateFailed'));
+    }
+
+    await refreshMemberData();
+    alert(t('adminPromoted'));
+  }, [refreshMemberData, t]);
+
   const handleMenuClick = (item) => {
     if (item === 'Settings') setActiveInfoModal('settings');
     if (item === 'Sign In') setActiveInfoModal('signin');
     if (item === 'About') setActiveInfoModal('about');
-
-    if (item === 'Change Password') setActiveInfoModal('changePassword');
+    if (item === 'Profile') setActiveInfoModal('profile');
+    if (item === 'Member Manager') {
+      void fetchManageableMembers();
+      setActiveInfoModal('memberManager');
+    }
+    if (item === 'List Member') {
+      void fetchManageableMembers('admin');
+      setActiveInfoModal('listMember');
+    }
+    if (item === 'List Admin') {
+      void fetchManageableMembers('admin');
+      setActiveInfoModal('listAdmin');
+    }
     if (item === 'Sign Out') handleSignOut();
 
     if (item === 'Notice') {
@@ -2722,7 +3088,8 @@ const FamilyGraph = () => {
         onMenuClick={handleMenuClick}
         t={t}
         lang={lang}
-        currentUser={adminUser}
+        currentUser={isSignedInUser ? currentUser : null}
+        role={effectiveRole}
         unreadCount={unreadCount}
       />
 
@@ -2730,7 +3097,8 @@ const FamilyGraph = () => {
         onMenuClick={handleMenuClick}
         t={t}
         lang={lang}
-        currentUser={adminUser}
+        currentUser={isSignedInUser ? currentUser : null}
+        role={effectiveRole}
         unreadCount={unreadCount}
       >
         {renderSearchForm()}
@@ -2740,18 +3108,37 @@ const FamilyGraph = () => {
         isOpen={!!activeInfoModal}
         onClose={() => setActiveInfoModal(null)}
         type={activeInfoModal}
-        title={t(activeInfoModal === 'signin' ? 'signIn' : activeInfoModal === 'about' ? 'about' : activeInfoModal === 'notice' ? 'notice' : activeInfoModal === 'changePassword' ? 'changePassword' : 'settings')}
+        title={t(
+          activeInfoModal === 'signin' ? 'signIn'
+            : activeInfoModal === 'about' ? 'about'
+              : activeInfoModal === 'notice' ? 'notice'
+                  : activeInfoModal === 'profile' ? 'profile'
+                    : activeInfoModal === 'memberManager' ? 'memberManager'
+                      : activeInfoModal === 'listMember' ? 'listMember'
+                        : activeInfoModal === 'listAdmin' ? 'listAdmin'
+                      : 'settings'
+        )}
         t={t}
         lang={lang}
         onSignIn={handleSignIn}
-        onSignOut={handleSignOut}
         onChangePassword={handleChangePassword}
-        currentUser={adminUser}
+        currentUser={isSignedInUser ? currentUser : null}
+        currentMember={currentMember}
+        currentRole={effectiveRole}
+        familyData={familyData}
         notices={notices}
         onViewNotice={handleViewNotice}
         onDeleteNotice={handleDeleteNotice}
         appSettings={appSettings}
         setAppSettings={setAppSettings}
+        onUpdateProfile={handleUpdateProfile}
+        memberClaims={pendingMemberClaims}
+        verifiedMembers={verifiedMembers}
+        adminMembers={adminMembers}
+        onApproveMember={handleApproveMember}
+        onRejectMember={handleRejectMember}
+        onPromoteAdmin={handlePromoteAdmin}
+        loadingMembers={isMemberDataLoading}
       />
 
       {/* Toast Notification */}
@@ -2802,6 +3189,12 @@ const FamilyGraph = () => {
         t={t}
         currentUser={currentUser}
         isAdmin={isAdmin}
+        canModerateProposals={canModerateProposals}
+        currentRole={effectiveRole}
+        memberClaimStatus={selectedPerson ? (memberStatuses[String(selectedPerson.id)] || 'none') : 'none'}
+        allowMemberClaim={effectiveRole === 'guest' && (!currentMember || ['rejected', 'cancelled'].includes(currentMember.claim_status))}
+        currentMemberClaimStatus={currentMember?.claim_status || 'none'}
+        onSubmitMemberClaim={handleSubmitMemberClaim}
       />
 
       {/* Only show standalone search for Android (since it's in the header for Web) */}
@@ -2838,7 +3231,7 @@ const FamilyGraph = () => {
             defaultEdgeOptions={{ type: 'smoothstep', animated: true }}
             proOptions={{ hideAttribution: true }}
           >
-            <Background color="var(--panel-border)" gap={24} size={2} />
+            <Background color="var(--grid-color)" gap={24} size={2} />
             <Controls position="bottom-right" showInteractive={false} showFitView={false}>
               <button
                 className="react-flow__controls-button"

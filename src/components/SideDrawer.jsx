@@ -1,15 +1,36 @@
-import { X, User, Bell, Info, Shield, Key, LogOut, Settings } from 'lucide-react';
+import { X, User, Bell, Info, LogOut, Settings, Users, UserCog, ShieldCheck } from 'lucide-react';
 
-const SideDrawer = ({ isOpen, onClose, onMenuClick, t, lang, currentUser, unreadCount = 0 }) => {
+const SideDrawer = ({
+  isOpen,
+  onClose,
+  onMenuClick,
+  t,
+  lang,
+  currentUser,
+  role = 'guest',
+  unreadCount = 0
+}) => {
+  const isSignedIn = Boolean(currentUser && !currentUser.is_anonymous);
+  const isVerifiedMember = role === 'verified' || role === 'admin';
+  const isAdmin = role === 'admin';
+
+  const renderNoticeItem = () => (
+    <div className="drawer-item" onClick={() => { onMenuClick('Notice'); onClose(); }}>
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '12px', width: '100%' }}>
+        <Bell size={20} />
+        <span>{t('notice')}</span>
+        {unreadCount > 0 && <span className="notice-badge" style={{ marginLeft: 'auto' }}>{unreadCount}</span>}
+      </div>
+    </div>
+  );
+
   return (
     <>
-      {/* Overlay */}
-      <div 
-        className={`drawer-overlay ${isOpen ? 'open' : ''}`} 
+      <div
+        className={`drawer-overlay ${isOpen ? 'open' : ''}`}
         onClick={onClose}
       />
 
-      {/* Drawer Panel */}
       <div className={`side-drawer ${isOpen ? 'open' : ''}`} dir={lang === 'ar' ? 'rtl' : 'ltr'}>
         <div className="drawer-header">
           <div>
@@ -22,59 +43,65 @@ const SideDrawer = ({ isOpen, onClose, onMenuClick, t, lang, currentUser, unread
         </div>
 
         <nav className="drawer-menu">
-          {!currentUser ? (
-            <>
-              <div className="drawer-item" onClick={() => { onMenuClick('Sign In'); onClose(); }}>
-                <User size={20} />
-                <span>{t('signIn')}</span>
-              </div>
-              <div className="drawer-item" onClick={() => { onMenuClick('Notice'); onClose(); }}>
-                <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '12px', width: '100%' }}>
-                  <Bell size={20} />
-                  <span>{t('notice')}</span>
-                  {unreadCount > 0 && <span className="notice-badge" style={{ marginLeft: 'auto' }}>{unreadCount}</span>}
-                </div>
-              </div>
-              <div className="drawer-item" onClick={() => { onMenuClick('Settings'); onClose(); }}>
-                <Settings size={20} />
-                <span>{t('settings')}</span>
-              </div>
-              <div className="drawer-item" onClick={() => { onMenuClick('About'); onClose(); }}>
-                <Info size={20} />
-                <span>{t('about')}</span>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="drawer-profile-card">
-                <User size={20} color="var(--accent)" />
-                <span className="drawer-profile-email">{currentUser.email}</span>
-              </div>
+          {isSignedIn && (
+            <div className="drawer-profile-card">
+              <User size={20} color="var(--accent)" />
+              <span className="drawer-profile-email">{currentUser.email}</span>
+            </div>
+          )}
 
-              <div className="drawer-item" onClick={() => { onMenuClick('Change Password'); onClose(); }}>
-                <Key size={20} />
-                <span>{t('changePassword')}</span>
-              </div>
-              <div className="drawer-item" onClick={() => { onMenuClick('Notice'); onClose(); }}>
-                <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '12px', width: '100%' }}>
-                  <Bell size={20} />
-                  <span>{t('notice')}</span>
-                  {unreadCount > 0 && <span className="notice-badge" style={{ marginLeft: 'auto' }}>{unreadCount}</span>}
-                </div>
-              </div>
-              <div className="drawer-item" onClick={() => { onMenuClick('Settings'); onClose(); }}>
-                <Settings size={20} />
-                <span>{t('settings')}</span>
-              </div>
-              <div className="drawer-item" onClick={() => { onMenuClick('About'); onClose(); }}>
-                <Info size={20} />
-                <span>{t('about')}</span>
-              </div>
-              <div className="drawer-item drawer-signout" onClick={() => { onMenuClick('Sign Out'); onClose(); }}>
-                <LogOut size={20} color="#ff4444" />
-                <span style={{ color: '#ff4444' }}>{t('signOut')}</span>
-              </div>
-            </>
+          {!isSignedIn && (
+            <div className="drawer-item" onClick={() => { onMenuClick('Sign In'); onClose(); }}>
+              <User size={20} />
+              <span>{t('signIn')}</span>
+            </div>
+          )}
+
+          {isVerifiedMember && (
+            <div className="drawer-item" onClick={() => { onMenuClick('Profile'); onClose(); }}>
+              <User size={20} />
+              <span>{t('profile')}</span>
+            </div>
+          )}
+
+          {isVerifiedMember && (
+            <div className="drawer-item" onClick={() => { onMenuClick('Member Manager'); onClose(); }}>
+              <Users size={20} />
+              <span>{t('memberManager')}</span>
+            </div>
+          )}
+
+          {isAdmin && (
+            <div className="drawer-item" onClick={() => { onMenuClick('List Member'); onClose(); }}>
+              <UserCog size={20} />
+              <span>{t('listMember')}</span>
+            </div>
+          )}
+
+          {isAdmin && (
+            <div className="drawer-item" onClick={() => { onMenuClick('List Admin'); onClose(); }}>
+              <ShieldCheck size={20} />
+              <span>{t('listAdmin')}</span>
+            </div>
+          )}
+
+          {renderNoticeItem()}
+
+          <div className="drawer-item" onClick={() => { onMenuClick('Settings'); onClose(); }}>
+            <Settings size={20} />
+            <span>{t('settings')}</span>
+          </div>
+
+          <div className="drawer-item" onClick={() => { onMenuClick('About'); onClose(); }}>
+            <Info size={20} />
+            <span>{t('about')}</span>
+          </div>
+
+          {isSignedIn && (
+            <div className="drawer-item drawer-signout" onClick={() => { onMenuClick('Sign Out'); onClose(); }}>
+              <LogOut size={20} color="#ff4444" />
+              <span style={{ color: '#ff4444' }}>{t('signOut')}</span>
+            </div>
           )}
         </nav>
       </div>

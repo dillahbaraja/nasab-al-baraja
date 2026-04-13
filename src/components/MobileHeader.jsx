@@ -3,7 +3,7 @@ import { MoreVertical } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import SideDrawer from './SideDrawer';
 
-const MobileHeader = ({ title = '', onMenuClick, t, lang, currentUser, unreadCount = 0 }) => {
+const MobileHeader = ({ title = '', onMenuClick, t, lang, currentUser, role = 'guest', unreadCount = 0 }) => {
   const platform = Capacitor.getPlatform();
   if (platform !== 'android') return null;
 
@@ -46,6 +46,7 @@ const MobileHeader = ({ title = '', onMenuClick, t, lang, currentUser, unreadCou
         t={t}
         lang={lang}
         currentUser={currentUser}
+        role={role}
         unreadCount={unreadCount}
       />
     </div>

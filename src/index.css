@@ -12,6 +12,7 @@
   --node-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
   --node-radius: 12px;
   --edge-color: #94a3b8;
+  --grid-color: #cbd5e1;
   --input-bg: #f1f5f9;
   --panel-highlight-bg: #f8fafc;
   --btn-secondary-bg: #e2e8f0;
@@ -34,7 +35,8 @@
   --node-bg: rgba(30, 41, 59, 0.95);
   --node-border: rgba(255, 255, 255, 0.15);
   --node-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  --edge-color: rgba(255, 255, 255, 0.5);
+  --edge-color: rgba(148, 163, 184, 0.78);
+  --grid-color: rgba(148, 163, 184, 0.22);
   --input-bg: rgba(0, 0, 0, 0.3);
   --panel-highlight-bg: rgba(255, 255, 255, 0.08);
   --btn-secondary-bg: rgba(255, 255, 255, 0.15);
@@ -57,7 +59,8 @@
   --node-bg: #f4e3c5;
   --node-border: #d0bba0;
   --node-shadow: 0 4px 12px rgba(62, 43, 35, 0.08);
-  --edge-color: rgba(62, 43, 35, 0.3);
+  --edge-color: rgba(62, 43, 35, 0.62);
+  --grid-color: rgba(62, 43, 35, 0.22);
   --input-bg: rgba(62, 43, 35, 0.06);
   --panel-highlight-bg: rgba(62, 43, 35, 0.06);
   --btn-secondary-bg: rgba(62, 43, 35, 0.12);
@@ -803,6 +806,7 @@ body {
   display: flex;
   flex-direction: column;
   padding: 24px;
+  overflow: hidden;
 }
 
 .side-drawer.open {
@@ -855,6 +859,10 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .drawer-item {
