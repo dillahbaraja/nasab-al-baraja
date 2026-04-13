@@ -3,7 +3,7 @@ import { MoreVertical } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import SideDrawer from './SideDrawer';
 
-const MobileHeader = ({ title = "Nasab Al-Baraja", onMenuClick, t, lang, currentUser, unreadCount = 0 }) => {
+const MobileHeader = ({ title = '', onMenuClick, t, lang, currentUser, unreadCount = 0 }) => {
   const platform = Capacitor.getPlatform();
   if (platform !== 'android') return null;
 
@@ -22,7 +22,7 @@ const MobileHeader = ({ title = "Nasab Al-Baraja", onMenuClick, t, lang, current
       <div className="app-bar-content">
         <h1 className="app-bar-title">{title}</h1>
         <div className="overflow-container">
-          <button className="overflow-button" onClick={() => setIsDrawerOpen(true)}>
+          <button className="overflow-button" onClick={() => setIsDrawerOpen(true)} aria-label={t('openMenu')}>
             <div style={{ position: 'relative' }}>
               <MoreVertical size={24} />
               {unreadCount > 0 && (

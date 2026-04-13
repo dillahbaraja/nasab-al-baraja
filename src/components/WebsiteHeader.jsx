@@ -19,7 +19,7 @@ const WebsiteHeader = ({ onMenuClick, children, t, lang, currentUser, unreadCoun
         <button 
           className="hamburger-button" 
           onClick={() => setIsDrawerOpen(true)}
-          aria-label="Open menu"
+          aria-label={t('openMenu')}
         >
           <div style={{ position: 'relative' }}>
             <Menu size={24} />

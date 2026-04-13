@@ -150,13 +150,16 @@ export const createNodesFromData = (dataList) => {
       origin: [0.5, 0],
       position: { x: 0, y: 0 }, 
       data: {
-        arabicName: person.arabicName || '',
-        englishName: person.englishName || person.name || '-',
+        arabicName: person.displayArabicName || person.arabicName || '',
+        englishName: person.displayEnglishName || person.englishName || person.name || '-',
         info: person.info || '',
         isHighlighted: false,
         isCollapsed: !!person.isCollapsed,
         hasChildren: !!person.hasChildren,
         isGlowing: !!person.isGlowing,
+        isPending: !!person.isPending,
+        pendingType: person.pendingType || null,
+        pendingLabel: person.pendingLabel || '',
         raw: person
       }
     }));

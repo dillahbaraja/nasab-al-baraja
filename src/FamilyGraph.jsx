@@ -14,9 +14,7 @@ import FamilyNode from './FamilyNode';
 import { initialFamilyData, generateEdges } from './data';
 import { getLayoutedElements, createNodesFromData } from './layout';
 import NodeEditModal from './NodeEditModal';
-import { db, auth } from './firebase';
-import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc, writeBatch } from 'firebase/firestore';
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut, updatePassword } from 'firebase/auth';
+import { supabase } from './supabase';
 import { translations } from './i18n';
 import MobileHeader from './components/MobileHeader';
 import WebsiteHeader from './components/WebsiteHeader';
@@ -27,6 +25,8 @@ import { Capacitor } from '@capacitor/core';
 const nodeTypes = { customNode: FamilyNode };
 
 const TimeoutWarning = () => {
+  const lang = localStorage.getItem('rf-lang') || 'en';
+  const translate = (key) => translations[key]?.[lang] || translations[key]?.en || key;
   const [show, setShow] = useState(false);
   useEffect(() => {
     const timer = setTimeout(() => setShow(true), 5000);
@@ -36,16 +36,14 @@ const TimeoutWarning = () => {
   const handleReset = async () => {
     localStorage.clear();
     sessionStorage.clear();
-    // Attempt to clear Firebase databases specifically that might be deadlocked
+    // Attempt to clear cached IndexedDB databases that might be deadlocked
     try {
       const dbs = await window.indexedDB.databases();
       for (let i = 0; i < dbs.length; i++) {
         window.indexedDB.deleteDatabase(dbs[i].name);
       }
     } catch(e) {
-      // Fallback if indexedDB.databases is not supported (Firefox/Safari old)
-      window.indexedDB.deleteDatabase('firebaseLocalStorageDb');
-      window.indexedDB.deleteDatabase('firebase-heartbeat-database');
+      // Fallback if indexedDB.databases is not supported
     }
     window.location.reload(true);
   };
@@ -54,10 +52,10 @@ const TimeoutWarning = () => {
   return (
     <div style={{ textAlign: 'center', marginTop: '16px', padding: '16px', background: 'var(--panel-bg)', borderRadius: '8px', border: '1px solid var(--panel-border)' }}>
       <p style={{ marginBottom: '12px', fontSize: '14px', color: 'var(--text-secondary)' }}>
-        Koneksi bermasalah atau data lokal korup?
+        {translate('timeoutWarning')}
       </p>
       <button onClick={handleReset} style={{ background: 'var(--accent)', color: '#fff', padding: '8px 16px', borderRadius: '4px', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}>
-        Reset Cache & Muat Ulang
+        {translate('resetCacheReload')}
       </button>
     </div>
   );
@@ -70,6 +68,52 @@ const normalizeArabic = (text) => {
 
 const cleanText = (text) => {
   return text.replace(/\b(bin|ben|binti)\b/gi, '').replace(/\u0628\u0646/g, '').replace(/\s+/g, '').trim();
+};
+
+const getPendingNameChange = (person) => person?.moderation?.nameChange?.status === 'pending'
+  ? person.moderation.nameChange
+  : null;
+
+const isPendingAddChildNode = (person) => person?.moderation?.status === 'pending' && person?.moderation?.type === 'add_child';
+
+const isPersonPending = (person) => Boolean(isPendingAddChildNode(person) || getPendingNameChange(person));
+
+const getDisplayNames = (person) => {
+  const pendingNameChange = getPendingNameChange(person);
+  if (pendingNameChange) {
+    return {
+      arabicName: pendingNameChange.proposedArabicName || person?.arabicName || '',
+      englishName: pendingNameChange.proposedEnglishName || person?.englishName || ''
+    };
+  }
+  return {
+    arabicName: person?.arabicName || '',
+    englishName: person?.englishName || ''
+  };
+};
+
+const getPendingCreatedAt = (person) => {
+  if (isPendingAddChildNode(person)) return Number(person?.moderation?.createdAt || 0);
+  const pendingNameChange = getPendingNameChange(person);
+  if (pendingNameChange) return Number(pendingNameChange.createdAt || 0);
+  return 0;
+};
+
+const buildNoticeText = ({ type, lang, personName = '', parentName = '', grandParentName = '' }) => {
+  if (type === 'proposal_add_child') {
+    if (lang === 'ar') return `اقتراح ابن جديد: ${personName} بن ${parentName}${grandParentName ? ` بن ${grandParentName}` : ''}`;
+    if (lang === 'id') return `Usulan anak baru: ${personName} bin ${parentName}${grandParentName ? ` bin ${grandParentName}` : ''}`;
+    return `New child suggestion: ${personName} bin ${parentName}${grandParentName ? ` bin ${grandParentName}` : ''}`;
+  }
+
+  if (type === 'proposal_name_change') {
+    if (lang === 'ar') return `اقتراح تعديل الاسم لـ ${personName}`;
+    if (lang === 'id') return `Usulan perubahan nama untuk ${personName}`;
+    return `Name change suggestion for ${personName}`;
+  }
+
+  if (lang === 'ar') return `${personName} بن ${parentName}${grandParentName ? ` بن ${grandParentName}` : ''}`;
+  return `${personName} bin ${parentName}${grandParentName ? ` bin ${grandParentName}` : ''}`;
 };
 
 const FamilyGraph = () => {
@@ -129,18 +173,22 @@ const FamilyGraph = () => {
   // Pre-built search index — computed once on data load, not on every search keystroke
   const searchIndex = useMemo(() => {
     return familyData.map(person => {
+      const displayNames = getDisplayNames(person);
       let current = person;
       let lineageLatinArr = [];
       let lineageArabArr = [];
       let limit = 0;
       while (current && limit < 10) {
-        lineageLatinArr.push((current.englishName || '').toLowerCase());
-        lineageArabArr.push(normalizeArabic(current.arabicName || ''));
+        const currentDisplay = getDisplayNames(current);
+        lineageLatinArr.push((currentDisplay.englishName || '').toLowerCase());
+        lineageArabArr.push(normalizeArabic(currentDisplay.arabicName || ''));
         current = personMap.get(String(current.fatherId));
         limit++;
       }
       return {
         id: person.id,
+        englishName: displayNames.englishName,
+        arabicName: displayNames.arabicName,
         lineageLatin: cleanText(lineageLatinArr.join('')),
         lineageArab: cleanText(lineageArabArr.join('')),
         info: (person.info || '').toLowerCase()
@@ -158,6 +206,7 @@ const FamilyGraph = () => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [notices, setNotices] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [lastNoticeOpen, setLastNoticeOpen] = useState(() => Number(localStorage.getItem('rf-last-notice-open')) || 0);
@@ -167,6 +216,33 @@ const FamilyGraph = () => {
   const [toggledNodeInfo, setToggledNodeInfo] = useState(null); // { id, lastPos, lastViewport }
   const [collapsingParentId, setCollapsingParentId] = useState(null);
   const [ancestorPath, setAncestorPath] = useState({ nodeIds: new Set(), edgeIds: new Set() });
+  const adminWalkthroughEnabledRef = useRef(false);
+  const wasAdminRef = useRef(false);
+
+  const adminUser = isAdmin ? currentUser : null;
+
+  const pendingQueueIds = useMemo(() => {
+    const getDepth = (id) => {
+      let depth = 0;
+      let current = personMap.get(String(id));
+      let guard = 0;
+      while (current?.fatherId && guard < 100) {
+        depth += 1;
+        current = personMap.get(String(current.fatherId));
+        guard += 1;
+      }
+      return depth;
+    };
+
+    return familyData
+      .filter((person) => isPersonPending(person))
+      .sort((a, b) => {
+        const depthDiff = getDepth(a.id) - getDepth(b.id);
+        if (depthDiff !== 0) return depthDiff;
+        return getPendingCreatedAt(a) - getPendingCreatedAt(b);
+      })
+      .map((person) => String(person.id));
+  }, [familyData, personMap]);
   
   // Info Modals State
   const [activeInfoModal, setActiveInfoModal] = useState(null); // 'signin', 'about', 'notice', 'adminManager', 'adminForm', 'changePassword', 'settings'
@@ -291,64 +367,183 @@ const FamilyGraph = () => {
     });
   };
 
-  // Auth Listener
-  useEffect(() => {
-    if (!auth) return;
-    const unsub = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user);
-    });
-    return () => unsub();
+  const resolveAdminStatus = useCallback(async (user) => {
+    if (!user || user.is_anonymous || !user.email) {
+      setIsAdmin(false);
+      return false;
+    }
+
+    const { data, error } = await supabase
+      .from('admin_users')
+      .select('email')
+      .eq('email', user.email)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Admin lookup failed:', error);
+      setIsAdmin(false);
+      return false;
+    }
+
+    const nextIsAdmin = !!data;
+    setIsAdmin(nextIsAdmin);
+    return nextIsAdmin;
   }, []);
 
-  // 1. Family Nodes & Admins Listener (Persist during session)
+  // Auth State Listener
   useEffect(() => {
-    if (!db) return;
+    let isMounted = true;
 
-    const unsubFamily = onSnapshot(collection(db, 'familyNodes'), (snapshot) => {
-      const dbData = snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
+    const ensureGuestSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!isMounted) return;
 
-      setFamilyData(dbData);
-      setIsLoading(false);
-    }, (err) => {
-      console.error("Family Snapshot Error:", err);
-      setIsLoading(false);
-    });
+      const user = session?.user || null;
+      setCurrentUser(user);
+      await resolveAdminStatus(user);
 
-    return () => {
-      unsubFamily();
-    };
-  }, []); // db is a stable module constant, no need to re-subscribe
-
-  // 2. Notices Listener (Pure data sync)
-  useEffect(() => {
-    if (!db) return;
-
-    const unsubNotices = onSnapshot(collection(db, 'notices'), (snapshot) => {
-      const noticeList = snapshot.docs
-        .map(d => ({ ...d.data(), id: d.id }))
-        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-      
-      setNotices(noticeList);
-      
-      // Trigger toast for the newest notice if it's very fresh (last 15 seconds)
-      const newest = noticeList[0];
-      if (newest && Date.now() - (newest.timestamp || 0) < 15000) {
-        if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
-        setToast(newest);
-        toastTimeoutRef.current = setTimeout(() => {
-          setToast(null);
-          toastTimeoutRef.current = null;
-        }, 8000);
+      if (!session) {
+        const { data, error } = await supabase.auth.signInAnonymously();
+        if (error) {
+          console.error('Anonymous auth bootstrap failed:', error);
+          return;
+        }
+        if (!isMounted) return;
+        const anonUser = data?.user || null;
+        setCurrentUser(anonUser);
+        await resolveAdminStatus(anonUser);
       }
-    }, (err) => {
-      console.error("Notices Snapshot Error:", err);
+    };
+
+    ensureGuestSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!isMounted) return;
+      const user = session?.user || null;
+      setCurrentUser(user);
+      void resolveAdminStatus(user);
     });
 
     return () => {
-      unsubNotices();
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, [resolveAdminStatus]);
+
+   // 1. Family Nodes (Initial fetch + Realtime subscription)
+  useEffect(() => {
+        const fetchInitialData = async () => {
+      let allData = [];
+      let from = 0;
+      let to = 999;
+      let finished = false;
+      let errorOccurred = false;
+
+      while (!finished) {
+        const { data, error } = await supabase
+          .from('nodes')
+          .select('*')
+          .range(from, to);
+
+        if (error) {
+          console.error("Error fetching nodes:", error);
+          errorOccurred = true;
+          finished = true;
+        } else {
+          allData = [...allData, ...data];
+          if (data.length < 1000) {
+            finished = true;
+          } else {
+            from += 1000;
+            to += 1000;
+          }
+        }
+      }
+
+      if (!errorOccurred) {
+        const mappedData = allData.map(n => ({
+          ...n,
+          fatherId: n.father_id,
+          arabicName: n.arabic_name,
+          englishName: n.english_name
+        }));
+        setFamilyData(mappedData);
+        setIsLoading(false);
+      }
+    };
+
+    fetchInitialData();
+
+    const channel = supabase
+      .channel('nodes_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'nodes' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          const newDoc = { ...payload.new, fatherId: payload.new.father_id, arabicName: payload.new.arabic_name, englishName: payload.new.english_name };
+          setFamilyData(prev => [...prev.filter(p => p.id !== newDoc.id), newDoc]);
+        } else if (payload.eventType === 'UPDATE') {
+          const updatedDoc = { ...payload.new, fatherId: payload.new.father_id, arabicName: payload.new.arabic_name, englishName: payload.new.english_name };
+          setFamilyData(prev => prev.map(p => p.id === updatedDoc.id ? updatedDoc : p));
+        } else if (payload.eventType === 'DELETE') {
+          setFamilyData(prev => prev.filter(p => p.id !== payload.old.id));
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  // 2. Notices Listener
+  useEffect(() => {
+    const fetchInitialNotices = async () => {
+      const { data, error } = await supabase
+        .from('notices')
+        .select('*')
+        .order('timestamp', { descending: true })
+        .limit(30);
+      
+      if (error) console.error("Error fetching notices:", error);
+      else {
+        const mappedNotices = data.map(n => ({
+          ...n,
+          targetId: n.target_id,
+          targetPersonId: n.target_person_id
+        }));
+        setNotices(mappedNotices);
+      }
+    };
+
+    fetchInitialNotices();
+
+    const channel = supabase
+      .channel('notices_changes')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notices' }, (payload) => {
+        const newNotice = { 
+          ...payload.new, 
+          targetId: payload.new.target_id, 
+          targetPersonId: payload.new.target_person_id 
+        };
+        
+        setNotices(prev => [newNotice, ...prev].slice(0, 30));
+        
+        // Trigger toast
+        if (Date.now() - (newNotice.timestamp || 0) < 15000) {
+          if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+          setToast(newNotice);
+          toastTimeoutRef.current = setTimeout(() => {
+            setToast(null);
+            toastTimeoutRef.current = null;
+          }, 8000);
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
       if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
     };
-  }, []); // db is a stable module constant, no need to re-subscribe
+  }, []);
 
   // 3. Reactive Unread Count Calculation
   useEffect(() => {
@@ -356,6 +551,67 @@ const FamilyGraph = () => {
 
     setUnreadCount(unread);
   }, [notices, lastNoticeOpen]);
+
+  const getActorId = useCallback(() => {
+    if (!currentUser) return 'public';
+    return currentUser.id;
+  }, [currentUser]);
+
+  const reserveNextNodeIds = useCallback((count = 1) => {
+    const numericIds = familyData
+      .map((person) => Number(person.id))
+      .filter((id) => Number.isFinite(id));
+    const startId = (numericIds.length > 0 ? Math.max(...numericIds) : 0) + 1;
+    return Array.from({ length: count }, (_, index) => startId + index);
+  }, [familyData]);
+
+  const createNotice = useCallback(async ({ text, type, targetId, targetPersonId = null, timestamp = Date.now() }) => {
+    const { data, error } = await supabase.from('notices').insert({
+      text,
+      timestamp,
+      type,
+      target_id: targetId,
+      target_person_id: targetPersonId
+    }).select().maybeSingle();
+    if (error) console.error("Create Notice Error:", error);
+    return data
+      ? {
+          ...data,
+          targetId: data.target_id,
+          targetPersonId: data.target_person_id
+        }
+      : null;
+  }, []);
+
+  const upsertLocalPerson = useCallback((person) => {
+    setFamilyData((prev) => {
+      const next = [...prev];
+      const index = next.findIndex((item) => String(item.id) === String(person.id));
+      if (index >= 0) {
+        next[index] = { ...next[index], ...person };
+      } else {
+        next.push(person);
+      }
+      return next;
+    });
+  }, []);
+
+  const patchLocalPerson = useCallback((personId, patch) => {
+    setFamilyData((prev) => prev.map((person) => (
+      String(person.id) === String(personId)
+        ? { ...person, ...patch }
+        : person
+    )));
+  }, []);
+
+  const removeLocalPersons = useCallback((idsToRemove) => {
+    const removeSet = new Set(idsToRemove.map((id) => String(id)));
+    setFamilyData((prev) => prev.filter((person) => !removeSet.has(String(person.id))));
+  }, []);
+
+  const appendLocalNotice = useCallback((notice) => {
+    setNotices((prev) => [notice, ...prev.filter((item) => String(item.id) !== String(notice.id || ''))].slice(0, 30));
+  }, []);
 
 
 
@@ -399,9 +655,16 @@ const FamilyGraph = () => {
         const pid = String(person.id);
         const isCollapsed = !!collapsedStateById[pid];
         const isCurrentlyCollapsing = collapsingParentId === pid;
+        const displayNames = getDisplayNames(person);
+        const pending = isPersonPending(person);
         
         visibleData.push({
           ...person,
+          displayArabicName: displayNames.arabicName,
+          displayEnglishName: displayNames.englishName,
+          isPending: pending,
+          pendingType: isPendingAddChildNode(person) ? 'add_child' : (getPendingNameChange(person) ? 'name_change' : null),
+          pendingLabel: pending ? t('pendingAdminVerification') : '',
           isGlowing: isCollapsed, // Add glow to collapsed nodes
           isCollapsed: isCollapsed,
           hasChildren: parentToChildren.has(pid)
@@ -553,7 +816,7 @@ const FamilyGraph = () => {
     } catch (err) {
       console.error("Layout Rendering Crash Prevented:", err);
     }
-  }, [familyData, collapsedStateById, isLoading, collapsingParentId, handleNodeLongPress, appSettings.layoutStyle]); // handleNodeLongPress is stable (useCallback [])
+  }, [familyData, collapsedStateById, isLoading, collapsingParentId, handleNodeLongPress, appSettings.layoutStyle, t, lang]); // handleNodeLongPress is stable (useCallback [])
 
   // Highlight Ancestor Path
   useEffect(() => {
@@ -975,6 +1238,40 @@ const FamilyGraph = () => {
     return true;
   }, [familyData, collapsedStateById]);
 
+  const openPersonModalById = useCallback((personId, options = { targetZoom: 1.2 }) => {
+    const targetId = String(personId);
+    const person = personMap.get(targetId);
+    if (!person) return;
+
+    setSelectedPerson(person);
+    setIsModalOpen(true);
+
+    const wasHidden = ensurePathVisible(targetId);
+    if (wasHidden) {
+      setPendingFocusTarget({ id: targetId, options });
+    } else {
+      const targetNode = nodes.find((node) => node.id === targetId);
+      if (targetNode) {
+        smoothFocusNode(targetId, options);
+      }
+    }
+  }, [ensurePathVisible, nodes, personMap, smoothFocusNode]);
+
+  const openNextPendingForAdmin = useCallback((excludeId = null) => {
+    if (!isAdmin || pendingQueueIds.length === 0) {
+      adminWalkthroughEnabledRef.current = false;
+      return;
+    }
+
+    const nextId = pendingQueueIds.find((id) => id !== String(excludeId || ''));
+    if (!nextId) {
+      adminWalkthroughEnabledRef.current = false;
+      return;
+    }
+
+    openPersonModalById(nextId, { targetZoom: 1.25 });
+  }, [isAdmin, openPersonModalById, pendingQueueIds]);
+
   // Auto-focus when pending target becomes visible in nodes array
   useEffect(() => {
     if (pendingFocusTarget) {
@@ -993,6 +1290,21 @@ const FamilyGraph = () => {
       }
     }
   }, [nodes, pendingFocusTarget, smoothFocusNode]);
+
+  useEffect(() => {
+    if (isAdmin && !wasAdminRef.current) {
+      adminWalkthroughEnabledRef.current = true;
+      if (pendingQueueIds.length > 0) {
+        openNextPendingForAdmin();
+      }
+    }
+
+    if (!isAdmin) {
+      adminWalkthroughEnabledRef.current = false;
+    }
+
+    wasAdminRef.current = isAdmin;
+  }, [isAdmin, openNextPendingForAdmin, pendingQueueIds]);
 
   // CINEMATIC INTRO SEQUENCE
   useEffect(() => {
@@ -1168,7 +1480,8 @@ const FamilyGraph = () => {
     let current = personMap.get(String(person.fatherId)); // O(1) vs O(N) find()
     let count = 0;
     while(current && count < 2) {
-      parts.push(lang === 'ar' ? current.arabicName : current.englishName);
+      const currentDisplay = getDisplayNames(current);
+      parts.push(lang === 'ar' ? currentDisplay.arabicName : (currentDisplay.englishName || currentDisplay.arabicName));
       current = personMap.get(String(current.fatherId));
       count++;
     }
@@ -1190,8 +1503,9 @@ const FamilyGraph = () => {
       const queryArab = cleanText(normalizeArabic(val));
       
       const suggestions = familyData.filter(person => {
-        const latinRaw = person.englishName || '';
-        const arabRaw = person.arabicName || '';
+        const displayNames = getDisplayNames(person);
+        const latinRaw = displayNames.englishName || '';
+        const arabRaw = displayNames.arabicName || '';
         const infoRaw = person.info || '';
         return cleanText(latinRaw.toLowerCase()).includes(queryLatin) || 
                cleanText(normalizeArabic(arabRaw)).includes(queryArab) ||
@@ -1205,7 +1519,8 @@ const FamilyGraph = () => {
   };
 
   const selectSuggestion = (person) => {
-    setSearchQuery(person.englishName || person.arabicName);
+    const displayNames = getDisplayNames(person);
+    setSearchQuery(displayNames.englishName || displayNames.arabicName);
     setShowSuggestions(false);
     
     const wasHidden = ensurePathVisible(person.id);
@@ -1262,21 +1577,37 @@ const FamilyGraph = () => {
 
   // ----- FIRESTORE CRUD -----
 
-  const handleAddChild = async (parent, childrenList) => {
-    if(!db) return alert(t('notConnected'));
+    // ----- SUPABASE CRUD -----
+
+  const handleAddChild = useCallback(async (parent, childrenList) => {
+    if (!isAdmin) return;
     try {
       const list = Array.isArray(childrenList) ? childrenList : [childrenList];
+      const reservedIds = reserveNextNodeIds(list.length);
       
-      const promises = list.map(async (child) => {
+      for (const [index, child] of list.entries()) {
         const { englishName, arabicName } = child;
-        const newDocRef = doc(collection(db, 'familyNodes')); 
-        const newPerson = {
-          englishName,
-          arabicName,
-          fatherId: parent.id,
-          info: ''
+        
+        const { data: newNodes, error: nodeError } = await supabase
+          .from('nodes')
+          .insert({
+            id: reservedIds[index],
+            english_name: englishName,
+            arabic_name: arabicName,
+            father_id: parent.id,
+            info: ''
+          })
+          .select();
+
+        if (nodeError) throw nodeError;
+        const createdNode = {
+          ...newNodes[0],
+          fatherId: newNodes[0].father_id,
+          arabicName: newNodes[0].arabic_name,
+          englishName: newNodes[0].english_name
         };
-        await setDoc(newDocRef, newPerson);
+        const newNodeId = createdNode.id;
+        upsertLocalPerson(createdNode);
         
         // CREATE NOTICE
         const grandfather = familyData.find(p => p.id === parent.fatherId);
@@ -1284,70 +1615,77 @@ const FamilyGraph = () => {
         const fatherName = lang === 'ar' ? parent.arabicName : parent.englishName;
         const childName = lang === 'ar' ? arabicName : englishName;
         
-        const noticeText = lang === 'ar' 
-          ? `${childName} بن ${fatherName} بن ${gfName}`
-          : `${childName} bin ${fatherName} bin ${gfName}`;
+        const noticeText = buildNoticeText({
+          type: 'new_member',
+          lang,
+          personName: childName,
+          parentName: fatherName,
+          grandParentName: gfName !== '-' ? gfName : ''
+        });
 
-        await setDoc(doc(collection(db, 'notices')), {
+        const notice = await createNotice({
           text: noticeText,
           timestamp: Date.now(),
           type: 'new_member',
-          targetId: newDocRef.id
+          targetId: newNodeId,
+          targetPersonId: newNodeId
         });
-      });
-
-      await Promise.all(promises);
+        if (notice) appendLocalNotice(notice);
+      }
     } catch (err) {
       console.error(err);
       alert(t('addFailed'));
       throw err;
     }
-  };
+  }, [appendLocalNotice, createNotice, familyData, lang, t, isAdmin, reserveNextNodeIds, upsertLocalPerson]);
 
-  const handleUpdateChild = async (childId, updates) => {
-    if(!db) return alert(t('notConnected'));
+    const handleUpdateChild = async (childId, updates) => {
+    if (!isAdmin) return;
     try {
-      await updateDoc(doc(db, 'familyNodes', childId), updates);
+      const dbUpdates = {};
+      if (updates.englishName !== undefined) dbUpdates.english_name = updates.englishName;
+      if (updates.arabicName !== undefined) dbUpdates.arabic_name = updates.arabicName;
+      if (updates.info !== undefined) dbUpdates.info = updates.info;
+      if (updates.fatherId !== undefined) dbUpdates.father_id = updates.fatherId;
+      if (updates.moderation !== undefined) dbUpdates.moderation = updates.moderation;
+
+      const { error } = await supabase
+        .from('nodes')
+        .update(dbUpdates)
+        .eq('id', childId);
+
+      if (error) throw error;
+      patchLocalPerson(childId, updates);
     } catch (err) {
       console.error(err);
       alert(t('updateFailed'));
     }
   };
 
-  const handleRemoveChild = async (childId) => {
-    if(!db) return alert(t('notConnected'));
+    const handleRemoveChild = async (childId) => {
+    if (!isAdmin) return;
     try {
-      const batch = writeBatch(db);
-      
-      // 1. Find all descendants recursively
       const parentToChildrenMap = new Map();
-      familyData.forEach(p => {
-        const fid = p.fatherId ? String(p.fatherId) : null;
-        if (fid) {
-          if (!parentToChildrenMap.has(fid)) parentToChildrenMap.set(fid, []);
-          parentToChildrenMap.get(fid).push(p);
-        }
+      familyData.forEach((person) => {
+        const fatherId = person.fatherId ? String(person.fatherId) : null;
+        if (!fatherId) return;
+        if (!parentToChildrenMap.has(fatherId)) parentToChildrenMap.set(fatherId, []);
+        parentToChildrenMap.get(fatherId).push(String(person.id));
       });
 
       const gatherDescendantIds = (parentId) => {
-        let results = [];
-        const pid = String(parentId);
-        const children = parentToChildrenMap.get(pid) || [];
-        children.forEach(child => {
-          results.push(String(child.id));
-          results = results.concat(gatherDescendantIds(child.id));
-        });
-        return results;
+        const directChildren = parentToChildrenMap.get(String(parentId)) || [];
+        return directChildren.flatMap((descendantId) => [descendantId, ...gatherDescendantIds(descendantId)]);
       };
 
       const idsToDelete = [String(childId), ...gatherDescendantIds(childId)];
-      
-      // 2. Add to batch
-      idsToDelete.forEach(id => {
-        batch.delete(doc(db, 'familyNodes', id));
-      });
+      const { error } = await supabase
+        .from('nodes')
+        .delete()
+        .in('id', idsToDelete);
 
-      await batch.commit();
+      if (error) throw error;
+      removeLocalPersons(idsToDelete);
 
       if (selectedPerson && idsToDelete.includes(String(selectedPerson.id))) {
         setIsModalOpen(false); 
@@ -1358,14 +1696,301 @@ const FamilyGraph = () => {
     }
   };
 
-  const seedDatabase = async () => {
-    if(!db) return alert(t('notConnected'));
+    const handleSubmitChildSuggestion = useCallback(async (parent, childrenList) => {
     try {
-      for (const p of initialFamilyData) {
-        const docRef = doc(db, 'familyNodes', p.id);
-        const { id, ...data } = p;
-        await setDoc(docRef, data);
+      const list = Array.isArray(childrenList) ? childrenList : [childrenList];
+      const actorId = getActorId();
+      const now = Date.now();
+      const reservedIds = reserveNextNodeIds(list.length);
+
+      await Promise.all(list.map(async (child, index) => {
+        const { data: newNodes, error: nodeError } = await supabase
+          .from('nodes')
+          .insert({
+            id: reservedIds[index],
+            english_name: child.englishName || '',
+            arabic_name: child.arabicName || '',
+            father_id: parent.id,
+            info: '',
+            moderation: {
+              status: 'pending',
+              type: 'add_child',
+              createdAt: now,
+              updatedAt: now,
+              createdBy: actorId,
+              lastEditedBy: actorId
+            }
+          })
+          .select();
+
+        if (nodeError) throw nodeError;
+        const createdNode = {
+          ...newNodes[0],
+          fatherId: newNodes[0].father_id,
+          arabicName: newNodes[0].arabic_name,
+          englishName: newNodes[0].english_name
+        };
+        const newNodeId = createdNode.id;
+        upsertLocalPerson(createdNode);
+
+        const parentDisplay = getDisplayNames(parent);
+        const grandParent = parent.fatherId ? personMap.get(String(parent.fatherId)) : null;
+        const grandParentDisplay = grandParent ? getDisplayNames(grandParent) : null;
+        const noticeChildName = lang === 'ar' ? (child.arabicName || '') : (child.englishName || child.arabicName || '');
+        const parentName = lang === 'ar'
+          ? parentDisplay.arabicName
+          : (parentDisplay.englishName || parentDisplay.arabicName);
+        const grandParentName = grandParentDisplay
+          ? (lang === 'ar' ? grandParentDisplay.arabicName : (grandParentDisplay.englishName || grandParentDisplay.arabicName))
+          : '';
+
+        const notice = await createNotice({
+          text: buildNoticeText({
+            type: 'proposal_add_child',
+            lang,
+            personName: noticeChildName,
+            parentName,
+            grandParentName
+          }),
+          type: 'proposal_add_child',
+          targetId: newNodeId,
+          targetPersonId: parent.id,
+          timestamp: now
+        });
+        if (notice) appendLocalNotice(notice);
+      }));
+      alert(t('suggestionSaved'));
+    } catch (err) {
+      console.error(err);
+      alert(`${t('addFailed')} ${err?.message || ''}`.trim());
+      throw err;
+    }
+  }, [appendLocalNotice, createNotice, getActorId, lang, personMap, reserveNextNodeIds, t, upsertLocalPerson]);
+
+    const handleSubmitNameSuggestion = useCallback(async (personId, updates) => {
+    try {
+      const actorId = getActorId();
+      const now = Date.now();
+      const currentPerson = personMap.get(String(personId));
+      if (!currentPerson) return;
+
+      const { data, error } = await supabase
+        .from('nodes')
+        .update({
+          moderation: {
+            ...(currentPerson.moderation || {}),
+            nameChange: {
+              status: 'pending',
+              proposedEnglishName: updates.englishName || '',
+              proposedArabicName: updates.arabicName || '',
+              createdAt: now,
+              updatedAt: now,
+              createdBy: actorId,
+              lastEditedBy: actorId
+            }
+          }
+        })
+        .eq('id', personId)
+        .select('id')
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!data) throw new Error('Name suggestion update was blocked or did not affect any row.');
+      const nextModeration = {
+        ...(currentPerson.moderation || {}),
+        nameChange: {
+          status: 'pending',
+          proposedEnglishName: updates.englishName || '',
+          proposedArabicName: updates.arabicName || '',
+          createdAt: now,
+          updatedAt: now,
+          createdBy: actorId,
+          lastEditedBy: actorId
+        }
+      };
+      patchLocalPerson(personId, { moderation: nextModeration });
+
+      const currentDisplay = getDisplayNames(currentPerson);
+      const notice = await createNotice({
+        text: buildNoticeText({
+          type: 'proposal_name_change',
+          lang,
+          personName: lang === 'ar'
+            ? (currentDisplay.arabicName || updates.arabicName || '')
+            : (currentDisplay.englishName || currentDisplay.arabicName || updates.englishName || updates.arabicName || '')
+        }),
+        type: 'proposal_name_change',
+        targetId: personId,
+        targetPersonId: personId,
+        timestamp: now
+      });
+      if (notice) appendLocalNotice(notice);
+      alert(t('suggestionSaved'));
+    } catch (err) {
+      console.error(err);
+      alert(`${t('updateFailed')} ${err?.message || ''}`.trim());
+      throw err;
+    }
+  }, [appendLocalNotice, createNotice, getActorId, lang, patchLocalPerson, personMap, t]);
+
+    const handleUpdateProposal = async (person, updates) => {
+    try {
+      const actorId = getActorId();
+      const now = Date.now();
+
+      if (isPendingAddChildNode(person)) {
+        const { data, error } = await supabase
+          .from('nodes')
+          .update({
+            english_name: updates.englishName || '',
+            arabic_name: updates.arabicName || '',
+            moderation: {
+              ...(person.moderation || {}),
+              updatedAt: now,
+              lastEditedBy: actorId
+            }
+          })
+          .eq('id', person.id)
+          .select('id')
+          .maybeSingle();
+        if (error) throw error;
+        if (!data) throw new Error('Pending child suggestion update was blocked or did not affect any row.');
+        patchLocalPerson(person.id, {
+          englishName: updates.englishName || '',
+          arabicName: updates.arabicName || '',
+          moderation: {
+            ...(person.moderation || {}),
+            updatedAt: now,
+            lastEditedBy: actorId
+          }
+        });
+      } else if (getPendingNameChange(person)) {
+        const { data, error } = await supabase
+          .from('nodes')
+          .update({
+            moderation: {
+              ...(person.moderation || {}),
+              nameChange: {
+                ...(person.moderation?.nameChange || {}),
+                proposedEnglishName: updates.englishName || '',
+                proposedArabicName: updates.arabicName || '',
+                updatedAt: now,
+                lastEditedBy: actorId
+              }
+            }
+          })
+          .eq('id', person.id)
+          .select('id')
+          .maybeSingle();
+        if (error) throw error;
+        if (!data) throw new Error('Pending name suggestion update was blocked or did not affect any row.');
+        patchLocalPerson(person.id, {
+          moderation: {
+            ...(person.moderation || {}),
+            nameChange: {
+              ...(person.moderation?.nameChange || {}),
+              proposedEnglishName: updates.englishName || '',
+              proposedArabicName: updates.arabicName || '',
+              updatedAt: now,
+              lastEditedBy: actorId
+            }
+          }
+        });
       }
+      alert(t('suggestionUpdated'));
+    } catch (err) {
+      console.error(err);
+      alert(t('updateFailed'));
+      throw err;
+    }
+  };
+
+    const handleCancelProposal = async (person) => {
+    try {
+      if (isPendingAddChildNode(person)) {
+        const { error } = await supabase.from('nodes').delete().eq('id', person.id);
+        if (error) throw error;
+      } else if (getPendingNameChange(person)) {
+        const newMod = { ...(person.moderation || {}) };
+        delete newMod.nameChange;
+        const { error } = await supabase.from('nodes').update({ moderation: newMod }).eq('id', person.id);
+        if (error) throw error;
+      }
+      alert(t('suggestionCanceled'));
+    } catch (err) {
+      console.error(err);
+      alert(t('deleteFailed'));
+      throw err;
+    }
+  };
+
+    const handleApproveProposal = async (person) => {
+    if (!isAdmin) return;
+    try {
+      if (isPendingAddChildNode(person)) {
+        const newMod = { ...(person.moderation || {}), status: 'approved', updatedAt: Date.now() };
+        const { error } = await supabase.from('nodes').update({ moderation: newMod }).eq('id', person.id);
+        if (error) throw error;
+        patchLocalPerson(person.id, { moderation: newMod });
+      } else {
+        const pendingNameChange = getPendingNameChange(person);
+        if (!pendingNameChange) return;
+        const newMod = { ...(person.moderation || {}) };
+        delete newMod.nameChange;
+        const { error } = await supabase.from('nodes').update({ 
+          english_name: pendingNameChange.proposedEnglishName || '', 
+          arabic_name: pendingNameChange.proposedArabicName || '',
+          moderation: newMod 
+        }).eq('id', person.id);
+        if (error) throw error;
+        patchLocalPerson(person.id, {
+          englishName: pendingNameChange.proposedEnglishName || '',
+          arabicName: pendingNameChange.proposedArabicName || '',
+          moderation: newMod
+        });
+      }
+      alert(t('suggestionApproved'));
+    } catch (err) {
+      console.error(err);
+      alert(t('updateFailed'));
+      throw err;
+    }
+  };
+
+    const handleRejectProposal = async (person) => {
+    if (!isAdmin) return;
+    try {
+      if (isPendingAddChildNode(person)) {
+        const { error } = await supabase.from('nodes').delete().eq('id', person.id);
+        if (error) throw error;
+        removeLocalPersons([person.id]);
+      } else if (getPendingNameChange(person)) {
+        const newMod = { ...(person.moderation || {}) };
+        delete newMod.nameChange;
+        const { error } = await supabase.from('nodes').update({ moderation: newMod }).eq('id', person.id);
+        if (error) throw error;
+        patchLocalPerson(person.id, { moderation: newMod });
+      }
+      alert(t('suggestionRejected'));
+    } catch (err) {
+      console.error(err);
+      alert(t('deleteFailed'));
+      throw err;
+    }
+  };
+
+  const seedDatabase = async () => {
+    if (!isAdmin) return;
+    try {
+      const payload = initialFamilyData.map(({ id, englishName, arabicName, fatherId, info }) => ({
+        id,
+        english_name: englishName || '',
+        arabic_name: arabicName || '',
+        father_id: fatherId || null,
+        info: info || ''
+      }));
+      const { error } = await supabase.from('nodes').insert(payload);
+      if (error) throw error;
       alert(t('seedSuccess'));
     } catch (error) {
       console.error(error);
@@ -1375,40 +2000,38 @@ const FamilyGraph = () => {
 
   // ----- ADMIN LOGIC -----
 
-  const handleSignIn = async (email, password) => {
-    try {
-      await signInWithEmailAndPassword(auth, email, password);
-      setActiveInfoModal(null);
-    } catch (err) {
-      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
-        throw new Error(lang === 'id' ? 'Email atau password salah.' : lang === 'ar' ? 'البريد الإلكتروني أو كلمة المرور غير صحيحة.' : 'Invalid email or password.');
-      } else if (err.code === 'auth/too-many-requests') {
-        throw new Error(lang === 'id' ? 'Terlalu banyak percobaan gagal, silakan coba lagi nanti.' : lang === 'ar' ? 'محاولات فاشلة كثيرة، يرجى المحاولة لاحقًا.' : 'Too many failed attempts, please try again later.');
-      } else {
-        throw new Error(lang === 'id' ? 'Gagal masuk: ' + err.message : lang === 'ar' ? 'فشل تسجيل الدخول: ' + err.message : 'Sign in failed: ' + err.message);
+    const handleSignIn = async (email, password) => {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      if (error.message?.toLowerCase().includes('invalid login credentials')) {
+        throw new Error(t('invalidAdminCredentials'));
       }
+      throw error;
     }
+    const nextIsAdmin = await resolveAdminStatus(data?.user || null);
+    if (!nextIsAdmin) {
+      await supabase.auth.signOut();
+      const { error: anonError } = await supabase.auth.signInAnonymously();
+      if (anonError) console.error('Anonymous auth after rejected admin sign-in failed:', anonError);
+      throw new Error(t('invalidAdminCredentials'));
+    }
+    setActiveInfoModal(null);
   };
 
-  const handleSignOut = async () => {
-    try {
-      await signOut(auth);
-      setActiveInfoModal(null);
-    } catch (err) {
-      alert(err.message);
-    }
+    const handleSignOut = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
+    const { error: anonError } = await supabase.auth.signInAnonymously();
+    if (anonError) throw anonError;
   };
 
 
 
-  const handleChangePassword = async (newPassword) => {
-    try {
-      await updatePassword(auth.currentUser, newPassword);
-      alert(t('updateSuccess'));
-      setActiveInfoModal(null);
-    } catch (err) {
-      alert(err.message);
-    }
+    const handleChangePassword = async (newPassword) => {
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) throw error;
+    alert(t('passwordChangedSuccess'));
+    setActiveInfoModal(null);
   };
 
   const handleMenuClick = (item) => {
@@ -1525,6 +2148,25 @@ const FamilyGraph = () => {
       return next;
     });
   }, [getViewport, nodes, collapsedStateById, handleCustomFitView, familyData]);
+
+  const handleModalClose = useCallback(() => {
+    const closingId = selectedPerson?.id || null;
+    const latestClosingPerson = closingId ? personMap.get(String(closingId)) : null;
+    setIsModalOpen(false);
+    setSelectedPerson(null);
+
+    if (isAdmin && adminWalkthroughEnabledRef.current && closingId && !isPersonPending(latestClosingPerson)) {
+      setTimeout(() => {
+        openNextPendingForAdmin(closingId);
+      }, 250);
+    }
+  }, [isAdmin, openNextPendingForAdmin, personMap, selectedPerson]);
+
+  const handleSkipPending = useCallback((personId) => {
+    if (!isAdmin) return;
+    adminWalkthroughEnabledRef.current = true;
+    openNextPendingForAdmin(personId);
+  }, [isAdmin, openNextPendingForAdmin]);
 
 
   const handleViewPerson = (personId) => {
@@ -1704,9 +2346,9 @@ const FamilyGraph = () => {
             <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--panel-bg)', borderRadius: '8px', border: '1px solid var(--panel-border)', marginTop: '12px', padding: '4px', maxHeight: '250px', overflowY: 'auto' }}>
               {searchSuggestions.map(s => (
                 <div key={s.id} onClick={() => selectSuggestion(s)} className="suggestion-item" style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--panel-border)' }}>
-                  <div style={{ fontWeight: 'bold' }}>{lang === 'ar' ? s.arabicName : s.englishName}</div>
+                  <div style={{ fontWeight: 'bold' }}>{lang === 'ar' ? getDisplayNames(s).arabicName : (getDisplayNames(s).englishName || getDisplayNames(s).arabicName)}</div>
                   <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                     {(lang === 'ar' ? s.arabicName : s.englishName) + getNasabDesc(s)}
+                     {(lang === 'ar' ? getDisplayNames(s).arabicName : (getDisplayNames(s).englishName || getDisplayNames(s).arabicName)) + getNasabDesc(s)}
                   </div>
                 </div>
               ))}
@@ -1719,9 +2361,10 @@ const FamilyGraph = () => {
   );
 
   const handleDeleteNotice = async (id) => {
-    if (!db) return;
+    if (!isAdmin) return;
     try {
-      await deleteDoc(doc(db, 'notices', id));
+      const { error } = await supabase.from('notices').delete().eq('id', id);
+      if (error) throw error;
     } catch (err) {
       console.error("Delete Notice Error:", err);
     }
@@ -1730,11 +2373,11 @@ const FamilyGraph = () => {
   return (
     <div className={`app-root-container ${!appSettings.animationsEnabled ? 'no-animations' : ''}`}>
       <MobileHeader 
-        title={t('appName') || "Nasab Al-Baraja"} 
+        title={t('appName')} 
         onMenuClick={handleMenuClick}
         t={t}
         lang={lang}
-        currentUser={currentUser}
+        currentUser={adminUser}
         unreadCount={unreadCount}
       />
       
@@ -1742,7 +2385,7 @@ const FamilyGraph = () => {
         onMenuClick={handleMenuClick}
         t={t}
         lang={lang}
-        currentUser={currentUser}
+        currentUser={adminUser}
         unreadCount={unreadCount}
       >
         {renderSearchForm()}
@@ -1758,7 +2401,7 @@ const FamilyGraph = () => {
         onSignIn={handleSignIn}
         onSignOut={handleSignOut}
         onChangePassword={handleChangePassword}
-        currentUser={currentUser}
+        currentUser={adminUser}
         notices={notices}
         onViewNotice={handleViewNotice}
         onDeleteNotice={handleDeleteNotice}
@@ -1787,7 +2430,7 @@ const FamilyGraph = () => {
       </div>
 
       {/* Render Seed Button if DB is totally empty and not loading */}
-      {!isLoading && familyData.length === 0 && (
+      {!isLoading && familyData.length === 0 && isAdmin && (
         <button className="theme-toggle top-actions" onClick={seedDatabase} title={t('seedTooltip')} style={{top: 24, right: 24, color: 'var(--accent)'}}>
           <Database size={20} />
         </button>
@@ -1795,7 +2438,7 @@ const FamilyGraph = () => {
 
       <NodeEditModal 
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={handleModalClose}
         person={selectedPerson}
         familyData={familyData}
         onAddChild={handleAddChild}
@@ -1803,9 +2446,17 @@ const FamilyGraph = () => {
         onRemoveChild={handleRemoveChild}
         onViewPerson={handleViewPerson}
         onShowLineageOnly={handleShowLineageOnly}
+        onSubmitChildSuggestion={handleSubmitChildSuggestion}
+        onSubmitNameSuggestion={handleSubmitNameSuggestion}
+        onUpdateProposal={handleUpdateProposal}
+        onCancelProposal={handleCancelProposal}
+        onApproveProposal={handleApproveProposal}
+        onRejectProposal={handleRejectProposal}
+        onSkipPending={handleSkipPending}
         lang={lang}
         t={t}
         currentUser={currentUser}
+        isAdmin={isAdmin}
       />
 
       {/* Only show standalone search for Android (since it's in the header for Web) */}
@@ -1852,7 +2503,7 @@ const FamilyGraph = () => {
               <button 
                 className="react-flow__controls-button" 
                 onClick={handleCustomFitView} 
-                title={t('fitView') || 'Fit View'}
+                title={t('fitView')}
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               >
                 <Maximize size={14} />
@@ -1860,7 +2511,7 @@ const FamilyGraph = () => {
               <button 
                 className="react-flow__controls-button" 
                 onClick={handleExpandAll} 
-                title={expandClickCount === 0 ? t('expandAll') : '1 more click = Expand All!'}
+                title={expandClickCount === 0 ? t('expandAll') : t('expandAllHint')}
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}
               >
                 <ListTree size={14} />
@@ -1881,7 +2532,7 @@ const FamilyGraph = () => {
               <button
                 className="react-flow__controls-button"
                 onClick={() => handleNavEdge(navDirection)}
-                title={navDirection === 'right' ? t('goToRightmost') || 'Go to rightmost node' : t('goToLeftmost') || 'Go to leftmost node'}
+                title={navDirection === 'right' ? t('goToRightmost') : t('goToLeftmost')}
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               >
                 {navDirection === 'right' ? <ArrowRight size={14} /> : <ArrowLeft size={14} />}

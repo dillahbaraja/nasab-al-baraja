@@ -1,93 +1,208 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 
-const NodeEditModal = ({ 
-  isOpen, 
-  onClose, 
-  person: initialPerson, 
-  familyData, 
-  onAddChild, 
-  onUpdateChild, 
+const createEmptyChildInput = () => ({ latin: '', arab: '' });
+
+const NodeEditModal = ({
+  isOpen,
+  onClose,
+  person: initialPerson,
+  familyData,
+  onAddChild,
+  onUpdateChild,
   onRemoveChild,
   onViewPerson,
   onShowLineageOnly,
+  onSubmitChildSuggestion,
+  onSubmitNameSuggestion,
+  onUpdateProposal,
+  onCancelProposal,
+  onApproveProposal,
+  onRejectProposal,
+  onSkipPending,
   lang,
   t,
-  currentUser
+  currentUser,
+  isAdmin
 }) => {
-  const person = initialPerson ? (familyData.find(p => p.id === initialPerson.id) || initialPerson) : null;
-  const [childrenInputs, setChildrenInputs] = useState([{ latin: '', arab: '' }]);
+  const person = initialPerson ? (familyData.find((p) => p.id === initialPerson.id) || initialPerson) : null;
+  const [childrenInputs, setChildrenInputs] = useState([createEmptyChildInput()]);
   const [showFullNasab, setShowFullNasab] = useState(false);
   const [isEditingInfo, setIsEditingInfo] = useState(false);
   const [editInfoText, setEditInfoText] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [activeSuggestionMode, setActiveSuggestionMode] = useState(null);
+  const [proposalNameForm, setProposalNameForm] = useState({ latin: '', arab: '' });
+  const suggestionFormRef = useRef(null);
+  const primarySuggestionInputRef = useRef(null);
+
+  const pendingNameChange = person?.moderation?.nameChange?.status === 'pending'
+    ? person.moderation.nameChange
+    : null;
+  const isPendingAddSuggestion = person?.moderation?.status === 'pending' && person?.moderation?.type === 'add_child';
+  const hasPendingProposal = Boolean(isPendingAddSuggestion || pendingNameChange);
+
+  const displayNames = useMemo(() => {
+    if (!person) return { englishName: '', arabicName: '' };
+    if (pendingNameChange) {
+      return {
+        englishName: pendingNameChange.proposedEnglishName || person.englishName || '',
+        arabicName: pendingNameChange.proposedArabicName || person.arabicName || ''
+      };
+    }
+    return {
+      englishName: person.englishName || '',
+      arabicName: person.arabicName || ''
+    };
+  }, [person, pendingNameChange]);
 
   useEffect(() => {
     setShowFullNasab(false);
     setIsEditingInfo(false);
     setIsSaving(false);
-    setChildrenInputs([{ latin: '', arab: '' }]);
-  }, [person]);
+    setChildrenInputs([createEmptyChildInput()]);
+    setActiveSuggestionMode(null);
+    setProposalNameForm({
+      latin: displayNames.englishName || '',
+      arab: displayNames.arabicName || ''
+    });
+  }, [person, displayNames]);
+
+  useEffect(() => {
+    if (!activeSuggestionMode) return;
+
+    const timer = setTimeout(() => {
+      suggestionFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      if (primarySuggestionInputRef.current) {
+        primarySuggestionInputRef.current.focus();
+        primarySuggestionInputRef.current.select();
+      }
+    }, 60);
+
+    return () => clearTimeout(timer);
+  }, [activeSuggestionMode]);
 
   if (!isOpen || !person) return null;
 
-  const displayName = lang === 'ar' ? person.arabicName : person.englishName;
-  const getChildName = (c) => lang === 'ar' ? c.arabicName : c.englishName;
+  const displayName = lang === 'ar' ? displayNames.arabicName : (displayNames.englishName || displayNames.arabicName);
+  const getChildName = (c) => {
+    const childPendingName = c?.moderation?.nameChange?.status === 'pending' ? c.moderation.nameChange : null;
+    if (lang === 'ar') return childPendingName?.proposedArabicName || c.arabicName;
+    return childPendingName?.proposedEnglishName || c.englishName || c.arabicName;
+  };
 
-  // Helper function to build lineage string
   const getFullNasab = (targetPerson, language, showAll = false) => {
     let nasab = [];
     let current = targetPerson;
-    let count = 0; 
+    let count = 0;
     while (current && count < 50 && (showAll || count <= 5)) {
-      nasab.push(language === 'ar' ? current.arabicName : current.englishName);
-      current = familyData.find(p => p.id === current.fatherId);
+      const currentPendingName = current?.moderation?.nameChange?.status === 'pending'
+        ? current.moderation.nameChange
+        : null;
+      nasab.push(language === 'ar'
+        ? (currentPendingName?.proposedArabicName || current.arabicName)
+        : (currentPendingName?.proposedEnglishName || current.englishName || current.arabicName));
+      current = familyData.find((p) => p.id === current.fatherId);
       count++;
     }
     return nasab.join(language === 'ar' ? ' بن ' : ' bin ');
   };
 
   const getAncestorCount = (targetPerson) => {
-    let current = familyData.find(p => p.id === targetPerson.fatherId);
+    let current = familyData.find((p) => p.id === targetPerson.fatherId);
     let count = 0;
-    while(current && count < 50) {
+    while (current && count < 50) {
       count++;
-      current = familyData.find(p => p.id === current.fatherId);
+      current = familyData.find((p) => p.id === current.fatherId);
     }
     return count;
   };
 
-  // Find direct children (patrilineal)
-  const children = familyData.filter(p => p.fatherId === person.id);
+  const children = familyData.filter((p) => p.fatherId === person.id);
   const personHasDescendants = children.length > 0;
 
   const handleAdd = async (e) => {
     e.preventDefault();
-    const validChildren = childrenInputs.filter(c => c.arab.trim() !== '');
+    const validChildren = childrenInputs.filter((c) => c.arab.trim() !== '');
     if (validChildren.length === 0 || isSaving) return;
-    
+
     setIsSaving(true);
     try {
-      const payload = validChildren.map(c => ({
-        englishName: c.latin,
-        arabicName: c.arab
+      const payload = validChildren.map((c) => ({
+        englishName: c.latin.trim(),
+        arabicName: c.arab.trim()
       }));
       await onAddChild(person, payload);
-      setChildrenInputs([{ latin: '', arab: '' }]);
-      onClose(); // Auto-close on success
+      setChildrenInputs([createEmptyChildInput()]);
+      onClose();
     } catch (err) {
-      console.error("Save Error:", err);
+      console.error('Save Error:', err);
     } finally {
       setIsSaving(false);
     }
   };
 
-  // HANDLERS FOR THE CURRENTLY SELECTED PERSON
+  const handleSubmitChildSuggestionForm = async (e) => {
+    e.preventDefault();
+    const validChildren = childrenInputs.filter((c) => c.arab.trim() !== '');
+    if (validChildren.length === 0 || isSaving) return;
+
+    setIsSaving(true);
+    try {
+      await onSubmitChildSuggestion(person, validChildren.map((child) => ({
+        englishName: child.latin.trim(),
+        arabicName: child.arab.trim()
+      })));
+      setChildrenInputs([createEmptyChildInput()]);
+      setActiveSuggestionMode(null);
+      onClose();
+    } catch (err) {
+      console.error('Proposal Save Error:', err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSubmitNameSuggestionForm = async (e) => {
+    e.preventDefault();
+    if (!proposalNameForm.arab.trim() || isSaving) return;
+
+    setIsSaving(true);
+    try {
+      await onSubmitNameSuggestion(person.id, {
+        englishName: proposalNameForm.latin.trim(),
+        arabicName: proposalNameForm.arab.trim()
+      });
+      setActiveSuggestionMode(null);
+      onClose();
+    } catch (err) {
+      console.error('Name Proposal Save Error:', err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSavePendingProposal = async (e) => {
+    e.preventDefault();
+    if (!proposalNameForm.arab.trim() || isSaving) return;
+
+    setIsSaving(true);
+    try {
+      await onUpdateProposal(person, {
+        englishName: proposalNameForm.latin.trim(),
+        arabicName: proposalNameForm.arab.trim()
+      });
+      setActiveSuggestionMode(null);
+    } catch (err) {
+      console.error('Pending Proposal Update Error:', err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleRemoveCurrentPerson = () => {
-    if (personHasDescendants) {
-      const confirmed = window.confirm(`PERINGATAN KERAS: ${displayName} memiliki keturunan. Menghapus orang ini akan menghapus SELURUH keturunannya (anak, cucu, dst) secara permanen!\n\nApakah Anda YAKIN ingin melanjutkan?`);
-      if (!confirmed) return;
-    } else {
-      if (!window.confirm(`${t('alertDeleteTarget')}${displayName}?`)) return;
+    if (personHasDescendants) return;
+    if (!window.confirm(`${t('confirmDeleteLeafPerson')} ${displayName}?`)) {
+      return;
     }
     onRemoveChild(person.id);
     onClose();
@@ -98,10 +213,10 @@ const NodeEditModal = ({
     if (!arab) return;
     const latin = window.prompt(`${t('updateLatin')} ${t('skipLabel')}`, person.englishName || '');
     const finalLatin = latin === null ? person.englishName : latin;
-    onUpdateChild(person.id, { englishName: finalLatin, arabicName: arab });
+    Promise.resolve(onUpdateChild(person.id, { englishName: finalLatin, arabicName: arab }))
+      .then(() => onClose())
+      .catch((err) => console.error('Edit Current Person Error:', err));
   };
-
-
 
   const saveInfo = () => {
     setIsEditingInfo(false);
@@ -111,6 +226,101 @@ const NodeEditModal = ({
       onUpdateChild(person.id, { info: newInfo });
     }
   };
+
+  const renderNameForm = (onSubmit, submitLabel) => (
+    <form ref={suggestionFormRef} onSubmit={onSubmit} style={{ borderTop: '1px solid var(--panel-border)', paddingTop: '20px' }}>
+      <h3 style={{ fontSize: '16px', marginBottom: '12px' }}>
+        {isPendingAddSuggestion ? t('editPendingSuggestion') : t('suggestNameChange')}
+      </h3>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <input
+          ref={primarySuggestionInputRef}
+          type="text"
+          placeholder={`${t('placeholderArab')} *`}
+          className="search-input"
+          style={{ padding: '10px 12px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '6px', color: 'var(--text-primary)' }}
+          value={proposalNameForm.arab}
+          onChange={(e) => setProposalNameForm((prev) => ({ ...prev, arab: e.target.value }))}
+          required
+        />
+        <input
+          type="text"
+          placeholder={`${t('placeholderLatin')} ${t('optional')}`}
+          className="search-input"
+          style={{ padding: '10px 12px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '6px', color: 'var(--text-primary)' }}
+          value={proposalNameForm.latin}
+          onChange={(e) => setProposalNameForm((prev) => ({ ...prev, latin: e.target.value }))}
+        />
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button type="button" onClick={() => setActiveSuggestionMode(null)} style={{ padding: '12px', background: 'var(--btn-secondary-bg)', color: 'var(--btn-secondary-text)', border: '1px solid var(--panel-border)', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', flex: 1 }}>
+            {t('cancel')}
+          </button>
+          <button type="submit" className="search-button" style={{ padding: '12px', fontSize: '15px', fontWeight: 'bold', flex: 2 }}>
+            {submitLabel}
+          </button>
+        </div>
+      </div>
+    </form>
+  );
+
+  const renderChildSuggestionForm = () => (
+    <form ref={suggestionFormRef} onSubmit={handleSubmitChildSuggestionForm} style={{ borderTop: '1px solid var(--panel-border)', paddingTop: '20px' }}>
+      <h3 style={{ fontSize: '16px', marginBottom: '12px' }}>{t('suggestAddChildFor')}{displayName}</h3>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        {childrenInputs.map((childInput, idx) => (
+          <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingBottom: '12px', borderBottom: idx < childrenInputs.length - 1 ? '1px dashed var(--panel-border)' : 'none' }}>
+            {childrenInputs.length > 1 && (
+              <div style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between' }}>
+                <span>{t('childLabel')} #{idx + 1}</span>
+                {idx > 0 && (
+                  <button type="button" onClick={() => setChildrenInputs(childrenInputs.filter((_, i) => i !== idx))} style={{ background: 'transparent', border: 'none', color: '#ff4444', cursor: 'pointer', fontSize: '12px' }}>
+                    {t('deleteBtn')}
+                  </button>
+                )}
+              </div>
+            )}
+            <input
+              ref={idx === 0 ? primarySuggestionInputRef : null}
+              type="text"
+              placeholder={`${t('placeholderArab')} *`}
+              className="search-input"
+              style={{ padding: '10px 12px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '6px', color: 'var(--text-primary)' }}
+              value={childInput.arab}
+              onChange={(e) => {
+                const newArr = [...childrenInputs];
+                newArr[idx].arab = e.target.value;
+                setChildrenInputs(newArr);
+              }}
+              required
+            />
+            <input
+              type="text"
+              placeholder={`${t('placeholderLatin')} ${t('optional')}`}
+              className="search-input"
+              style={{ padding: '10px 12px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '6px', color: 'var(--text-primary)' }}
+              value={childInput.latin}
+              onChange={(e) => {
+                const newArr = [...childrenInputs];
+                newArr[idx].latin = e.target.value;
+                setChildrenInputs(newArr);
+              }}
+            />
+          </div>
+        ))}
+        <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+          <button type="button" onClick={() => setChildrenInputs([...childrenInputs, createEmptyChildInput()])} style={{ padding: '12px', background: 'var(--btn-secondary-bg)', color: 'var(--btn-secondary-text)', border: '1px solid var(--panel-border)', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', flex: 1 }}>
+            +
+          </button>
+          <button type="button" onClick={() => setActiveSuggestionMode(null)} style={{ padding: '12px', background: 'var(--btn-secondary-bg)', color: 'var(--btn-secondary-text)', border: '1px solid var(--panel-border)', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', flex: 2 }}>
+            {t('cancel')}
+          </button>
+          <button type="submit" className="search-button" style={{ padding: '12px', fontSize: '15px', fontWeight: 'bold', flex: 4 }}>
+            {t('saveSuggestion')} ({childrenInputs.length})
+          </button>
+        </div>
+      </div>
+    </form>
+  );
 
   return (
     <div className="modal-overlay" onClick={onClose} style={{
@@ -124,20 +334,46 @@ const NodeEditModal = ({
         maxHeight: '85vh', overflowY: 'auto'
       }}>
         <button onClick={onClose} style={{
-          position: 'absolute', top: '16px', right: '16px', 
+          position: 'absolute', top: '16px', right: '16px',
           background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '18px'
         }}>✕</button>
-        
+
         <h2 style={{ marginBottom: '16px' }}>{t('modalTitle')}</h2>
 
-        {/* INFO DISPLAY */}
+        {hasPendingProposal && (
+          <div style={{
+            marginBottom: '16px',
+            padding: '12px 14px',
+            borderRadius: '10px',
+            border: '1px solid rgba(239, 68, 68, 0.55)',
+            background: 'rgba(239, 68, 68, 0.12)',
+            color: '#7f1d1d',
+            boxShadow: '0 0 18px rgba(239, 68, 68, 0.2)'
+          }}>
+            <div style={{ fontWeight: 'bold', marginBottom: '6px', color: '#991b1b' }}>{t('pendingAdminVerification')}</div>
+            <div style={{ fontSize: '13px' }}>
+              {isPendingAddSuggestion ? t('pendingAddChildDescription') : t('pendingNameChangeDescription')}
+            </div>
+            {isAdmin && (
+              <>
+                <div style={{ fontSize: '13px', marginTop: '10px', lineHeight: '1.5', color: '#7f1d1d' }}>
+                  {t('adminVerificationHelp')}
+                </div>
+                <div style={{ fontSize: '12px', marginTop: '8px', lineHeight: '1.5', color: '#991b1b', fontWeight: '600' }}>
+                  {t('skipVerificationHelp')}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         <div style={{ textAlign: 'center', marginBottom: '16px', fontSize: '14px', color: 'var(--text-secondary)', fontStyle: 'italic', background: 'var(--panel-highlight-bg)', padding: '8px', borderRadius: '4px' }}>
           {isEditingInfo ? (
-            <input 
+            <input
               autoFocus
-              type="text" 
+              type="text"
               value={editInfoText}
-              onChange={e => setEditInfoText(e.target.value)}
+              onChange={(e) => setEditInfoText(e.target.value)}
               placeholder={t('addInfoPlaceholder')}
               onBlur={saveInfo}
               onKeyDown={(e) => {
@@ -146,13 +382,12 @@ const NodeEditModal = ({
               style={{ width: '100%', background: 'transparent', border: '1px solid var(--accent)', color: 'var(--text-primary)', padding: '4px 8px', outline: 'none', borderRadius: '4px', textAlign: 'center' }}
             />
           ) : (
-            <div onClick={() => { setIsEditingInfo(true); setEditInfoText(person.info || ''); }} style={{ cursor: 'pointer', minHeight: '20px' }} title={t('editInfoTooltip')}>
+            <div onClick={() => { if (isAdmin) { setIsEditingInfo(true); setEditInfoText(person.info || ''); } }} style={{ cursor: isAdmin ? 'pointer' : 'default', minHeight: '20px' }} title={isAdmin ? t('editInfoTooltip') : ''}>
               {person.info || t('addInfoPlaceholder')}
             </div>
           )}
         </div>
-        
-        {/* NASAB (LINEAGE) DISPLAY */}
+
         <div style={{ background: 'var(--panel-highlight-bg)', padding: '16px', borderRadius: '8px', marginBottom: '24px', textAlign: 'center', border: '1px solid var(--panel-border)' }}>
           <div style={{ fontSize: '24px', fontWeight: 'bold', fontFamily: 'serif', color: 'var(--text-primary)', marginBottom: '8px', lineHeight: '1.4' }}>
             {getFullNasab(person, 'ar', showFullNasab)}
@@ -161,8 +396,8 @@ const NodeEditModal = ({
             {getFullNasab(person, lang !== 'ar' ? lang : 'en', showFullNasab)}
           </div>
           {getAncestorCount(person) >= 5 && !showFullNasab && (
-            <button 
-              onClick={() => setShowFullNasab(true)} 
+            <button
+              onClick={() => setShowFullNasab(true)}
               style={{ background: 'transparent', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '13px', marginTop: '16px', fontWeight: 'bold', textDecoration: 'underline' }}
             >
               {t('continueNasab')}
@@ -170,7 +405,6 @@ const NodeEditModal = ({
           )}
         </div>
 
-        {/* SHOW LINEAGE ONLY BUTTON - Available to all users */}
         <div style={{ marginBottom: '16px', textAlign: 'center' }}>
           <button
             onClick={() => onShowLineageOnly && onShowLineageOnly(person.id)}
@@ -192,98 +426,179 @@ const NodeEditModal = ({
               width: '100%',
               justifyContent: 'center'
             }}
-            onMouseEnter={e => { e.currentTarget.style.opacity = '0.88'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
-            onMouseLeave={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(0)'; }}
+            onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.88'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(0)'; }}
           >
             <span style={{ fontSize: '16px' }}>🌿</span>
-            {t('showLineageOnly') || 'Tampilkan Hanya Garis Keturunan Ini'}
+            {t('showLineageOnly')}
           </button>
         </div>
 
-        {/* CURRENT PERSON ACTIONS - ONLY FOR ADMIN */}
-        {currentUser && (
+        {isAdmin && !hasPendingProposal && (
           <div style={{ background: 'rgba(255,255,255,0.05)', padding: '16px', borderRadius: '8px', marginBottom: '24px' }}>
             <div style={{ display: 'flex', gap: '8px' }}>
               <button onClick={handleEditCurrentPersonName} style={{
                 padding: '6px 12px', background: 'var(--accent)', color: '#ffffff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold'
               }}>{t('editPerson')}</button>
-              <button 
-                onClick={handleRemoveCurrentPerson} 
-                style={{
-                  padding: '6px 12px', 
-                  background: '#ef4444', 
-                  color: '#ffffff', 
-                  border: 'none', borderRadius: '4px', 
-                  cursor: 'pointer', 
-                  fontSize: '13px', fontWeight: 'bold'
-                }}
-              >
-                {t('deletePerson')}
-              </button>
+              {!personHasDescendants && (
+                <button
+                  onClick={handleRemoveCurrentPerson}
+                  style={{
+                    padding: '6px 12px',
+                    background: '#ef4444',
+                    color: '#ffffff',
+                    border: 'none', borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '13px', fontWeight: 'bold'
+                  }}
+                >
+                  {t('deletePerson')}
+                </button>
+              )}
             </div>
-            {personHasDescendants && (
-              <div style={{ fontSize: '11px', color: '#ef4444', marginTop: '6px', fontWeight: 'bold' }}>
-                * Menghapus orang ini akan otomatis menghapus seluruh keturunannya (Recursively).
-              </div>
+          </div>
+        )}
+
+        {hasPendingProposal && (
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', flexWrap: 'wrap' }}>
+            <button
+              onClick={() => {
+                setProposalNameForm({
+                  latin: displayNames.englishName || '',
+                  arab: displayNames.arabicName || ''
+                });
+                setActiveSuggestionMode('editPending');
+              }}
+              style={{ padding: '10px 14px', background: 'var(--btn-secondary-bg)', color: 'var(--btn-secondary-text)', border: '1px solid var(--panel-border)', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', flex: 1 }}
+            >
+              {t('editPendingSuggestion')}
+            </button>
+            <button
+              onClick={async () => {
+                if (!window.confirm(t('confirmCancelSuggestion'))) return;
+                await onCancelProposal(person);
+                onClose();
+              }}
+              style={{ padding: '10px 14px', background: '#b91c1c', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', flex: 1 }}
+            >
+              {t('cancelSuggestion')}
+            </button>
+            {isAdmin && (
+              <>
+                <button
+                  onClick={() => onSkipPending && onSkipPending(person.id)}
+                  style={{ padding: '10px 14px', background: '#475569', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', flex: 1 }}
+                >
+                  {t('skipVerification')}
+                </button>
+                <button
+                  onClick={async () => {
+                    await onApproveProposal(person);
+                  }}
+                  style={{ padding: '10px 14px', background: '#15803d', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', flex: 1 }}
+                >
+                  {t('approveSuggestion')}
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!window.confirm(t('confirmRejectSuggestion'))) return;
+                    await onRejectProposal(person);
+                    onClose();
+                  }}
+                  style={{ padding: '10px 14px', background: '#7f1d1d', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', flex: 1 }}
+                >
+                  {t('rejectSuggestion')}
+                </button>
+              </>
             )}
           </div>
         )}
 
-        {/* CHILDREN LIST */}
         <div style={{ marginBottom: '24px' }}>
           <h3 style={{ fontSize: '16px', marginBottom: '12px' }}>{t('childrenOf')}{displayName}</h3>
           {children.length === 0 ? (
             <div style={{ color: 'var(--text-secondary)', fontSize: '14px', fontStyle: 'italic' }}>{t('noChildren')}</div>
           ) : (
             <ul style={{ listStyle: 'none', padding: 0 }}>
-              {children.map(c => (
-                <li key={c.id} style={{ 
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
-                  padding: '10px 12px', background: 'var(--panel-highlight-bg)', 
-                  marginBottom: '8px', borderRadius: '8px', border: '1px solid var(--panel-border)'
+              {children.map((c) => (
+                <li key={c.id} style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  padding: '10px 12px', background: 'var(--panel-highlight-bg)',
+                  marginBottom: '8px', borderRadius: '8px', border: c?.moderation?.status === 'pending' ? '1px solid rgba(239, 68, 68, 0.55)' : '1px solid var(--panel-border)'
                 }}>
                   <div>
-                    <div style={{ fontWeight: 'bold', fontSize: '16px', color: 'var(--text-primary)' }}>{c.arabicName}</div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{c.englishName}</div>
+                    <div style={{ fontWeight: 'bold', fontSize: '16px', color: 'var(--text-primary)' }}>{c?.moderation?.nameChange?.status === 'pending' ? (c.moderation.nameChange.proposedArabicName || c.arabicName) : c.arabicName}</div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{getChildName(c)}</div>
+                    {c?.moderation?.status === 'pending' && (
+                      <div style={{ fontSize: '11px', color: '#dc2626', fontWeight: 'bold', marginTop: '4px' }}>{t('pendingAdminVerification')}</div>
+                    )}
                   </div>
-                  
-                  <button 
+
+                  <button
                     onClick={() => onViewPerson && onViewPerson(c.id)}
-                    style={{ 
-                      background: 'var(--accent)', 
-                      color: 'white', 
-                      border: 'none', 
-                      borderRadius: '4px', 
-                      padding: '6px 12px', 
-                      fontSize: '12px', 
-                      cursor: 'pointer', 
+                    style={{
+                      background: 'var(--accent)',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      padding: '6px 12px',
+                      fontSize: '12px',
+                      cursor: 'pointer',
                       fontWeight: 'bold',
                       transition: 'background 0.2s'
                     }}
-                    onMouseEnter={(e) => e.target.style.background = 'var(--accent-hover)'}
-                    onMouseLeave={(e) => e.target.style.background = 'var(--accent)'}
+                    onMouseEnter={(e) => { e.target.style.background = 'var(--accent-hover)'; }}
+                    onMouseLeave={(e) => { e.target.style.background = 'var(--accent)'; }}
                   >
                     {t('view')}
                   </button>
-
                 </li>
               ))}
             </ul>
           )}
         </div>
 
-        {/* ADD CHILD FORM - ONLY FOR ADMIN */}
-        {currentUser && (
-          <form onSubmit={handleAdd} style={{ borderTop: '1px solid var(--panel-border)', paddingTop: '20px' }}>
+        {activeSuggestionMode === 'suggestChild' && renderChildSuggestionForm()}
+        {activeSuggestionMode === 'suggestName' && renderNameForm(handleSubmitNameSuggestionForm, t('saveSuggestion'))}
+        {activeSuggestionMode === 'editPending' && renderNameForm(handleSavePendingProposal, t('saveSuggestionChanges'))}
+
+        {!isAdmin && !hasPendingProposal && activeSuggestionMode === null && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', borderTop: '1px solid var(--panel-border)', paddingTop: '20px' }}>
+            <button
+              onClick={() => {
+                setChildrenInputs([createEmptyChildInput()]);
+                setActiveSuggestionMode('suggestChild');
+              }}
+              style={{ width: '100%', padding: '12px', background: '#991b1b', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
+            >
+              {t('suggestAddChild')}
+            </button>
+            <button
+              onClick={() => {
+                setProposalNameForm({
+                  latin: displayNames.englishName || '',
+                  arab: displayNames.arabicName || ''
+                });
+                setActiveSuggestionMode('suggestName');
+              }}
+              style={{ width: '100%', padding: '12px', background: '#b91c1c', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
+            >
+              {t('suggestNameChange')}
+            </button>
+          </div>
+        )}
+
+        {isAdmin && !hasPendingProposal && (
+          <form onSubmit={handleAdd} style={{ borderTop: '1px solid var(--panel-border)', paddingTop: '20px', marginTop: '20px' }}>
             <h3 style={{ fontSize: '16px', marginBottom: '12px' }}>{t('addChildTitle')}{displayName}</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {childrenInputs.map((childInput, idx) => (
                 <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingBottom: '12px', borderBottom: idx < childrenInputs.length - 1 ? '1px dashed var(--panel-border)' : 'none' }}>
                   {childrenInputs.length > 1 && (
                     <div style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between' }}>
-                      <span>Anak #{idx + 1}</span>
+                      <span>{t('childLabel')} #{idx + 1}</span>
                       {idx > 0 && (
-                        <button type="button" onClick={() => setChildrenInputs(childrenInputs.filter((_, i) => i !== idx))} style={{ background: 'transparent', border: 'none', color: '#ff4444', cursor: 'pointer', fontSize: '12px' }}>Hapus</button>
+                        <button type="button" onClick={() => setChildrenInputs(childrenInputs.filter((_, i) => i !== idx))} style={{ background: 'transparent', border: 'none', color: '#ff4444', cursor: 'pointer', fontSize: '12px' }}>{t('deleteBtn')}</button>
                       )}
                     </div>
                   )}
@@ -315,7 +630,7 @@ const NodeEditModal = ({
                 </div>
               ))}
               <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-                <button type="button" onClick={() => setChildrenInputs([...childrenInputs, { latin: '', arab: '' }])} style={{ padding: '12px', background: 'var(--btn-secondary-bg)', color: 'var(--text-primary)', border: '1px solid var(--panel-border)', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', flex: '1' }}>
+                <button type="button" onClick={() => setChildrenInputs([...childrenInputs, createEmptyChildInput()])} style={{ padding: '12px', background: 'var(--btn-secondary-bg)', color: 'var(--btn-secondary-text)', border: '1px solid var(--panel-border)', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', flex: '1' }}>
                   +
                 </button>
                 <button type="submit" className="search-button" style={{ padding: '12px', fontSize: '15px', fontWeight: 'bold', flex: '4' }}>

@@ -84,7 +84,7 @@ const FamilyNode = ({ id, data, selected }) => {
 
   return (
     <div
-      className={`family-node ${selected ? 'highlighted' : ''} ${interactionStage} ${data.isGlowing ? 'target-glow' : ''} ${data.isPathGlow ? 'path-glow' : ''} ${data.hasChildren && data.isCollapsed ? 'is-expandable' : ''} ${data.hasChildren && data.isCollapsed ? 'has-collapsed-lineage' : ''}`}
+      className={`family-node ${selected ? 'highlighted' : ''} ${interactionStage} ${data.isGlowing ? 'target-glow' : ''} ${data.isPathGlow ? 'path-glow' : ''} ${data.isPending ? 'pending-node' : ''} ${data.hasChildren && data.isCollapsed ? 'is-expandable' : ''} ${data.hasChildren && data.isCollapsed ? 'has-collapsed-lineage' : ''}`}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
@@ -96,6 +96,11 @@ const FamilyNode = ({ id, data, selected }) => {
       <Handle type="target" position={Position.Top} />
 
       <div className="node-content" style={{ width: '100%' }}>
+        {data.isPending && (
+          <div className="node-pending-badge">
+            {data.pendingLabel}
+          </div>
+        )}
         {data.info && (
           <div className="node-info" style={{
             fontSize: '11px',

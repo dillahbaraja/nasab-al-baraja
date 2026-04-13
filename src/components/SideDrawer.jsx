@@ -13,7 +13,7 @@ const SideDrawer = ({ isOpen, onClose, onMenuClick, t, lang, currentUser, unread
       <div className={`side-drawer ${isOpen ? 'open' : ''}`} dir={lang === 'ar' ? 'rtl' : 'ltr'}>
         <div className="drawer-header">
           <div className="drawer-title">{t('appName')}</div>
-          <button className="close-button" onClick={onClose} aria-label="Close menu">
+          <button className="close-button" onClick={onClose} aria-label={t('closeMenu')}>
             <X size={24} />
           </button>
         </div>

@@ -19,6 +19,7 @@
   --node-bg-glass: rgba(255, 255, 255, 0.7);
   --expandable-border: #10b981;
   --expandable-rgb: 16, 185, 129;
+  --pending-rgb: 239, 68, 68;
 }
 
 [data-theme='dark'] {
@@ -41,6 +42,7 @@
   --node-bg-glass: rgba(30, 41, 59, 0.7);
   --expandable-border: #34d399;
   --expandable-rgb: 52, 211, 153;
+  --pending-rgb: 248, 113, 113;
 }
 
 [data-theme='warm'] {
@@ -63,6 +65,7 @@
   --node-bg-glass: rgba(244, 227, 197, 0.7);
   --expandable-border: #84cc16;
   --expandable-rgb: 132, 204, 22;
+  --pending-rgb: 220, 38, 38;
 }
 
 * {
@@ -682,6 +685,18 @@ body {
   --current-glow-rgb: var(--expandable-rgb);
 }
 
+.family-node.pending-node {
+  border-color: rgba(var(--pending-rgb), 0.9);
+  border-width: 2px;
+  --current-glow-rgb: var(--pending-rgb);
+  box-shadow: 0 0 18px rgba(var(--pending-rgb), 0.25), var(--node-shadow);
+}
+
+.family-node.pending-node::before,
+.family-node.pending-node::after {
+  border-color: rgba(var(--pending-rgb), 0.45);
+}
+
 /* Interaction States */
 .family-node.pressing {
   transform: scale(0.96);
@@ -772,6 +787,23 @@ body {
   height: 8px;
   background: var(--accent);
   border: 2px solid var(--bg-color);
+}
+
+.node-pending-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(var(--pending-rgb), 0.14);
+  color: rgb(var(--pending-rgb));
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border: 1px solid rgba(var(--pending-rgb), 0.35);
+  box-shadow: 0 0 14px rgba(var(--pending-rgb), 0.18);
 }
 
 /* Info Modals & Login Styles */
