@@ -668,6 +668,82 @@ const FamilyGraph = () => {
     return { nodeIds, edgeIds };
   }, [personMap]);
 
+  const calculateRelationshipPath = useCallback((fromNodeId, toNodeId) => {
+    if (!fromNodeId || !toNodeId) {
+      return { nodeIds: new Set(), edgeIds: new Set(), orderedNodeIds: [] };
+    }
+
+    const startId = String(fromNodeId);
+    const targetId = String(toNodeId);
+
+    if (startId === targetId) {
+      return { nodeIds: new Set([startId]), edgeIds: new Set(), orderedNodeIds: [startId] };
+    }
+
+    const startAncestors = [];
+    const startAncestorSet = new Set();
+    let currentId = startId;
+    let guard = 0;
+    while (currentId && guard < 200) {
+      startAncestors.push(currentId);
+      startAncestorSet.add(currentId);
+      currentId = personMap.get(currentId)?.fatherId ? String(personMap.get(currentId).fatherId) : null;
+      guard += 1;
+    }
+
+    const targetAncestors = [];
+    let commonAncestorId = null;
+    currentId = targetId;
+    guard = 0;
+    while (currentId && guard < 200) {
+      targetAncestors.push(currentId);
+      if (startAncestorSet.has(currentId)) {
+        commonAncestorId = currentId;
+        break;
+      }
+      currentId = personMap.get(currentId)?.fatherId ? String(personMap.get(currentId).fatherId) : null;
+      guard += 1;
+    }
+
+    if (!commonAncestorId) {
+      return { nodeIds: new Set(), edgeIds: new Set(), orderedNodeIds: [] };
+    }
+
+    const startToCommon = [];
+    for (let i = 0; i < startAncestors.length; i += 1) {
+      startToCommon.push(startAncestors[i]);
+      if (startAncestors[i] === commonAncestorId) break;
+    }
+
+    const targetToCommon = [];
+    for (let i = 0; i < targetAncestors.length; i += 1) {
+      targetToCommon.push(targetAncestors[i]);
+      if (targetAncestors[i] === commonAncestorId) break;
+    }
+
+    const orderedNodeIds = [
+      ...startToCommon,
+      ...targetToCommon.slice(0, -1).reverse()
+    ];
+
+    const nodeIds = new Set(orderedNodeIds);
+    const edgeIds = new Set();
+    for (let i = 0; i < orderedNodeIds.length - 1; i += 1) {
+      const currentNodeId = orderedNodeIds[i];
+      const nextNodeId = orderedNodeIds[i + 1];
+      const currentFatherId = personMap.get(currentNodeId)?.fatherId ? String(personMap.get(currentNodeId).fatherId) : null;
+      const nextFatherId = personMap.get(nextNodeId)?.fatherId ? String(personMap.get(nextNodeId).fatherId) : null;
+
+      if (currentFatherId === nextNodeId) {
+        edgeIds.add(`e-${nextNodeId}-${currentNodeId}`);
+      } else if (nextFatherId === currentNodeId) {
+        edgeIds.add(`e-${currentNodeId}-${nextNodeId}`);
+      }
+    }
+
+    return { nodeIds, edgeIds, orderedNodeIds };
+  }, [personMap]);
+
   // Apply Theme Toggle
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -2786,7 +2862,7 @@ const FamilyGraph = () => {
     if (expandClickTimerRef.current) clearTimeout(expandClickTimerRef.current);
 
     if (clickIteration >= 2) {
-      // CLICK 2: Deep Expand (All nodes in database) + Center View
+      // CLICK 2: Deep Expand (All nodes in database) without changing viewport
       expandClickCountRef.current = 0;
       setExpandClickCount(0);
 
@@ -2798,8 +2874,6 @@ const FamilyGraph = () => {
         return next;
       });
 
-      // Fit view using cinematic target (Muhammad bin Mas'ud)
-      setTimeout(() => handleCustomFitView(), 250);
       return;
     }
 
@@ -2842,7 +2916,7 @@ const FamilyGraph = () => {
       localStorage.setItem('rf-collapsed-state', JSON.stringify(next));
       return next;
     });
-  }, [getViewport, nodes, collapsedStateById, handleCustomFitView, familyData]);
+  }, [getViewport, nodes, collapsedStateById, familyData]);
 
   const handleModalClose = useCallback(() => {
     adminWalkthroughEnabledRef.current = false;
@@ -3032,6 +3106,44 @@ const FamilyGraph = () => {
     runLineageCameraTour(selectedId, ancestorChain);
   }, [familyData, calculateAncestorPath, runLineageCameraTour]);
 
+  const handleShowRelationshipWithMe = useCallback((personId) => {
+    const memberPersonId = currentMember?.person_id ? String(currentMember.person_id) : null;
+    const targetId = personId ? String(personId) : null;
+    if (!memberPersonId || !targetId || memberPersonId === targetId || familyData.length === 0) return;
+
+    const relationshipPath = calculateRelationshipPath(memberPersonId, targetId);
+    if (relationshipPath.orderedNodeIds.length === 0) return;
+
+    const scaffoldNodeIds = new Set();
+    relationshipPath.orderedNodeIds.forEach((nodeId) => {
+      let currentId = nodeId;
+      let guard = 0;
+      while (currentId && guard < 200) {
+        scaffoldNodeIds.add(currentId);
+        currentId = personMap.get(currentId)?.fatherId ? String(personMap.get(currentId).fatherId) : null;
+        guard += 1;
+      }
+    });
+
+    setCollapsedStateById((prev) => {
+      const next = { ...prev };
+      familyData.forEach((person) => {
+        const id = String(person.id);
+        next[id] = !scaffoldNodeIds.has(id);
+      });
+      localStorage.setItem('rf-collapsed-state', JSON.stringify(next));
+      return next;
+    });
+
+    setAncestorPath({
+      nodeIds: relationshipPath.nodeIds,
+      edgeIds: relationshipPath.edgeIds
+    });
+    setNodes((nds) => nds.map((node) => ({ ...node, selected: node.id === targetId })));
+    setIsModalOpen(false);
+    runLineageCameraTour(targetId, [...relationshipPath.orderedNodeIds].reverse());
+  }, [calculateRelationshipPath, currentMember?.person_id, familyData, personMap, runLineageCameraTour]);
+
   const handleViewNotice = (notice) => {
     handleViewPerson(notice.targetId);
   };
@@ -3178,6 +3290,7 @@ const FamilyGraph = () => {
         onRemoveChild={handleRemoveChild}
         onViewPerson={handleViewPerson}
         onShowLineageOnly={handleShowLineageOnly}
+        onShowRelationshipWithMe={handleShowRelationshipWithMe}
         onSubmitChildSuggestion={handleSubmitChildSuggestion}
         onSubmitNameSuggestion={handleSubmitNameSuggestion}
         onUpdateProposal={handleUpdateProposal}
@@ -3191,6 +3304,12 @@ const FamilyGraph = () => {
         isAdmin={isAdmin}
         canModerateProposals={canModerateProposals}
         currentRole={effectiveRole}
+        canShowRelationshipWithMe={
+          isVerifiedMember &&
+          Boolean(currentMember?.person_id) &&
+          selectedPerson &&
+          String(currentMember.person_id) !== String(selectedPerson.id)
+        }
         memberClaimStatus={selectedPerson ? (memberStatuses[String(selectedPerson.id)] || 'none') : 'none'}
         allowMemberClaim={effectiveRole === 'guest' && (!currentMember || ['rejected', 'cancelled'].includes(currentMember.claim_status))}
         currentMemberClaimStatus={currentMember?.claim_status || 'none'}

@@ -78,6 +78,7 @@ export const translations = {
   glowEnabled: { id: "Efek Cahaya (Glow)", en: "Glow Effects", ar: "تأثيرات التوهج" },
   allAnimations: { id: "Aktifkan Semua Animasi", en: "Enable All Animations", ar: "تفعيل جميع الحركات" },
   showLineageOnly: { id: "Tampilkan Hanya Garis Keturunan Ini", en: "Show Only This Lineage", ar: "عرض هذا النسب فقط" },
+  showRelationshipWithMe: { id: "Tampilkan Hubungan Dengan Saya", en: "Show Relationship With Me", ar: "أظهر العلاقة معي" },
   layoutStyle: { id: "Model Tampilan Node", en: "Node Layout Model", ar: "نموذج تخطيط العقد" },
   layoutOriginal: { id: "Terpisah (Tanpa Tabrakan)", en: "Spaced (No Overlaps)", ar: "متباعد (بدون تداخل)" },
   layoutTidy: { id: "Rapat & Rapi (Tidy)", en: "Compact & Clean (Tidy)", ar: "مدمج ونظيف" },

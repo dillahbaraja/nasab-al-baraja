@@ -12,6 +12,7 @@ const NodeEditModal = ({
   onRemoveChild,
   onViewPerson,
   onShowLineageOnly,
+  onShowRelationshipWithMe,
   onSubmitChildSuggestion,
   onSubmitNameSuggestion,
   onUpdateProposal,
@@ -25,6 +26,7 @@ const NodeEditModal = ({
   isAdmin,
   canModerateProposals = false,
   currentRole,
+  canShowRelationshipWithMe = false,
   memberClaimStatus = 'none',
   allowMemberClaim = false,
   currentMemberClaimStatus = 'none',
@@ -540,7 +542,7 @@ const NodeEditModal = ({
           )}
         </div>
 
-        <div style={{ marginBottom: '16px', textAlign: 'center' }}>
+        <div style={{ marginBottom: '16px', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <button
             onClick={() => onShowLineageOnly && onShowLineageOnly(person.id)}
             className="lineage-primary-action"
@@ -568,6 +570,28 @@ const NodeEditModal = ({
             <span style={{ fontSize: '16px' }}>🌿</span>
             {t('showLineageOnly')}
           </button>
+          {canShowRelationshipWithMe && (
+            <button
+              onClick={() => onShowRelationshipWithMe && onShowRelationshipWithMe(person.id)}
+              className="lineage-secondary-button"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '10px 20px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '13px',
+                fontWeight: 'bold',
+                letterSpacing: '0.01em',
+                width: '100%',
+                justifyContent: 'center'
+              }}
+            >
+              <span style={{ fontSize: '16px' }}>🔗</span>
+              {t('showRelationshipWithMe')}
+            </button>
+          )}
         </div>
 
         {!isAdmin && (
