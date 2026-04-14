@@ -175,6 +175,10 @@ const FamilyGraph = () => {
     return () => {
       introTimeoutsRef.current.forEach((timeoutId) => clearTimeout(timeoutId));
       introTimeoutsRef.current = [];
+      if (searchDebounceRef.current) {
+        clearTimeout(searchDebounceRef.current);
+        searchDebounceRef.current = null;
+      }
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
         animationRef.current = null;
@@ -252,7 +256,10 @@ const FamilyGraph = () => {
   const [pendingFocusTarget, setPendingFocusTarget] = useState(null);
   const [toggledNodeInfo, setToggledNodeInfo] = useState(null); // { id, lastPos, lastViewport }
   const [collapsingParentId, setCollapsingParentId] = useState(null);
+  const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [ancestorPath, setAncestorPath] = useState({ nodeIds: new Set(), edgeIds: new Set() });
+  const selectedNodeIdRef = useRef(null);
+  const searchDebounceRef = useRef(null);
   const adminWalkthroughEnabledRef = useRef(false);
   const wasAdminRef = useRef(false);
   const ignorePaneClickUntilRef = useRef(0);
@@ -263,6 +270,10 @@ const FamilyGraph = () => {
     : userRole === 'verified'
       ? 'verified'
       : 'guest';
+
+  useEffect(() => {
+    selectedNodeIdRef.current = selectedNodeId ? String(selectedNodeId) : null;
+  }, [selectedNodeId]);
   const isVerifiedMember = effectiveRole === 'verified' || effectiveRole === 'admin';
   const isAdmin = effectiveRole === 'admin';
   const canModerateProposals = isVerifiedMember;
@@ -1419,6 +1430,29 @@ const FamilyGraph = () => {
     }));
   }, [ancestorPath]);
 
+  useEffect(() => {
+    setNodes((nds) => nds.map((node) => {
+      const isSelected = selectedNodeId != null && String(node.id) === String(selectedNodeId);
+      if (!!node.selected === isSelected) return node;
+      return { ...node, selected: isSelected };
+    }));
+  }, [selectedNodeId]);
+
+  useEffect(() => {
+    setNodes((nds) => nds.map((node) => {
+      if (!node.data?.isPending) return node;
+      const pendingLabel = t('pendingAdminVerification');
+      if (node.data.pendingLabel === pendingLabel) return node;
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          pendingLabel
+        }
+      };
+    }));
+  }, [t]);
+
   const [initialViewport] = useState(() => {
     try {
       const saved = localStorage.getItem('rf-viewport');
@@ -1508,8 +1542,8 @@ const FamilyGraph = () => {
 
     animationRef.current = requestAnimationFrame(animate);
 
-    // Select the node
-    setNodes((nds) => nds.map(n => ({ ...n, selected: n.id === nodeId })));
+    // Select the node without forcing a full graph relayout.
+    setSelectedNodeId(nodeId);
     setAncestorPath(calculateAncestorPath(nodeId));
   }, [getViewport, setViewport, nodes, triggerGlow, calculateAncestorPath]);
 
@@ -1522,7 +1556,7 @@ const FamilyGraph = () => {
       : nodes.reduce((prev, curr) => curr.position.x < prev.position.x ? curr : prev);
 
     setNavDirection(direction === 'right' ? 'left' : 'right');
-    setNodes((nds) => nds.map(n => ({ ...n, selected: n.id === target.id })));
+    setSelectedNodeId(target.id);
     setAncestorPath(calculateAncestorPath(target.id));
 
     if (animationRef.current) cancelAnimationFrame(animationRef.current);
@@ -1628,6 +1662,7 @@ const FamilyGraph = () => {
       return;
     }
     setSelectedPerson(null);
+    setSelectedNodeId(null);
     setAncestorPath({ nodeIds: new Set(), edgeIds: new Set() });
     stopCameraMotion();
   }, [stopCameraMotion]);
@@ -1748,7 +1783,7 @@ const FamilyGraph = () => {
   const handleNodeClick = useCallback((nodeId, rawData) => {
     const normalizedNodeId = String(nodeId);
     ignorePaneClickUntilRef.current = Date.now() + 500;
-    setNodes((nds) => nds.map(n => ({ ...n, selected: String(n.id) === normalizedNodeId })));
+    setSelectedNodeId(normalizedNodeId);
     setAncestorPath(calculateAncestorPath(normalizedNodeId));
     openNodeDetails(rawData || personMap.get(normalizedNodeId));
   }, [calculateAncestorPath, openNodeDetails, personMap]);
@@ -1796,7 +1831,7 @@ const FamilyGraph = () => {
           displayEnglishName: displayNames.englishName,
           isPending: pending,
           pendingType: isPendingAddChildNode(person) ? "add_child" : (getPendingNameChange(person) ? "name_change" : null),
-          pendingLabel: pending ? t("pendingAdminVerification") : "",
+          pendingLabel: pending ? '' : "",
           isGlowing: isCollapsed, // Add glow to collapsed nodes
           isCollapsed: isCollapsed,
           hasChildren: parentToChildren.has(pid)
@@ -1882,6 +1917,7 @@ const FamilyGraph = () => {
 
         return {
           ...n,
+            selected: selectedNodeIdRef.current != null && String(n.id) === String(selectedNodeIdRef.current),
             data: {
               ...n.data,
               isGlowing,
@@ -1991,7 +2027,7 @@ const FamilyGraph = () => {
     } catch (err) {
       console.error("Layout Rendering Crash Prevented:", err);
     }
-  }, [familyData, collapsedStateById, isLoading, collapsingParentId, handleNodeLongPress, appSettings.layoutStyle, t, lang, ancestorPath]);
+  }, [familyData, collapsedStateById, isLoading, collapsingParentId, handleNodeLongPress, appSettings.layoutStyle]);
 
 
   const getNextPendingIdForAdmin = useCallback((excludeId = null) => {
@@ -2114,6 +2150,11 @@ const FamilyGraph = () => {
     const val = e.target.value;
     setSearchQuery(val);
 
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+      searchDebounceRef.current = null;
+    }
+
     if (val.trim() === '') {
       setSearchSuggestions([]);
       setShowSuggestions(false);
@@ -2121,24 +2162,27 @@ const FamilyGraph = () => {
     }
 
     if (val.length >= 3) {
-      const queryLatin = cleanText(val.toLowerCase());
-      const queryArab = cleanText(normalizeArabic(val));
-      const queryLower = val.toLowerCase();
+      searchDebounceRef.current = setTimeout(() => {
+        const queryLatin = cleanText(val.toLowerCase());
+        const queryArab = cleanText(normalizeArabic(val));
+        const queryLower = val.toLowerCase();
 
-      const suggestions = searchIndex
-        .filter((entry) =>
-          entry.info.includes(queryLower) ||
-          (queryLatin.length > 0 && entry.lineageLatin.startsWith(queryLatin)) ||
-          (queryArab.length > 0 && entry.lineageArab.startsWith(queryArab)) ||
-          cleanText((entry.englishName || '').toLowerCase()).includes(queryLatin) ||
-          cleanText(normalizeArabic(entry.arabicName || '')).includes(queryArab)
-        )
-        .slice(0, 10)
-        .map((entry) => personMap.get(String(entry.id)))
-        .filter(Boolean);
+        const suggestions = searchIndex
+          .filter((entry) =>
+            entry.info.includes(queryLower) ||
+            (queryLatin.length > 0 && entry.lineageLatin.startsWith(queryLatin)) ||
+            (queryArab.length > 0 && entry.lineageArab.startsWith(queryArab)) ||
+            cleanText((entry.englishName || '').toLowerCase()).includes(queryLatin) ||
+            cleanText(normalizeArabic(entry.arabicName || '')).includes(queryArab)
+          )
+          .slice(0, 10)
+          .map((entry) => personMap.get(String(entry.id)))
+          .filter(Boolean);
 
-      setSearchSuggestions(suggestions);
-      setShowSuggestions(suggestions.length > 0);
+        setSearchSuggestions(suggestions);
+        setShowSuggestions(suggestions.length > 0);
+        searchDebounceRef.current = null;
+      }, 120);
     } else {
       setSearchSuggestions([]);
       setShowSuggestions(false);
@@ -2146,6 +2190,10 @@ const FamilyGraph = () => {
   };
 
   const selectSuggestion = (person) => {
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+      searchDebounceRef.current = null;
+    }
     const displayNames = getDisplayNames(person);
     setSearchQuery(displayNames.englishName || displayNames.arabicName);
     setShowSuggestions(false);
@@ -2161,6 +2209,10 @@ const FamilyGraph = () => {
   const handleSearch = (e) => {
     e.preventDefault();
     if (!searchQuery.trim()) return;
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+      searchDebounceRef.current = null;
+    }
     setShowSuggestions(false);
 
     const isSameQuery = searchQuery === lastSearchQuery;
@@ -3151,7 +3203,7 @@ const FamilyGraph = () => {
 
     // Aktifkan garis biru ancestor path + select node (sama seperti klik node biasa)
     setAncestorPath(calculateAncestorPath(selectedId));
-    setNodes(nds => nds.map(n => ({ ...n, selected: n.id === selectedId })));
+    setSelectedNodeId(selectedId);
 
     const ancestorChain = [selectedId];
     let climbId = selectedPerson?.fatherId || null;
@@ -3201,7 +3253,7 @@ const FamilyGraph = () => {
       nodeIds: relationshipPath.nodeIds,
       edgeIds: relationshipPath.edgeIds
     });
-    setNodes((nds) => nds.map((node) => ({ ...node, selected: node.id === targetId })));
+    setSelectedNodeId(targetId);
     setIsModalOpen(false);
     runLineageCameraTour(targetId, [...relationshipPath.orderedNodeIds].reverse());
   }, [calculateRelationshipPath, currentMember?.person_id, familyData, personMap, runLineageCameraTour]);

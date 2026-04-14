@@ -32,7 +32,14 @@ const NodeEditModal = ({
   currentMemberClaimStatus = 'none',
   onSubmitMemberClaim
 }) => {
-  const person = initialPerson ? (familyData.find((p) => p.id === initialPerson.id) || initialPerson) : null;
+  const familyMap = useMemo(() => {
+    const nextMap = new Map();
+    familyData.forEach((member) => {
+      nextMap.set(String(member.id), member);
+    });
+    return nextMap;
+  }, [familyData]);
+  const person = initialPerson ? (familyMap.get(String(initialPerson.id)) || initialPerson) : null;
   const [childrenInputs, setChildrenInputs] = useState([createEmptyChildInput()]);
   const [showFullNasab, setShowFullNasab] = useState(false);
   const [isEditingInfo, setIsEditingInfo] = useState(false);
@@ -41,7 +48,6 @@ const NodeEditModal = ({
   const [activeSuggestionMode, setActiveSuggestionMode] = useState(null);
   const [proposalNameForm, setProposalNameForm] = useState({ latin: '', arab: '' });
   const [claimForm, setClaimForm] = useState({ email: '', password: '', phone: '', city: '' });
-  const [isInteractionReady, setIsInteractionReady] = useState(false);
   const suggestionFormRef = useRef(null);
   const primarySuggestionInputRef = useRef(null);
 
@@ -69,7 +75,6 @@ const NodeEditModal = ({
     setShowFullNasab(false);
     setIsEditingInfo(false);
     setIsSaving(false);
-    setIsInteractionReady(false);
     setChildrenInputs([createEmptyChildInput()]);
     setActiveSuggestionMode(null);
     setProposalNameForm({
@@ -85,19 +90,6 @@ const NodeEditModal = ({
   }, [person, displayNames]);
 
   useEffect(() => {
-    if (!isOpen || !person) {
-      setIsInteractionReady(false);
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      setIsInteractionReady(true);
-    }, 250);
-
-    return () => clearTimeout(timer);
-  }, [isOpen, person]);
-
-  useEffect(() => {
     if (!activeSuggestionMode) return;
 
     const timer = setTimeout(() => {
@@ -110,6 +102,11 @@ const NodeEditModal = ({
 
     return () => clearTimeout(timer);
   }, [activeSuggestionMode]);
+
+  const children = useMemo(() => {
+    if (!person) return [];
+    return familyData.filter((member) => String(member.fatherId) === String(person.id));
+  }, [familyData, person]);
 
   if (!isOpen || !person) return null;
 
@@ -131,23 +128,22 @@ const NodeEditModal = ({
       nasab.push(language === 'ar'
         ? (currentPendingName?.proposedArabicName || current.arabicName)
         : (currentPendingName?.proposedEnglishName || current.englishName || current.arabicName));
-      current = familyData.find((p) => p.id === current.fatherId);
+      current = current?.fatherId ? familyMap.get(String(current.fatherId)) : null;
       count++;
     }
     return nasab.join(language === 'ar' ? ' بن ' : ' bin ');
   };
 
   const getAncestorCount = (targetPerson) => {
-    let current = familyData.find((p) => p.id === targetPerson.fatherId);
+    let current = targetPerson?.fatherId ? familyMap.get(String(targetPerson.fatherId)) : null;
     let count = 0;
     while (current && count < 50) {
       count++;
-      current = familyData.find((p) => p.id === current.fatherId);
+      current = current?.fatherId ? familyMap.get(String(current.fatherId)) : null;
     }
     return count;
   };
 
-  const children = familyData.filter((p) => p.fatherId === person.id);
   const personHasDescendants = children.length > 0;
 
   const handleAdd = async (e) => {
@@ -485,7 +481,6 @@ const NodeEditModal = ({
         position: 'relative',
         maxHeight: '90vh', 
         overflowY: 'auto',
-        pointerEvents: isInteractionReady ? 'auto' : 'none',
         ...(window.innerWidth <= 768 ? {
           width: '96vw',
           maxWidth: '96vw',
