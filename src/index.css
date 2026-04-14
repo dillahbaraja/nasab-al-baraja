@@ -192,12 +192,18 @@ body {
   padding: 20px;
 }
 
+@media (max-width: 768px) {
+  .info-modal-overlay {
+    padding: 0;
+  }
+}
+
 .info-modal-content {
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
-  border-radius: 16px;
-  width: 95%;
-  max-width: 500px;
+  border-radius: 22px;
+  width: min(96vw, 760px);
+  max-width: 760px;
   max-height: 85vh;
   position: relative;
   overflow-y: auto;
@@ -235,7 +241,7 @@ body {
 
 .info-modal-title {
   padding: 24px 24px 0px;
-  font-size: 22px;
+  font-size: 20px;
   font-weight: bold;
   text-align: center;
   margin-bottom: 24px;
@@ -377,7 +383,7 @@ body {
   align-items: center;
   gap: 10px;
   text-align: center;
-  border-radius: 18px;
+  border-radius: 22px;
   position: relative;
   overflow: hidden;
   box-shadow: 0 14px 36px rgba(0, 0, 0, 0.1);
@@ -487,12 +493,12 @@ body {
 }
 
 .lineage-hero-arabic {
-  font-size: clamp(1.7rem, 4.8vw, 2.2rem) !important;
+  font-size: clamp(1.4rem, 4.2vw, 1.8rem) !important;
   line-height: 1.5 !important;
 }
 
 .lineage-hero-latin {
-  font-size: clamp(1rem, 3.4vw, 1.15rem) !important;
+  font-size: clamp(0.9rem, 3.2vw, 1.1rem) !important;
   max-width: 32ch;
   margin: 0 auto;
 }
@@ -959,10 +965,22 @@ body {
   cursor: pointer;
   font-weight: 500;
   transition: background 0.2s ease;
+  flex-shrink: 0;
+  white-space: nowrap;
+  min-width: fit-content;
 }
 
 .search-button:hover {
   background: var(--accent-hover);
+}
+
+@media (max-width: 767px) {
+  .search-button {
+    padding: 6px 10px;
+    font-size: 12px;
+    line-height: 1.2;
+    border-radius: 5px;
+  }
 }
 
 .suggestion-item {

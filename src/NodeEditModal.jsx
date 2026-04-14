@@ -41,6 +41,7 @@ const NodeEditModal = ({
   const [activeSuggestionMode, setActiveSuggestionMode] = useState(null);
   const [proposalNameForm, setProposalNameForm] = useState({ latin: '', arab: '' });
   const [claimForm, setClaimForm] = useState({ email: '', password: '', phone: '', city: '' });
+  const [isInteractionReady, setIsInteractionReady] = useState(false);
   const suggestionFormRef = useRef(null);
   const primarySuggestionInputRef = useRef(null);
 
@@ -68,6 +69,7 @@ const NodeEditModal = ({
     setShowFullNasab(false);
     setIsEditingInfo(false);
     setIsSaving(false);
+    setIsInteractionReady(false);
     setChildrenInputs([createEmptyChildInput()]);
     setActiveSuggestionMode(null);
     setProposalNameForm({
@@ -81,6 +83,19 @@ const NodeEditModal = ({
       city: ''
     });
   }, [person, displayNames]);
+
+  useEffect(() => {
+    if (!isOpen || !person) {
+      setIsInteractionReady(false);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setIsInteractionReady(true);
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [isOpen, person]);
 
   useEffect(() => {
     if (!activeSuggestionMode) return;
@@ -464,8 +479,20 @@ const NodeEditModal = ({
       backdropFilter: 'blur(4px)'
     }}>
       <div className="glass-panel lineage-modal-sheet" onClick={(e) => e.stopPropagation()} style={{
-        width: '90%', maxWidth: '600px', padding: '24px', position: 'relative',
-        maxHeight: '85vh', overflowY: 'auto'
+        width: 'min(96vw, 760px)', 
+        maxWidth: '760px', 
+        padding: '24px', 
+        position: 'relative',
+        maxHeight: '90vh', 
+        overflowY: 'auto',
+        pointerEvents: isInteractionReady ? 'auto' : 'none',
+        ...(window.innerWidth <= 768 ? {
+          width: '96vw',
+          maxWidth: '96vw',
+          maxHeight: '84vh',
+          borderRadius: '22px',
+          margin: '0 auto'
+        } : {})
       }}>
         <button className="lineage-modal-close" onClick={onClose} style={{
           position: 'absolute', top: '16px', right: '16px',
@@ -525,10 +552,10 @@ const NodeEditModal = ({
         </div>
 
         <div className="lineage-hero-card" style={{ background: 'var(--panel-highlight-bg)', padding: '16px', borderRadius: '8px', marginBottom: '24px', textAlign: 'center', border: '1px solid var(--panel-border)' }}>
-          <div className="lineage-hero-arabic" style={{ fontSize: '24px', fontWeight: 'bold', fontFamily: 'serif', color: 'var(--text-primary)', marginBottom: '8px', lineHeight: '1.4' }}>
+          <div className="lineage-hero-arabic" style={{ fontSize: '20px', fontWeight: 'bold', fontFamily: 'serif', color: 'var(--text-primary)', marginBottom: '8px', lineHeight: '1.4' }}>
             {getFullNasab(person, 'ar', showFullNasab)}
           </div>
-          <div className="lineage-hero-latin" style={{ fontSize: '16px', color: 'var(--text-secondary)', fontStyle: 'italic', lineHeight: '1.4' }}>
+          <div className="lineage-hero-latin" style={{ fontSize: '14px', color: 'var(--text-secondary)', fontStyle: 'italic', lineHeight: '1.4' }}>
             {getFullNasab(person, lang !== 'ar' ? lang : 'en', showFullNasab)}
           </div>
           {getAncestorCount(person) >= 5 && !showFullNasab && (
@@ -594,7 +621,11 @@ const NodeEditModal = ({
           )}
         </div>
 
-        {!isAdmin && (
+        {(!isAdmin && (
+          (memberClaimStatus === 'none' && currentRole === 'guest' && activeSuggestionMode !== 'claimMember') ||
+          memberClaimStatus === 'pending' ||
+          memberClaimStatus === 'approved'
+        )) && (
           <div className="glass-panel" style={{ padding: '14px', marginBottom: '20px', border: '1px solid var(--panel-border)' }}>
             {memberClaimStatus === 'none' && currentRole === 'guest' && allowMemberClaim && activeSuggestionMode !== 'claimMember' && (
               <button

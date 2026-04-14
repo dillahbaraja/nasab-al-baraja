@@ -10,7 +10,6 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Search, Palette, Database, Bell, ListTree, ArrowRight, ArrowLeft, Maximize } from 'lucide-react';
-import FamilyNode from './FamilyNode';
 import { initialFamilyData, generateEdges } from './data';
 import { getLayoutedElements, createNodesFromData } from './layout';
 import NodeEditModal from './NodeEditModal';
@@ -19,10 +18,9 @@ import { translations } from './i18n';
 import MobileHeader from './components/MobileHeader';
 import WebsiteHeader from './components/WebsiteHeader';
 import InfoModal from './components/InfoModals';
+import { nodeTypes } from './reactFlowTypes';
 import { StatusBar, Style } from '@capacitor/status-bar';
 import { Capacitor } from '@capacitor/core';
-
-const nodeTypes = { customNode: FamilyNode };
 
 const TimeoutWarning = () => {
   const lang = localStorage.getItem('rf-lang') || 'en';
@@ -187,11 +185,8 @@ const FamilyGraph = () => {
   const glowTimeoutRef = useRef(null);
   const lastGlowNodeIdRef = useRef(null);
   const prevVisibleSetRef = useRef(new Set());
-  const expandClickCountRef = useRef(0);
-  const expandClickTimerRef = useRef(null);
   const expandAllViewportCenterLockRef = useRef(null);
   const hasInitialFocusedRef = useRef(false); // tracks first-load root focus
-  const [expandClickCount, setExpandClickCount] = useState(0);
   const [navDirection, setNavDirection] = useState('right'); // 'right' = next click goes to rightmost
 
   const t = useCallback((key) => translations[key]?.[lang] || translations[key]?.['en'] || key, [lang]);
@@ -260,6 +255,7 @@ const FamilyGraph = () => {
   const [ancestorPath, setAncestorPath] = useState({ nodeIds: new Set(), edgeIds: new Set() });
   const adminWalkthroughEnabledRef = useRef(false);
   const wasAdminRef = useRef(false);
+  const ignorePaneClickUntilRef = useRef(0);
 
   const isSignedInUser = Boolean(currentUser && !currentUser.is_anonymous);
   const effectiveRole = userRole === 'admin' || isLegacyAdmin
@@ -343,22 +339,38 @@ const FamilyGraph = () => {
   const triggerGlow = useCallback((nodeId) => {
     if (!appSettings.glowEnabled) return;
     if (glowTimeoutRef.current) clearTimeout(glowTimeoutRef.current);
+    const normalizedId = String(nodeId);
 
     // Turn off previous glow if it exists
-    if (lastGlowNodeIdRef.current && lastGlowNodeIdRef.current !== nodeId) {
+    if (lastGlowNodeIdRef.current && lastGlowNodeIdRef.current !== normalizedId) {
       updateNodeData(lastGlowNodeIdRef.current, { isGlowing: false });
+      setNodes((nds) => nds.map((node) => (
+        String(node.id) === String(lastGlowNodeIdRef.current)
+          ? { ...node, data: { ...node.data, isGlowing: false } }
+          : node
+      )));
     }
 
     // Turn on current glow
-    updateNodeData(nodeId, { isGlowing: true });
-    lastGlowNodeIdRef.current = nodeId;
+    updateNodeData(normalizedId, { isGlowing: true });
+    setNodes((nds) => nds.map((node) => (
+      String(node.id) === normalizedId
+        ? { ...node, data: { ...node.data, isGlowing: true } }
+        : node
+    )));
+    lastGlowNodeIdRef.current = normalizedId;
 
     glowTimeoutRef.current = setTimeout(() => {
-      updateNodeData(nodeId, { isGlowing: false });
+      updateNodeData(normalizedId, { isGlowing: false });
+      setNodes((nds) => nds.map((node) => (
+        String(node.id) === normalizedId
+          ? { ...node, data: { ...node.data, isGlowing: false } }
+          : node
+      )));
       lastGlowNodeIdRef.current = null;
       glowTimeoutRef.current = null;
-    }, 1200);
-  }, [appSettings.glowEnabled, updateNodeData]);
+    }, 1600);
+  }, [appSettings.glowEnabled, setNodes, updateNodeData]);
 
   const wait = useCallback((ms) => new Promise((resolve) => {
     window.setTimeout(resolve, ms);
@@ -434,20 +446,21 @@ const FamilyGraph = () => {
     visibleNodes.forEach((node) => {
       const width = Math.max(node.width || node.measured?.width || 180, 120);
       const height = Math.max(node.height || node.measured?.height || 72, 56);
-      minX = Math.min(minX, node.position.x);
+      minX = Math.min(minX, node.position.x - width / 2);
       minY = Math.min(minY, node.position.y);
-      maxX = Math.max(maxX, node.position.x + width);
+      maxX = Math.max(maxX, node.position.x + width / 2);
       maxY = Math.max(maxY, node.position.y + height);
     });
 
-    const viewportWidth = Math.max(window.innerWidth, 320);
-    const viewportHeight = Math.max(window.innerHeight, 320);
+    const flowElem = document.querySelector('.react-flow');
+    const viewportWidth = Math.max(flowElem?.clientWidth || window.innerWidth, 320);
+    const viewportHeight = Math.max(flowElem?.clientHeight || window.innerHeight, 320);
     const paddingRatio = viewportWidth < 768 ? 0.16 : 0.12;
     const paddedWidth = Math.max(maxX - minX, 240) * (1 + paddingRatio * 2);
     const paddedHeight = Math.max(maxY - minY, 180) * (1 + paddingRatio * 2);
     const zoomX = viewportWidth / paddedWidth;
     const zoomY = viewportHeight / paddedHeight;
-    const zoom = Math.min(Math.max(Math.min(zoomX, zoomY), 0.42), 1.05);
+    const zoom = Math.min(Math.max(Math.min(zoomX, zoomY), 0.54), 1.05);
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
 
@@ -455,14 +468,6 @@ const FamilyGraph = () => {
       x: viewportWidth / 2 - centerX * zoom,
       y: viewportHeight / 2 - centerY * zoom,
       zoom
-    };
-  }, []);
-
-  const getFlowViewportSize = useCallback(() => {
-    const flowElem = document.querySelector('.react-flow');
-    return {
-      width: Math.max(flowElem?.clientWidth || window.innerWidth, 320),
-      height: Math.max(flowElem?.clientHeight || window.innerHeight, 320)
     };
   }, []);
 
@@ -487,52 +492,49 @@ const FamilyGraph = () => {
 
     const transitionsEnabled = appSettings.animationsEnabled && appSettings.cameraEnabled;
     const totalSteps = Math.max(chainIds.length - 1, 1);
-    const startZoom = Math.min(Math.max(overviewViewport.zoom + 0.34, 0.95), 1.3);
-    const endZoom = overviewViewport.zoom;
+    const endZoom = Math.max(overviewViewport.zoom, 0.6);
+    const startZoom = Math.min(Math.max(endZoom + 0.22, 0.9), 1.18);
 
     const centerNodeInViewport = (liveNode, zoom, duration) => {
-      const { width: viewportWidth, height: viewportHeight } = getFlowViewportSize();
-      const nodeWidth = liveNode.width || liveNode.measured?.width || 180;
       const nodeHeight = liveNode.height || liveNode.measured?.height || 72;
-      const targetX = liveNode.position.x + nodeWidth / 2;
+      const targetX = liveNode.position.x;
       const targetY = liveNode.position.y + nodeHeight / 2;
-      const horizontalBiasRatio = viewportWidth < 768 ? 0.025 : 0.045;
-
-      setViewport({
-        x: viewportWidth * (0.5 + horizontalBiasRatio) - targetX * zoom,
-        y: viewportHeight / 2 - targetY * zoom,
-        zoom
-      }, { duration });
+      setCenter(targetX, targetY, { zoom, duration });
     };
 
-    const centerNode = async (nodeId, zoom, duration, holdMs = 0) => {
+    const centerNode = async (nodeId, zoom, duration, holdMs = 0, shouldGlow = false) => {
       const liveNode = getNode(String(nodeId));
       if (!liveNode) return;
       centerNodeInViewport(liveNode, zoom, duration);
       await wait(duration + 110 + holdMs);
+      if (shouldGlow) {
+        triggerGlow(String(nodeId));
+      }
     };
 
     if (!transitionsEnabled) {
       centerNodeInViewport(selectedNode, startZoom, 0);
       setViewport(overviewViewport, { duration: 0 });
+      triggerGlow(String(selectedId));
       return;
     }
 
-    await centerNode(selectedId, startZoom, 780, 380);
+    await centerNode(selectedId, startZoom, 920, 440, false);
     if (lineageTourTokenRef.current !== tourToken) return;
 
     for (let index = 1; index < chainIds.length; index += 1) {
       if (lineageTourTokenRef.current !== tourToken) return;
       const progress = index / totalSteps;
       const stepZoom = startZoom + (endZoom - startZoom) * progress;
-      const stepDuration = index === chainIds.length - 1 ? 980 : 860;
-      const holdDuration = index === chainIds.length - 1 ? 420 : 340;
-      await centerNode(chainIds[index], stepZoom, stepDuration, holdDuration);
+      const isLastStep = index === chainIds.length - 1;
+      const stepDuration = isLastStep ? 1120 : 980;
+      const holdDuration = isLastStep ? 460 : 380;
+      await centerNode(chainIds[index], stepZoom, stepDuration, holdDuration, false);
     }
 
     if (lineageTourTokenRef.current !== tourToken) return;
-    await centerNode(selectedId, overviewViewport.zoom, 920, 260);
-  }, [appSettings.animationsEnabled, appSettings.cameraEnabled, fitView, getFlowViewportSize, getNode, getNodes, getViewportForVisibleNodes, setViewport, wait]);
+    await centerNode(selectedId, endZoom, 1180, 320, true);
+  }, [appSettings.animationsEnabled, appSettings.cameraEnabled, fitView, getNode, getNodes, getViewportForVisibleNodes, setCenter, setViewport, triggerGlow, wait]);
 
   const runLineageBloomIntro = useCallback((rootPerson) => {
     const rootId = String(rootPerson.id);
@@ -1287,224 +1289,110 @@ const FamilyGraph = () => {
 
 
 
-  // Stable callback for node long-press — prevents child re-renders on every layout recalc
-  const handleNodeLongPress = useCallback((nodeId, rawData) => {
+  const openNodeDetails = useCallback((rawData) => {
+    if (!rawData) return;
     void fetchPublicMemberStatuses();
     setSelectedPerson(rawData);
     setIsModalOpen(true);
-  }, [fetchPublicMemberStatuses]); // setSelectedPerson and setIsModalOpen are stable React setState functions
+  }, [fetchPublicMemberStatuses]);
+
+  const toggleNodeCollapse = useCallback((nodeId) => {
+    const normalizedNodeId = String(nodeId);
+    const node = getNode(normalizedNodeId);
+    if (!node) return;
+
+    const wasExpanded = !collapsedStateById[normalizedNodeId];
+
+    if (wasExpanded) {
+      // 1. Start Grouping animation (Recursive Collapse)
+      setCollapsingParentId(normalizedNodeId);
+
+      // Build parent-children map for O(1) recursion
+      const parentToChildrenMap = new Map();
+      familyData.forEach(p => {
+        const fid = p.fatherId ? String(p.fatherId) : null;
+        if (fid) {
+          if (!parentToChildrenMap.has(fid)) parentToChildrenMap.set(fid, []);
+          parentToChildrenMap.get(fid).push(p);
+        }
+      });
+
+      const gatherDescendantIds = (parentId) => {
+        let results = [];
+        const pid = String(parentId);
+        const children = parentToChildrenMap.get(pid) || [];
+        children.forEach(child => {
+          results.push(String(child.id));
+          results = results.concat(gatherDescendantIds(child.id));
+        });
+        return results;
+      };
+      const descendants = gatherDescendantIds(normalizedNodeId);
+
+      // Stabilization: Snapping persists through the 600ms animation into the final layout
+      const view = getViewport();
+      setToggledNodeInfo({
+        id: normalizedNodeId,
+        lastPos: { ...node.position },
+        lastViewport: { ...view },
+        isPersistent: true
+      });
+
+      setTimeout(() => {
+        setCollapsedStateById(prev => {
+          const newState = { ...prev, [normalizedNodeId]: true };
+          descendants.forEach(cid => { newState[cid] = true; }); // RECURSIVE COLLAPSE
+          localStorage.setItem('rf-collapsed-state', JSON.stringify(newState));
+          return newState;
+        });
+        setCollapsingParentId(null);
+        setToggledNodeInfo(prev => prev ? { ...prev, isPersistent: false } : null);
+      }, 150);
+    } else {
+      // 2. Start Ungrouping animation (Recursive Expand)
+      // Build parent-children map for O(1) recursion
+      const parentToChildrenMap = new Map();
+      familyData.forEach(p => {
+        const fid = p.fatherId ? String(p.fatherId) : null;
+        if (fid) {
+          if (!parentToChildrenMap.has(fid)) parentToChildrenMap.set(fid, []);
+          parentToChildrenMap.get(fid).push(p);
+        }
+      });
+
+      const gatherDescendantIds = (parentId) => {
+        let results = [];
+        const pid = String(parentId);
+        const children = parentToChildrenMap.get(pid) || [];
+        children.forEach(child => {
+          results.push(String(child.id));
+          results = results.concat(gatherDescendantIds(child.id));
+        });
+        return results;
+      };
+
+      const descendants = gatherDescendantIds(normalizedNodeId);
+
+      // Viewport Stabilization (Snap only once for expand)
+      const view = getViewport();
+      setToggledNodeInfo({
+        id: normalizedNodeId,
+        lastPos: { ...node.position },
+        lastViewport: { ...view }
+      });
+
+      setCollapsedStateById(prev => {
+        const newState = { ...prev };
+        newState[normalizedNodeId] = false;
+        localStorage.setItem('rf-collapsed-state', JSON.stringify(newState));
+        return newState;
+      });
+    }
+  }, [collapsedStateById, familyData, getNode, getViewport]);
+
+
 
   // Update layout diagram on data change
-  useEffect(() => {
-    if (familyData.length === 0) {
-      if (!isLoading) {
-        if (nodes.length > 0) {
-          console.warn("Ignoring empty dataset to prevent vanishing nodes.");
-          return;
-        }
-        setNodes([]);
-        setEdges([]);
-      }
-      return;
-    }
-
-    try {
-      // 1. Build lookup maps for O(N) performance
-      const personMapLocal = new Map();
-      const parentToChildren = new Map();
-      familyData.forEach(p => {
-        const id = String(p.id);
-        const fid = p.fatherId ? String(p.fatherId) : null;
-        personMapLocal.set(id, { ...p, id, fatherId: fid });
-        if (fid) {
-          if (!parentToChildren.has(fid)) parentToChildren.set(fid, []);
-          parentToChildren.get(fid).push({ ...p, id, fatherId: fid });
-        }
-      });
-
-      const rootList = familyData.filter(p => !p.fatherId);
-      const visibleData = [];
-      const traverse = (person) => {
-        const pid = String(person.id);
-        const isCollapsed = !!collapsedStateById[pid];
-        const isCurrentlyCollapsing = collapsingParentId === pid;
-        const displayNames = getDisplayNames(person);
-        const pending = isPersonPending(person);
-
-        visibleData.push({
-          ...person,
-          displayArabicName: displayNames.arabicName,
-          displayEnglishName: displayNames.englishName,
-          isPending: pending,
-          pendingType: isPendingAddChildNode(person) ? 'add_child' : (getPendingNameChange(person) ? 'name_change' : null),
-          pendingLabel: pending ? t('pendingAdminVerification') : '',
-          isGlowing: isCollapsed, // Add glow to collapsed nodes
-          isCollapsed: isCollapsed,
-          hasChildren: parentToChildren.has(pid)
-        });
-
-        if (!isCollapsed || isCurrentlyCollapsing) {
-          const children = parentToChildren.get(pid) || [];
-          children.forEach(c => traverse(c));
-        }
-      };
-      rootList.forEach(r => traverse(r));
-
-      const rawNodes = createNodesFromData(visibleData);
-      const rawEdges = generateEdges(visibleData);
-
-      const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(rawNodes, rawEdges, appSettings.layoutStyle || 'tidy');
-
-      // Index existing nodes and layout nodes for O(1) override lookups
-      const nodesMap = new Map(nodes.map(n => [String(n.id), n]));
-      const layoutNodesMap = new Map(layoutedNodes.map(n => [String(n.id), n]));
-
-      const finalNodes = layoutedNodes.map(n => {
-        const nid = String(n.id);
-        const person = personMapLocal.get(nid);
-        const cpid = collapsingParentId ? String(collapsingParentId) : null;
-
-        // Grouping/Collapse Animation Overlay
-        if (person && person.fatherId && cpid) {
-          let isPhantomCollapsing = false;
-          let curr = person;
-          while (curr && curr.fatherId) {
-            if (String(curr.fatherId) === cpid) {
-              isPhantomCollapsing = true;
-              break;
-            }
-            curr = personMapLocal.get(String(curr.fatherId));
-          }
-
-          if (isPhantomCollapsing) {
-            const parentNode = layoutNodesMap.get(cpid);
-            if (parentNode) {
-              return {
-                ...n,
-                position: { ...parentNode.position },
-                className: 'collapsing-child'
-              };
-            }
-          }
-        }
-
-        // Ungrouping/Expand Animation Overlay
-        const isNew = !prevVisibleSetRef.current.has(nid);
-        if (isNew && person && person.fatherId) {
-          const fid = String(person.fatherId);
-          const parentNode = nodesMap.get(fid) || layoutNodesMap.get(fid);
-          if (parentNode) {
-            return { ...n, position: { ...parentNode.position }, opacity: 0 };
-          }
-        }
-
-        return n;
-      });
-
-      // 2. Expansion & Collapse Glow Detection
-      const currentVisibleIds = new Set(visibleData.map(p => p.id));
-      const newlyVisibleIds = new Set([...currentVisibleIds].filter(id => !prevVisibleSetRef.current.has(id)));
-
-      setNodes(finalNodes.map(n => {
-        const isNew = newlyVisibleIds.has(n.id);
-        const isToggled = toggledNodeInfo && toggledNodeInfo.id === n.id;
-
-        // #7: Preserve nav glow (from triggerGlow) across layout re-renders
-        const nid2 = String(n.id);
-        const isNavGlowing = lastGlowNodeIdRef.current === nid2;
-        const isGlowing = isNavGlowing || n.isGlowing || !!(toggledNodeInfo && toggledNodeInfo.id === n.id);
-
-        // Ungrouping Animation: New nodes start at the parent's position
-        let initialPos = { ...n.position };
-        if (isNew && toggledNodeInfo && !toggledNodeInfo.isPersistent) {
-          initialPos = { ...toggledNodeInfo.lastPos };
-        }
-
-        return {
-          ...n,
-          data: {
-            ...n.data,
-            isGlowing,
-            onLongPress: handleNodeLongPress // Stable reference — prevents unnecessary child re-renders
-          },
-          position: initialPos
-        };
-      }));
-      setEdges([...layoutedEdges]);
-
-      // 3. Stabilization: Keep the toggled node at the same screen position
-      if (toggledNodeInfo) {
-        const targetNode = layoutNodesMap.get(String(toggledNodeInfo.id));
-        if (targetNode) {
-          const { lastPos, lastViewport } = toggledNodeInfo;
-          const currentPos = targetNode.position;
-
-          // Formula: vpOffset_new = vpOffset_old + (nodePos_old - nodePos_new) * zoom
-          const nextX = lastViewport.x + (lastPos.x - currentPos.x) * lastViewport.zoom;
-          const nextY = lastViewport.y + (lastPos.y - currentPos.y) * lastViewport.zoom;
-
-          // Instant adjustments to prevent visual jumps
-          const isInstant = !appSettings.animationsEnabled || !appSettings.expandEnabled;
-          setViewport({ x: nextX, y: nextY, zoom: lastViewport.zoom }, { duration: isInstant ? 0 : 400 });
-        }
-
-        if (!toggledNodeInfo.isPersistent) {
-          setToggledNodeInfo(null);
-        }
-      }
-
-      if (expandAllViewportCenterLockRef.current) {
-        const flowElem = document.querySelector('.react-flow');
-        const viewportWidth = flowElem ? flowElem.clientWidth : window.innerWidth;
-        const viewportHeight = flowElem ? flowElem.clientHeight : window.innerHeight;
-        const { flowCenterX, flowCenterY, zoom } = expandAllViewportCenterLockRef.current;
-
-        setViewport({
-          x: viewportWidth / 2 - flowCenterX * zoom,
-          y: viewportHeight / 2 - flowCenterY * zoom,
-          zoom
-        }, { duration: (!appSettings.animationsEnabled || !appSettings.expandEnabled) ? 0 : 400 });
-
-        expandAllViewportCenterLockRef.current = null;
-      }
-
-      // Update tracking ref
-      prevVisibleSetRef.current = currentVisibleIds;
-
-      // 4. Expansion Sequencer (Ungrouping effect)
-      if (newlyVisibleIds.size > 0) {
-        requestAnimationFrame(() => {
-          setNodes(nds => nds.map(node => {
-            const nid = String(node.id);
-            const targetNode = layoutNodesMap.get(nid);
-            if (targetNode && newlyVisibleIds.has(nid)) {
-              return { ...node, position: { ...targetNode.position }, opacity: 1 };
-            }
-            return node;
-          }));
-        });
-      }
-
-      // 5. Clear expansion/toggle glow after 2.5s
-      if (newlyVisibleIds.size > 0 || collapsingParentId) {
-        if (glowTimeoutRef.current) clearTimeout(glowTimeoutRef.current);
-        glowTimeoutRef.current = setTimeout(() => {
-          setNodes(nds => nds.map(node => {
-            const isCollapsed = !!collapsedStateById[node.id];
-            return {
-              ...node,
-              data: {
-                ...node.data,
-                isGlowing: isCollapsed // Permanent glow for collapsed branches, clear for others
-              }
-            };
-          }));
-        }, 2500);
-      }
-    } catch (err) {
-      console.error("Layout Rendering Crash Prevented:", err);
-    }
-  }, [familyData, collapsedStateById, isLoading, collapsingParentId, handleNodeLongPress, appSettings.layoutStyle, t, lang]); // handleNodeLongPress is stable (useCallback [])
 
   // Highlight Ancestor Path
   useEffect(() => {
@@ -1726,101 +1614,7 @@ const FamilyGraph = () => {
   }, [nodes, getViewport, setViewport, calculateAncestorPath, triggerGlow, appSettings]);
 
 
-  const onNodeClick = useCallback((_, node) => {
-    // Selection only, no centering (Per user request)
-    setNodes((nds) => nds.map(n => ({ ...n, selected: n.id === node.id })));
-    setAncestorPath(calculateAncestorPath(node.id));
-  }, [calculateAncestorPath]);
 
-  const onNodeDoubleClick = useCallback((_, node) => {
-    const wasExpanded = !collapsedStateById[node.id];
-
-    if (wasExpanded) {
-      // 1. Start Grouping animation (Recursive Collapse)
-      setCollapsingParentId(node.id);
-
-      // Build parent-children map for O(1) recursion
-      const parentToChildrenMap = new Map();
-      familyData.forEach(p => {
-        const fid = p.fatherId ? String(p.fatherId) : null;
-        if (fid) {
-          if (!parentToChildrenMap.has(fid)) parentToChildrenMap.set(fid, []);
-          parentToChildrenMap.get(fid).push(p);
-        }
-      });
-
-      const gatherDescendantIds = (parentId) => {
-        let results = [];
-        const pid = String(parentId);
-        const children = parentToChildrenMap.get(pid) || [];
-        children.forEach(child => {
-          results.push(String(child.id));
-          results = results.concat(gatherDescendantIds(child.id));
-        });
-        return results;
-      };
-      const descendants = gatherDescendantIds(node.id);
-
-      // Stabilization: Snapping persists through the 600ms animation into the final layout
-      const view = getViewport();
-      setToggledNodeInfo({
-        id: node.id,
-        lastPos: { ...node.position },
-        lastViewport: { ...view },
-        isPersistent: true
-      });
-
-      setTimeout(() => {
-        setCollapsedStateById(prev => {
-          const newState = { ...prev, [node.id]: true };
-          descendants.forEach(cid => { newState[cid] = true; }); // RECURSIVE COLLAPSE
-          localStorage.setItem('rf-collapsed-state', JSON.stringify(newState));
-          return newState;
-        });
-        setCollapsingParentId(null);
-        setToggledNodeInfo(prev => prev ? { ...prev, isPersistent: false } : null);
-      }, 150);
-    } else {
-      // 2. Start Ungrouping animation (Recursive Expand)
-      // Build parent-children map for O(1) recursion
-      const parentToChildrenMap = new Map();
-      familyData.forEach(p => {
-        const fid = p.fatherId ? String(p.fatherId) : null;
-        if (fid) {
-          if (!parentToChildrenMap.has(fid)) parentToChildrenMap.set(fid, []);
-          parentToChildrenMap.get(fid).push(p);
-        }
-      });
-
-      const gatherDescendantIds = (parentId) => {
-        let results = [];
-        const pid = String(parentId);
-        const children = parentToChildrenMap.get(pid) || [];
-        children.forEach(child => {
-          results.push(String(child.id));
-          results = results.concat(gatherDescendantIds(child.id));
-        });
-        return results;
-      };
-
-      const descendants = gatherDescendantIds(node.id);
-
-      // Viewport Stabilization (Snap only once for expand)
-      const view = getViewport();
-      setToggledNodeInfo({
-        id: node.id,
-        lastPos: { ...node.position },
-        lastViewport: { ...view }
-      });
-
-      setCollapsedStateById(prev => {
-        const newState = { ...prev };
-        newState[node.id] = false;
-        localStorage.setItem('rf-collapsed-state', JSON.stringify(newState));
-        return newState;
-      });
-    }
-  }, [collapsedStateById, familyData, getViewport]);
 
   const onPaneDoubleClick = useCallback((e) => {
     // Only zoom if clicking directly on pane/background — not on a node
@@ -1830,6 +1624,9 @@ const FamilyGraph = () => {
   }, [zoomIn]);
 
   const onPaneClick = useCallback(() => {
+    if (Date.now() < ignorePaneClickUntilRef.current) {
+      return;
+    }
     setSelectedPerson(null);
     setAncestorPath({ nodeIds: new Set(), edgeIds: new Set() });
     stopCameraMotion();
@@ -1942,6 +1739,260 @@ const FamilyGraph = () => {
       }
     }
   }, [ensurePathVisible, fetchPublicMemberStatuses, nodes, personMap, smoothFocusNode]);
+
+  const handleNodeLongPress = useCallback((nodeId) => {
+    ignorePaneClickUntilRef.current = Date.now() + 500;
+    toggleNodeCollapse(nodeId);
+  }, [toggleNodeCollapse]);
+
+  const handleNodeClick = useCallback((nodeId, rawData) => {
+    const normalizedNodeId = String(nodeId);
+    ignorePaneClickUntilRef.current = Date.now() + 500;
+    setNodes((nds) => nds.map(n => ({ ...n, selected: String(n.id) === normalizedNodeId })));
+    setAncestorPath(calculateAncestorPath(normalizedNodeId));
+    openNodeDetails(rawData || personMap.get(normalizedNodeId));
+  }, [calculateAncestorPath, openNodeDetails, personMap]);
+
+  // Update layout diagram on data change
+  useEffect(() => {
+    if (familyData.length === 0) {
+      if (!isLoading) {
+        if (nodes.length > 0) {
+          console.warn("Ignoring empty dataset to prevent vanishing nodes.");
+          return;
+        }
+        setNodes([]);
+        setEdges([]);
+      }
+      return;
+    }
+
+    try {
+      // 1. Build lookup maps for O(N) performance
+      const personMapLocal = new Map();
+      const parentToChildren = new Map();
+      familyData.forEach(p => {
+        const id = String(p.id);
+        const fid = p.fatherId ? String(p.fatherId) : null;
+        personMapLocal.set(id, { ...p, id, fatherId: fid });
+        if (fid) {
+          if (!parentToChildren.has(fid)) parentToChildren.set(fid, []);
+          parentToChildren.get(fid).push({ ...p, id, fatherId: fid });
+        }
+      });
+
+      const rootList = familyData.filter(p => !p.fatherId);
+      const visibleData = [];
+      const traverse = (person) => {
+        const pid = String(person.id);
+        const isCollapsed = !!collapsedStateById[pid];
+        const isCurrentlyCollapsing = collapsingParentId === pid;
+        const displayNames = getDisplayNames(person);
+        const pending = isPersonPending(person);
+
+        visibleData.push({
+          ...person,
+          displayArabicName: displayNames.arabicName,
+          displayEnglishName: displayNames.englishName,
+          isPending: pending,
+          pendingType: isPendingAddChildNode(person) ? "add_child" : (getPendingNameChange(person) ? "name_change" : null),
+          pendingLabel: pending ? t("pendingAdminVerification") : "",
+          isGlowing: isCollapsed, // Add glow to collapsed nodes
+          isCollapsed: isCollapsed,
+          hasChildren: parentToChildren.has(pid)
+        });
+
+        if (!isCollapsed || isCurrentlyCollapsing) {
+          const children = parentToChildren.get(pid) || [];
+          children.forEach(c => traverse(c));
+        }
+      };
+      rootList.forEach(r => traverse(r));
+
+      const rawNodes = createNodesFromData(visibleData);
+      const rawEdges = generateEdges(visibleData);
+
+      const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(rawNodes, rawEdges, appSettings.layoutStyle || "tidy");
+
+      // Index existing nodes and layout nodes for O(1) override lookups
+      const nodesMap = new Map(nodes.map(n => [String(n.id), n]));
+      const layoutNodesMap = new Map(layoutedNodes.map(n => [String(n.id), n]));
+
+      const finalNodes = layoutedNodes.map(n => {
+        const nid = String(n.id);
+        const person = personMapLocal.get(nid);
+        const cpid = collapsingParentId ? String(collapsingParentId) : null;
+
+        // Grouping/Collapse Animation Overlay
+        if (person && person.fatherId && cpid) {
+          let isPhantomCollapsing = false;
+          let curr = person;
+          while (curr && curr.fatherId) {
+            if (String(curr.fatherId) === cpid) {
+              isPhantomCollapsing = true;
+              break;
+            }
+            curr = personMapLocal.get(String(curr.fatherId));
+          }
+
+          if (isPhantomCollapsing) {
+            const parentNode = layoutNodesMap.get(cpid);
+            if (parentNode) {
+              return {
+                ...n,
+                position: { ...parentNode.position },
+                className: "collapsing-child"
+              };
+            }
+          }
+        }
+
+        // Ungrouping/Expand Animation Overlay
+        const isNew = !prevVisibleSetRef.current.has(nid);
+        if (isNew && person && person.fatherId) {
+          const fid = String(person.fatherId);
+          const parentNode = nodesMap.get(fid) || layoutNodesMap.get(fid);
+          if (parentNode) {
+            return { ...n, position: { ...parentNode.position }, opacity: 0 };
+          }
+        }
+
+        return n;
+      });
+
+      // 2. Expansion & Collapse Glow Detection
+      const currentVisibleIds = new Set(visibleData.map(p => p.id));
+      const newlyVisibleIds = new Set([...currentVisibleIds].filter(id => !prevVisibleSetRef.current.has(id)));
+
+      setNodes(finalNodes.map(n => {
+        const isNew = newlyVisibleIds.has(n.id);
+        const isToggled = toggledNodeInfo && toggledNodeInfo.id === n.id;
+
+        // #7: Preserve nav glow (from triggerGlow) across layout re-renders
+        const nid2 = String(n.id);
+        const isNavGlowing = lastGlowNodeIdRef.current === nid2;
+        const isPathGlow = ancestorPath.nodeIds.has(nid2);
+        const isGlowing = isNavGlowing || n.isGlowing || !!(toggledNodeInfo && toggledNodeInfo.id === n.id);
+
+        // Ungrouping Animation: New nodes start at the parent's position
+        let initialPos = { ...n.position };
+        if (isNew && toggledNodeInfo && !toggledNodeInfo.isPersistent) {
+          initialPos = { ...toggledNodeInfo.lastPos };
+        }
+
+        return {
+          ...n,
+            data: {
+              ...n.data,
+              isGlowing,
+              isPathGlow,
+              onLongPress: handleNodeLongPress
+            },
+            position: initialPos
+          };
+      }));
+      setEdges(layoutedEdges.map((edge) => ({
+        ...edge,
+        className: ancestorPath.edgeIds.has(edge.id) ? 'ancestor-edge-glow' : ''
+      })));
+
+      // 3. Stabilization: Keep the toggled node at the same screen position
+      if (toggledNodeInfo) {
+        const targetNode = layoutNodesMap.get(String(toggledNodeInfo.id));
+        if (targetNode) {
+          const { lastPos, lastViewport } = toggledNodeInfo;
+          const currentPos = targetNode.position;
+
+          // Formula: vpOffset_new = vpOffset_old + (nodePos_old - nodePos_new) * zoom
+          const nextX = lastViewport.x + (lastPos.x - currentPos.x) * lastViewport.zoom;
+          const nextY = lastViewport.y + (lastPos.y - currentPos.y) * lastViewport.zoom;
+
+          // Instant adjustments to prevent visual jumps
+          const isInstant = !appSettings.animationsEnabled || !appSettings.expandEnabled;
+          setViewport({ x: nextX, y: nextY, zoom: lastViewport.zoom }, { duration: isInstant ? 0 : 400 });
+        }
+
+        if (!toggledNodeInfo.isPersistent) {
+          setToggledNodeInfo(null);
+        }
+      }
+
+      if (expandAllViewportCenterLockRef.current) {
+        const {
+          anchorNodeId,
+          anchorScreenX,
+          anchorScreenY,
+          flowCenterX,
+          flowCenterY,
+          zoom
+        } = expandAllViewportCenterLockRef.current;
+
+        const anchorNode = anchorNodeId ? layoutNodesMap.get(String(anchorNodeId)) : null;
+        const anchorWidth = anchorNode?.measured?.width || anchorNode?.width || 260;
+        const anchorHeight = anchorNode?.measured?.height || anchorNode?.height || 100;
+
+        if (anchorNode && Number.isFinite(anchorScreenX) && Number.isFinite(anchorScreenY)) {
+          const anchorCenterX = anchorNode.position.x + (anchorWidth / 2);
+          const anchorCenterY = anchorNode.position.y + (anchorHeight / 2);
+
+          setViewport({
+            x: anchorScreenX - anchorCenterX * zoom,
+            y: anchorScreenY - anchorCenterY * zoom,
+            zoom
+          }, { duration: (!appSettings.animationsEnabled || !appSettings.expandEnabled) ? 0 : 400 });
+        } else {
+          const flowElem = document.querySelector(".react-flow");
+          const viewportWidth = flowElem ? flowElem.clientWidth : window.innerWidth;
+          const viewportHeight = flowElem ? flowElem.clientHeight : window.innerHeight;
+
+          setViewport({
+            x: viewportWidth / 2 - flowCenterX * zoom,
+            y: viewportHeight / 2 - flowCenterY * zoom,
+            zoom
+          }, { duration: (!appSettings.animationsEnabled || !appSettings.expandEnabled) ? 0 : 400 });
+        }
+
+        expandAllViewportCenterLockRef.current = null;
+      }
+
+      // Update tracking ref
+      prevVisibleSetRef.current = currentVisibleIds;
+
+      // 4. Expansion Sequencer (Ungrouping effect)
+      if (newlyVisibleIds.size > 0) {
+        requestAnimationFrame(() => {
+          setNodes(nds => nds.map(node => {
+            const nid = String(node.id);
+            const targetNode = layoutNodesMap.get(nid);
+            if (targetNode && newlyVisibleIds.has(nid)) {
+              return { ...node, position: { ...targetNode.position }, opacity: 1 };
+            }
+            return node;
+          }));
+        });
+      }
+
+      // 5. Clear expansion/toggle glow after 2.5s
+      if (newlyVisibleIds.size > 0 || collapsingParentId) {
+        if (glowTimeoutRef.current) clearTimeout(glowTimeoutRef.current);
+        glowTimeoutRef.current = setTimeout(() => {
+          setNodes(nds => nds.map(node => {
+            const isCollapsed = !!collapsedStateById[node.id];
+            return {
+              ...node,
+              data: {
+                ...node.data,
+                isGlowing: isCollapsed // Permanent glow for collapsed branches, clear for others
+              }
+            };
+          }));
+        }, 2500);
+      }
+    } catch (err) {
+      console.error("Layout Rendering Crash Prevented:", err);
+    }
+  }, [familyData, collapsedStateById, isLoading, collapsingParentId, handleNodeLongPress, appSettings.layoutStyle, t, lang, ancestorPath]);
+
 
   const getNextPendingIdForAdmin = useCallback((excludeId = null) => {
     if (!isAdmin || pendingQueueIds.length === 0) {
@@ -2638,7 +2689,7 @@ const FamilyGraph = () => {
     if (error) {
       throw new Error(error.message || 'Failed to change password.');
     }
-    alert(t('passwordChangedSuccess'));
+    showToast({ text: t('passwordChangedSuccess') });
     setActiveInfoModal(null);
   };
 
@@ -2884,80 +2935,50 @@ const FamilyGraph = () => {
   }, [familyData, getNode, setViewport]);
 
   const handleExpandAll = useCallback(() => {
-    // --- Manual Multi-Click Counter (Click 1 = Visible Only, Click 2 within 2s = Everything) ---
-    expandClickCountRef.current += 1;
-    const clickIteration = expandClickCountRef.current;
-    setExpandClickCount(clickIteration);
-
-    // Reset timer on every interaction
-    if (expandClickTimerRef.current) clearTimeout(expandClickTimerRef.current);
-
-    if (clickIteration >= 2) {
-      // CLICK 2: Deep Expand (All nodes in database) without changing viewport
-      expandClickCountRef.current = 0;
-      setExpandClickCount(0);
-
-      const flowElem = document.querySelector('.react-flow');
-      const viewportWidth = flowElem ? flowElem.clientWidth : window.innerWidth;
-      const viewportHeight = flowElem ? flowElem.clientHeight : window.innerHeight;
-      const currentViewport = getViewport();
-      expandAllViewportCenterLockRef.current = {
-        flowCenterX: (viewportWidth / 2 - currentViewport.x) / currentViewport.zoom,
-        flowCenterY: (viewportHeight / 2 - currentViewport.y) / currentViewport.zoom,
-        zoom: currentViewport.zoom
-      };
-
-      setCollapsedStateById(() => {
-        const next = {};
-        // Open every single person in the database
-        familyData.forEach(p => { next[p.id] = false; });
-        localStorage.setItem('rf-collapsed-state', JSON.stringify(next));
-        return next;
-      });
-
-      return;
-    }
-
-    // CLICK 1: Shallow Expand (Only visible collapsed nodes)
-    expandClickTimerRef.current = setTimeout(() => {
-      expandClickCountRef.current = 0;
-      setExpandClickCount(0);
-    }, 2000);
-
     const flowElem = document.querySelector('.react-flow');
-    const vpW = flowElem ? flowElem.clientWidth : window.innerWidth;
-    const vpH = flowElem ? flowElem.clientHeight : window.innerHeight;
+    const viewportWidth = flowElem ? flowElem.clientWidth : window.innerWidth;
+    const viewportHeight = flowElem ? flowElem.clientHeight : window.innerHeight;
+    const currentViewport = getViewport();
+    const viewportCenterX = (viewportWidth / 2 - currentViewport.x) / currentViewport.zoom;
+    const viewportCenterY = (viewportHeight / 2 - currentViewport.y) / currentViewport.zoom;
 
-    const { x, y, zoom } = getViewport();
-    const padding = 50;
+    const anchorNode = nodes.reduce((closest, node) => {
+      const nodeWidth = node.measured?.width || node.width || 260;
+      const nodeHeight = node.measured?.height || node.height || 100;
+      const nodeCenterX = node.position.x + (nodeWidth / 2);
+      const nodeCenterY = node.position.y + (nodeHeight / 2);
+      const distance = Math.hypot(nodeCenterX - viewportCenterX, nodeCenterY - viewportCenterY);
 
-    // Bounds in flow-space
-    const minX = (-x - padding) / zoom;
-    const minY = (-y - padding) / zoom;
-    const maxX = (vpW - x + padding) / zoom;
-    const maxY = (vpH - y + padding) / zoom;
+      if (!closest || distance < closest.distance) {
+        return {
+          id: node.id,
+          centerX: nodeCenterX,
+          centerY: nodeCenterY,
+          distance
+        };
+      }
 
-    const visibleCollapsedNodes = nodes.filter(node => {
-      const isVisible =
-        node.position.x >= minX &&
-        node.position.x <= maxX &&
-        node.position.y >= minY &&
-        node.position.y <= maxY;
+      return closest;
+    }, null);
 
-      return isVisible && !!collapsedStateById[node.id] && node.data?.hasChildren;
-    });
+    expandAllViewportCenterLockRef.current = {
+      anchorNodeId: anchorNode?.id ?? null,
+      anchorScreenX: anchorNode ? currentViewport.x + anchorNode.centerX * currentViewport.zoom : null,
+      anchorScreenY: anchorNode ? currentViewport.y + anchorNode.centerY * currentViewport.zoom : null,
+      flowCenterX: viewportCenterX,
+      flowCenterY: viewportCenterY,
+      zoom: Math.max(0.05, currentViewport.zoom * 0.95)
+    };
 
-    if (visibleCollapsedNodes.length === 0) return;
-
-    setCollapsedStateById(prev => {
-      const next = { ...prev };
-      visibleCollapsedNodes.forEach(node => {
-        next[node.id] = false; // Just open this node, not its descendants
+    setCollapsedStateById(() => {
+      const next = {};
+      familyData.forEach(p => {
+        next[p.id] = false;
       });
       localStorage.setItem('rf-collapsed-state', JSON.stringify(next));
       return next;
     });
-  }, [getViewport, nodes, collapsedStateById, familyData]);
+  }, [getViewport, familyData, nodes]);
 
   const handleModalClose = useCallback(() => {
     adminWalkthroughEnabledRef.current = false;
@@ -3371,8 +3392,11 @@ const FamilyGraph = () => {
             onEdgesChange={onEdgesChange}
             onMoveEnd={handleMoveEnd}
             onPaneClick={onPaneClick}
-            onNodeClick={onNodeClick}
-            onNodeDoubleClick={onNodeDoubleClick}
+            onNodeClick={(event, node) => {
+              event?.preventDefault?.();
+              event?.stopPropagation?.();
+              handleNodeClick(node.id, node.data?.raw);
+            }}
             zoomOnDoubleClick={false}
             onMoveStart={(e) => {
               if (e && e.type !== 'animation') {
@@ -3404,23 +3428,10 @@ const FamilyGraph = () => {
               <button
                 className="react-flow__controls-button"
                 onClick={handleExpandAll}
-                title={expandClickCount === 0 ? t('expandAll') : t('expandAllHint')}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}
+                title={t('expandAll')}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               >
                 <ListTree size={14} />
-                {expandClickCount > 0 && (
-                  <span style={{
-                    position: 'absolute', top: '-4px', right: '-4px',
-                    background: expandClickCount >= 2 ? 'var(--accent)' : 'var(--text-secondary)',
-                    color: '#fff', borderRadius: '50%',
-                    width: '14px', height: '14px',
-                    fontSize: '9px', fontWeight: 'bold',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    lineHeight: 1, pointerEvents: 'none'
-                  }}>
-                    {expandClickCount}
-                  </span>
-                )}
               </button>
               <button
                 className="react-flow__controls-button"

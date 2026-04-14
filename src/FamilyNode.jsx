@@ -5,9 +5,10 @@ const FamilyNode = ({ id, data, selected }) => {
   const [interactionStage, setInteractionStage] = useState('none'); // 'none', 'pressing', 'hinting'
   const actionTimerRef = useRef(null);
   const hintTimerRef = useRef(null);
-  const lastClickTimeRef = useRef(0);
   const touchStartPosRef = useRef(null);
   const isCancelledRef = useRef(false);
+  const didLongPressRef = useRef(false);
+  const suppressClickRef = useRef(false);
 
   const cleanup = useCallback(() => {
     if (actionTimerRef.current) clearTimeout(actionTimerRef.current);
@@ -26,35 +27,31 @@ const FamilyNode = ({ id, data, selected }) => {
       return;
     }
 
-    const now = Date.now();
-    const isDoubleClickCandidate = (now - lastClickTimeRef.current) < 350;
-    lastClickTimeRef.current = now;
-
-    if (isDoubleClickCandidate) {
-      // It's a double click! Cancel any pending long-press details
-      cleanup();
-      isCancelledRef.current = true;
-      return;
-    }
-
     isCancelledRef.current = false;
+    didLongPressRef.current = false;
+    suppressClickRef.current = false;
     touchStartPosRef.current = { x: e.clientX, y: e.clientY };
     setInteractionStage('pressing');
 
-    // Hint timer at 250ms
+    if (e.currentTarget.setPointerCapture) {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }
+
+    // Hint timer at 160ms
     hintTimerRef.current = setTimeout(() => {
       if (!isCancelledRef.current) {
         setInteractionStage('hinting');
       }
-    }, 250);
+    }, 160);
 
-    // Main action timer at 700ms
+    // Main action timer at 450ms
     actionTimerRef.current = setTimeout(() => {
       if (!isCancelledRef.current && data.onLongPress) {
+        didLongPressRef.current = true;
         data.onLongPress(id, data.raw);
         cleanup();
       }
-    }, 700);
+    }, 450);
   };
 
   const handlePointerMove = (e) => {
@@ -71,9 +68,29 @@ const FamilyNode = ({ id, data, selected }) => {
     }
   };
 
-  const handlePointerUp = () => {
+  const cancelInteraction = useCallback((e) => {
+    if (e?.currentTarget?.releasePointerCapture && e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
     isCancelledRef.current = true;
     cleanup();
+  }, [cleanup]);
+
+  const handlePointerUp = (e) => {
+    if (e.currentTarget.releasePointerCapture && e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+
+    suppressClickRef.current = didLongPressRef.current;
+    isCancelledRef.current = true;
+    cleanup();
+  };
+
+  const handleClickCapture = (e) => {
+    if (!suppressClickRef.current) return;
+    suppressClickRef.current = false;
+    e.preventDefault();
+    e.stopPropagation();
   };
 
   const arabLength = data.arabicName ? data.arabicName.length : 0;
@@ -88,8 +105,9 @@ const FamilyNode = ({ id, data, selected }) => {
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
-      onPointerLeave={handlePointerUp}
-      onPointerCancel={handlePointerUp}
+      onPointerLeave={cancelInteraction}
+      onPointerCancel={cancelInteraction}
+      onClickCapture={handleClickCapture}
       onContextMenu={(e) => { e.preventDefault(); }}
       style={{ WebkitUserSelect: 'none', userSelect: 'none' }}
     >

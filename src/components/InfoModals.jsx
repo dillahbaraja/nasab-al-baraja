@@ -34,6 +34,7 @@ const InfoModal = ({
   const [errorMsg, setErrorMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [expandedMemberId, setExpandedMemberId] = useState(null);
+  const [showSecurityForm, setShowSecurityForm] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -42,6 +43,7 @@ const InfoModal = ({
     setFormData({ email: '', password: '' });
     setPwData({ newPassword: '', confirmPassword: '' });
     setExpandedMemberId(null);
+    setShowSecurityForm(false);
   }, [isOpen, type]);
 
   useEffect(() => {
@@ -82,6 +84,11 @@ const InfoModal = ({
     const { name, value } = e.target;
     setProfileData((prev) => ({ ...prev, [name]: value }));
   };
+
+  const isWideListModal = type === 'memberManager' || type === 'listMember' || type === 'listAdmin';
+  const isWideProfileModal = type === 'profile';
+  const isMobileWideList = isWideListModal && window.innerWidth <= 768;
+  const isMobileWideProfile = isWideProfileModal && window.innerWidth <= 768;
 
   const getNoticeMeta = (notice) => {
     if (notice.type === 'proposal_add_child') {
@@ -134,8 +141,18 @@ const InfoModal = ({
 
     const approvalSubtitle = [member.email, member.city || member.country || '-'].filter(Boolean).join(' • ');
 
+    const isCompactCard = compact || approvalCompact;
+
     return (
-      <div key={member.id} className="glass-panel" style={{ padding: '14px', marginBottom: '12px' }}>
+      <div
+        key={member.id}
+        className="glass-panel"
+        style={{
+          padding: isMobileWideList ? '11px 12px' : '14px',
+          marginBottom: isMobileWideList ? '10px' : '12px',
+          borderRadius: isMobileWideList ? '14px' : undefined
+        }}
+      >
         <button
           type="button"
           onClick={() => {
@@ -183,10 +200,32 @@ const InfoModal = ({
                 </div>
               )}
             </div>
-            <div style={{ fontSize: '11px', fontWeight: '700', color: iconColor }}>
+            {!isCompactCard && (
+              <div style={{ fontSize: '11px', fontWeight: '700', color: iconColor, textAlign: 'right' }}>
+                {member.claim_status === 'approved' ? t('memberApprovedBadge') : t('memberPendingBadge')}
+              </div>
+            )}
+          </div>
+          {isCompactCard && (
+            <div
+              style={{
+                marginTop: '10px',
+                display: 'inline-flex',
+                maxWidth: '100%',
+                padding: '4px 10px',
+                borderRadius: '999px',
+                background: member.claim_status === 'approved' ? 'rgba(22, 163, 74, 0.10)' : 'rgba(var(--accent-rgb), 0.10)',
+                color: iconColor,
+                fontSize: '11px',
+                fontWeight: '700',
+                lineHeight: 1.2,
+                whiteSpace: 'normal',
+                wordBreak: 'break-word'
+              }}
+            >
               {member.claim_status === 'approved' ? t('memberApprovedBadge') : t('memberPendingBadge')}
             </div>
-          </div>
+          )}
         </button>
 
         {(!(compact || approvalCompact) || isExpanded) && (
@@ -366,12 +405,12 @@ const InfoModal = ({
         );
       case 'profile':
         return (
-          <div className="info-modal-body" style={{ padding: '0 8px' }}>
+          <div className="info-modal-body" style={isMobileWideProfile ? { padding: '0 4px 12px' } : { padding: '0 8px' }}>
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
               <User size={48} color="var(--accent)" />
             </div>
             {!currentMember && (
-              <div className="glass-panel" style={{ padding: '16px', marginBottom: '16px', color: 'var(--text-secondary)', textAlign: 'center' }}>
+              <div className="glass-panel" style={{ padding: isMobileWideProfile ? '12px' : '16px', marginBottom: '16px', color: 'var(--text-secondary)', textAlign: 'center' }}>
                 {currentRole === 'admin' ? t('legacyAdminProfileNotice') : t('signInPendingClaim')}
               </div>
             )}
@@ -380,7 +419,7 @@ const InfoModal = ({
                 {errorMsg}
               </div>
             )}
-            <div className="glass-panel" style={{ padding: '16px', marginBottom: '16px' }}>
+            <div className="glass-panel" style={{ padding: isMobileWideProfile ? '12px' : '16px', marginBottom: '16px' }}>
               <div style={{ fontSize: '12px', textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: '12px', letterSpacing: '0.05em' }}>
                 {t('profileIdentity')}
               </div>
@@ -392,7 +431,7 @@ const InfoModal = ({
               </div>
             </div>
 
-            <form className="glass-panel" style={{ padding: '16px', marginBottom: '16px' }} onSubmit={async (e) => {
+            <form className="glass-panel" style={{ padding: isMobileWideProfile ? '12px' : '16px', marginBottom: '16px' }} onSubmit={async (e) => {
               e.preventDefault();
               setErrorMsg('');
               setIsSubmitting(true);
@@ -428,58 +467,71 @@ const InfoModal = ({
               </button>
             </form>
 
-            <form className="glass-panel" style={{ padding: '16px' }} onSubmit={async (e) => {
-              e.preventDefault();
-              setErrorMsg('');
-              if ((pwData.newPassword || '').length < 6) {
-                setErrorMsg(t('passwordMinLengthRule'));
-                return;
-              }
-              if (pwData.newPassword !== pwData.confirmPassword) {
-                setErrorMsg(t('passwordsDontMatch'));
-                return;
-              }
-              setIsSubmitting(true);
-              try {
-                await onChangePassword(pwData.newPassword);
-              } catch (err) {
-                setErrorMsg(err?.message || 'Failed to change password.');
-              } finally {
-                setIsSubmitting(false);
-              }
-            }}>
+            <div className="glass-panel" style={{ padding: isMobileWideProfile ? '12px' : '16px' }}>
               <div style={{ fontSize: '12px', textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: '12px', letterSpacing: '0.05em' }}>
                 {t('profileSecurity')}
               </div>
-              <div style={{ fontSize: '13px', color: 'var(--text-secondary)', textAlign: 'center', marginBottom: '16px', lineHeight: '1.5', background: 'var(--panel-highlight-bg)', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--panel-border)' }}>
-                {t('passwordMinLengthRule')}
-              </div>
-              <div className="input-group">
-                <label style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>{t('newPassword')}</label>
-                <input type="password" name="newPassword" minLength={6} value={pwData.newPassword} onChange={handlePwChange} className="login-input" style={{ width: '100%' }} required />
-              </div>
-              <div className="input-group">
-                <label style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>{t('confirmPassword')}</label>
-                <input type="password" name="confirmPassword" minLength={6} value={pwData.confirmPassword} onChange={handlePwChange} className="login-input" style={{ width: '100%' }} required />
-              </div>
-              <button type="submit" className="login-button" style={{ marginTop: '10px' }} disabled={isSubmitting}>
+              <button
+                type="button"
+                className="login-button"
+                style={{ marginTop: '2px' }}
+                onClick={() => setShowSecurityForm((prev) => !prev)}
+                disabled={isSubmitting}
+              >
                 {t('changePassword')}
               </button>
-            </form>
+              {showSecurityForm && (
+                <form onSubmit={async (e) => {
+                  e.preventDefault();
+                  setErrorMsg('');
+                  if ((pwData.newPassword || '').length < 6) {
+                    setErrorMsg(t('passwordMinLengthRule'));
+                    return;
+                  }
+                  if (pwData.newPassword !== pwData.confirmPassword) {
+                    setErrorMsg(t('passwordsDontMatch'));
+                    return;
+                  }
+                  setIsSubmitting(true);
+                  try {
+                    await onChangePassword(pwData.newPassword);
+                  } catch (err) {
+                    setErrorMsg(err?.message || 'Failed to change password.');
+                  } finally {
+                    setIsSubmitting(false);
+                  }
+                }} style={{ marginTop: '14px' }}>
+                  <div style={{ fontSize: '13px', color: 'var(--text-secondary)', textAlign: 'center', marginBottom: '16px', lineHeight: '1.5', background: 'var(--panel-highlight-bg)', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--panel-border)' }}>
+                    {t('passwordMinLengthRule')}
+                  </div>
+                  <div className="input-group">
+                    <label style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>{t('newPassword')}</label>
+                    <input type="password" name="newPassword" minLength={6} value={pwData.newPassword} onChange={handlePwChange} className="login-input" style={{ width: '100%' }} required />
+                  </div>
+                  <div className="input-group">
+                    <label style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>{t('confirmPassword')}</label>
+                    <input type="password" name="confirmPassword" minLength={6} value={pwData.confirmPassword} onChange={handlePwChange} className="login-input" style={{ width: '100%' }} required />
+                  </div>
+                  <button type="submit" className="login-button" style={{ marginTop: '10px' }} disabled={isSubmitting}>
+                    {t('save')}
+                  </button>
+                </form>
+              )}
+            </div>
           </div>
         );
       case 'memberManager':
         return (
-          <div className="info-modal-body">
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
-              <Users size={48} color="var(--accent)" />
+          <div className="info-modal-body" style={isMobileWideList ? { paddingLeft: '4px', paddingRight: '4px', paddingTop: '0', paddingBottom: '14px' } : { paddingLeft: '16px', paddingRight: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: isMobileWideList ? '12px' : '20px' }}>
+              <Users size={isMobileWideList ? 42 : 48} color="var(--accent)" />
             </div>
             {errorMsg && (
               <div style={{ color: '#ff4444', textAlign: 'center', marginBottom: '16px', fontSize: '13px', background: 'rgba(255, 68, 68, 0.1)', padding: '8px', borderRadius: '4px' }}>
                 {errorMsg}
               </div>
             )}
-            <div style={{ maxHeight: '420px', overflowY: 'auto' }}>
+            <div style={{ maxHeight: '64vh', overflowY: 'auto' }}>
               {loadingMembers ? (
                 <div style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>{t('loading')}</div>
               ) : memberClaims.length === 0 ? (
@@ -498,16 +550,16 @@ const InfoModal = ({
         );
       case 'listMember':
         return (
-          <div className="info-modal-body">
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
-              <UserCog size={48} color="var(--accent)" />
+          <div className="info-modal-body" style={isMobileWideList ? { paddingLeft: '4px', paddingRight: '4px', paddingTop: '0', paddingBottom: '14px' } : { paddingLeft: '16px', paddingRight: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: isMobileWideList ? '12px' : '20px' }}>
+              <UserCog size={isMobileWideList ? 42 : 48} color="var(--accent)" />
             </div>
             {errorMsg && (
               <div style={{ color: '#ff4444', textAlign: 'center', marginBottom: '16px', fontSize: '13px', background: 'rgba(255, 68, 68, 0.1)', padding: '8px', borderRadius: '4px' }}>
                 {errorMsg}
               </div>
             )}
-            <div style={{ maxHeight: '420px', overflowY: 'auto' }}>
+            <div style={{ maxHeight: '64vh', overflowY: 'auto' }}>
               {loadingMembers ? (
                 <div style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>{t('loading')}</div>
               ) : verifiedMembers.length === 0 ? (
@@ -515,23 +567,29 @@ const InfoModal = ({
                   {t('noVerifiedMembers')}
                 </div>
               ) : (
-                verifiedMembers.map((member) => renderMemberCard(member, t('promoteToAdmin'), onPromoteAdmin, 'var(--accent)', { compact: true }))
+                verifiedMembers.map((member) => renderMemberCard(
+                  member,
+                  currentRole === 'admin' ? t('promoteToAdmin') : null,
+                  currentRole === 'admin' ? onPromoteAdmin : null,
+                  'var(--accent)',
+                  { compact: true }
+                ))
               )}
             </div>
           </div>
         );
       case 'listAdmin':
         return (
-          <div className="info-modal-body">
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
-              <ShieldCheck size={48} color="var(--accent)" />
+          <div className="info-modal-body" style={isMobileWideList ? { paddingLeft: '4px', paddingRight: '4px', paddingTop: '0', paddingBottom: '14px' } : { paddingLeft: '16px', paddingRight: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: isMobileWideList ? '12px' : '20px' }}>
+              <ShieldCheck size={isMobileWideList ? 42 : 48} color="var(--accent)" />
             </div>
             {errorMsg && (
               <div style={{ color: '#ff4444', textAlign: 'center', marginBottom: '16px', fontSize: '13px', background: 'rgba(255, 68, 68, 0.1)', padding: '8px', borderRadius: '4px' }}>
                 {errorMsg}
               </div>
             )}
-            <div style={{ maxHeight: '420px', overflowY: 'auto' }}>
+            <div style={{ maxHeight: '64vh', overflowY: 'auto' }}>
               {loadingMembers ? (
                 <div style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>{t('loading')}</div>
               ) : adminMembers.length === 0 ? (
@@ -605,13 +663,32 @@ const InfoModal = ({
     }
   };
 
+  const overlayStyle = {};
+
   return (
-    <div className="info-modal-overlay" onClick={onClose}>
-      <div className="info-modal-content" onClick={(e) => e.stopPropagation()} style={type === 'notice' ? { paddingLeft: '8px', paddingRight: '8px' } : {}}>
+    <div className="info-modal-overlay" onClick={onClose} style={overlayStyle}>
+      <div
+        className="info-modal-content"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          maxWidth: '760px',
+          width: 'min(96vw, 760px)',
+          maxHeight: '90vh',
+          borderRadius: '22px',
+          ...(window.innerWidth <= 768 ? {
+            width: '96vw',
+            maxWidth: '96vw',
+            maxHeight: '84vh',
+            margin: '0 auto'
+          } : {})
+        }}
+      >
         <button className="info-modal-close" onClick={onClose}>
           <X size={24} />
         </button>
-        <div className="info-modal-title">{title}</div>
+        <div className="info-modal-title" style={(isMobileWideList || isMobileWideProfile) ? { paddingLeft: '10px', paddingRight: '10px', paddingTop: '18px', marginBottom: '12px' } : {}}>
+          {title}
+        </div>
         {renderContent()}
       </div>
     </div>

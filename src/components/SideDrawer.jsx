@@ -71,7 +71,7 @@ const SideDrawer = ({
             </div>
           )}
 
-          {isAdmin && (
+          {isVerifiedMember && (
             <div className="drawer-item" onClick={() => { onMenuClick('List Member'); onClose(); }}>
               <UserCog size={20} />
               <span>{t('listMember')}</span>

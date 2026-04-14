@@ -6,7 +6,7 @@ Panduan ini dibuat untuk membantu pengguna umum dan member memahami alur dasar d
 
 - Gunakan kolom `Cari` untuk menemukan nama yang ingin dibuka.
 - Di website, buka detail person dengan `klik dua kali`.
-- Di mobile, buka detail person dengan `tekan lama`.
+- Tekan lama pada node dipakai untuk `expand/collapse` cabang keluarga.
 - Jika sebuah data masih dalam proses pengecekan, biasanya akan muncul penanda `Menunggu verifikasi admin atau member`.
 
 > Judul gambar: Halaman utama dan kolom pencarian
@@ -37,9 +37,10 @@ Tips pencarian:
 ### B. Cara membuka detail person
 
 1. Temukan person yang ingin dilihat di pohon nasab.
-2. Di website, `klik dua kali` pada node person.
-3. Di handphone, `tekan lama` pada node person.
-4. Jendela detail akan terbuka dan menampilkan nama, nasab, serta daftar anak.
+2. `Klik dua kali` pada node person.
+3. Jendela detail akan terbuka dan menampilkan nama, nasab, serta daftar anak.
+
+Jika ingin membuka atau menutup cabang keluarga dari sebuah node, gunakan `tekan lama`.
 
 > Judul gambar: Cara membuka popup detail person
 
