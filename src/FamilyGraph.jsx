@@ -189,6 +189,7 @@ const FamilyGraph = () => {
   const prevVisibleSetRef = useRef(new Set());
   const expandClickCountRef = useRef(0);
   const expandClickTimerRef = useRef(null);
+  const expandAllViewportCenterLockRef = useRef(null);
   const hasInitialFocusedRef = useRef(false); // tracks first-load root focus
   const [expandClickCount, setExpandClickCount] = useState(0);
   const [navDirection, setNavDirection] = useState('right'); // 'right' = next click goes to rightmost
@@ -457,6 +458,14 @@ const FamilyGraph = () => {
     };
   }, []);
 
+  const getFlowViewportSize = useCallback(() => {
+    const flowElem = document.querySelector('.react-flow');
+    return {
+      width: Math.max(flowElem?.clientWidth || window.innerWidth, 320),
+      height: Math.max(flowElem?.clientHeight || window.innerHeight, 320)
+    };
+  }, []);
+
   const runLineageCameraTour = useCallback(async (selectedId, chainIds) => {
     const tourToken = Date.now();
     lineageTourTokenRef.current = tourToken;
@@ -481,23 +490,30 @@ const FamilyGraph = () => {
     const startZoom = Math.min(Math.max(overviewViewport.zoom + 0.34, 0.95), 1.3);
     const endZoom = overviewViewport.zoom;
 
-    const centerNode = async (nodeId, zoom, duration, holdMs = 0) => {
-      const liveNode = getNode(String(nodeId));
-      if (!liveNode) return;
+    const centerNodeInViewport = (liveNode, zoom, duration) => {
+      const { width: viewportWidth, height: viewportHeight } = getFlowViewportSize();
       const nodeWidth = liveNode.width || liveNode.measured?.width || 180;
       const nodeHeight = liveNode.height || liveNode.measured?.height || 72;
       const targetX = liveNode.position.x + nodeWidth / 2;
       const targetY = liveNode.position.y + nodeHeight / 2;
-      setCenter(targetX, targetY, { zoom, duration });
+      const horizontalBiasRatio = viewportWidth < 768 ? 0.025 : 0.045;
+
+      setViewport({
+        x: viewportWidth * (0.5 + horizontalBiasRatio) - targetX * zoom,
+        y: viewportHeight / 2 - targetY * zoom,
+        zoom
+      }, { duration });
+    };
+
+    const centerNode = async (nodeId, zoom, duration, holdMs = 0) => {
+      const liveNode = getNode(String(nodeId));
+      if (!liveNode) return;
+      centerNodeInViewport(liveNode, zoom, duration);
       await wait(duration + 110 + holdMs);
     };
 
     if (!transitionsEnabled) {
-      setCenter(
-        selectedNode.position.x + ((selectedNode.width || selectedNode.measured?.width || 180) / 2),
-        selectedNode.position.y + ((selectedNode.height || selectedNode.measured?.height || 72) / 2),
-        { zoom: startZoom, duration: 0 }
-      );
+      centerNodeInViewport(selectedNode, startZoom, 0);
       setViewport(overviewViewport, { duration: 0 });
       return;
     }
@@ -516,7 +532,7 @@ const FamilyGraph = () => {
 
     if (lineageTourTokenRef.current !== tourToken) return;
     await centerNode(selectedId, overviewViewport.zoom, 920, 260);
-  }, [appSettings.animationsEnabled, appSettings.cameraEnabled, fitView, getNode, getNodes, getViewportForVisibleNodes, setCenter, setViewport, wait]);
+  }, [appSettings.animationsEnabled, appSettings.cameraEnabled, fitView, getFlowViewportSize, getNode, getNodes, getViewportForVisibleNodes, setViewport, wait]);
 
   const runLineageBloomIntro = useCallback((rootPerson) => {
     const rootId = String(rootPerson.id);
@@ -1435,6 +1451,21 @@ const FamilyGraph = () => {
         if (!toggledNodeInfo.isPersistent) {
           setToggledNodeInfo(null);
         }
+      }
+
+      if (expandAllViewportCenterLockRef.current) {
+        const flowElem = document.querySelector('.react-flow');
+        const viewportWidth = flowElem ? flowElem.clientWidth : window.innerWidth;
+        const viewportHeight = flowElem ? flowElem.clientHeight : window.innerHeight;
+        const { flowCenterX, flowCenterY, zoom } = expandAllViewportCenterLockRef.current;
+
+        setViewport({
+          x: viewportWidth / 2 - flowCenterX * zoom,
+          y: viewportHeight / 2 - flowCenterY * zoom,
+          zoom
+        }, { duration: (!appSettings.animationsEnabled || !appSettings.expandEnabled) ? 0 : 400 });
+
+        expandAllViewportCenterLockRef.current = null;
       }
 
       // Update tracking ref
@@ -2865,6 +2896,16 @@ const FamilyGraph = () => {
       // CLICK 2: Deep Expand (All nodes in database) without changing viewport
       expandClickCountRef.current = 0;
       setExpandClickCount(0);
+
+      const flowElem = document.querySelector('.react-flow');
+      const viewportWidth = flowElem ? flowElem.clientWidth : window.innerWidth;
+      const viewportHeight = flowElem ? flowElem.clientHeight : window.innerHeight;
+      const currentViewport = getViewport();
+      expandAllViewportCenterLockRef.current = {
+        flowCenterX: (viewportWidth / 2 - currentViewport.x) / currentViewport.zoom,
+        flowCenterY: (viewportHeight / 2 - currentViewport.y) / currentViewport.zoom,
+        zoom: currentViewport.zoom
+      };
 
       setCollapsedStateById(() => {
         const next = {};
