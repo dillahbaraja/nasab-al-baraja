@@ -9,7 +9,7 @@ import {
   useOnViewportChange
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Search, Palette, Database, Bell, ListTree, ArrowRight, ArrowLeft, Maximize } from 'lucide-react';
+import { Search, Palette, Database, Bell, ListTree, Maximize } from 'lucide-react';
 import { initialFamilyData, generateEdges } from './data';
 import { getLayoutedElements, createNodesFromData } from './layout';
 import NodeEditModal from './NodeEditModal';
@@ -179,6 +179,10 @@ const FamilyGraph = () => {
         clearTimeout(searchDebounceRef.current);
         searchDebounceRef.current = null;
       }
+      if (resumeSyncTimeoutRef.current) {
+        clearTimeout(resumeSyncTimeoutRef.current);
+        resumeSyncTimeoutRef.current = null;
+      }
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
         animationRef.current = null;
@@ -191,7 +195,6 @@ const FamilyGraph = () => {
   const prevVisibleSetRef = useRef(new Set());
   const expandAllViewportCenterLockRef = useRef(null);
   const hasInitialFocusedRef = useRef(false); // tracks first-load root focus
-  const [navDirection, setNavDirection] = useState('right'); // 'right' = next click goes to rightmost
 
   const t = useCallback((key) => translations[key]?.[lang] || translations[key]?.['en'] || key, [lang]);
 
@@ -253,6 +256,8 @@ const FamilyGraph = () => {
   const nodeFetchVersionRef = useRef(0);
   const noticesSyncInFlightRef = useRef(false);
   const pendingDeletedIdsRef = useRef(new Set());
+  const lastVisibleSyncAtRef = useRef(0);
+  const hiddenSinceRef = useRef(null);
   const [pendingFocusTarget, setPendingFocusTarget] = useState(null);
   const [toggledNodeInfo, setToggledNodeInfo] = useState(null); // { id, lastPos, lastViewport }
   const [collapsingParentId, setCollapsingParentId] = useState(null);
@@ -260,6 +265,7 @@ const FamilyGraph = () => {
   const [ancestorPath, setAncestorPath] = useState({ nodeIds: new Set(), edgeIds: new Set() });
   const selectedNodeIdRef = useRef(null);
   const searchDebounceRef = useRef(null);
+  const resumeSyncTimeoutRef = useRef(null);
   const adminWalkthroughEnabledRef = useRef(false);
   const wasAdminRef = useRef(false);
   const ignorePaneClickUntilRef = useRef(0);
@@ -1050,13 +1056,22 @@ const FamilyGraph = () => {
     }
   }, [sortNoticesNewestFirst]);
 
-  const syncVisibleAppData = useCallback(async () => {
+  const syncVisibleAppData = useCallback(async ({ includeNodes = false, force = false } = {}) => {
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
-    await Promise.all([
-      fetchAllNodes({ markLoaded: false }),
-      fetchLatestNotices()
-    ]);
-  }, [fetchAllNodes, fetchLatestNotices]);
+
+    const now = Date.now();
+    if (!force && now - lastVisibleSyncAtRef.current < 15000) {
+      return;
+    }
+    lastVisibleSyncAtRef.current = now;
+
+    const tasks = [fetchLatestNotices()];
+    if (includeNodes || familyData.length === 0) {
+      tasks.push(fetchAllNodes({ markLoaded: false }));
+    }
+
+    await Promise.all(tasks);
+  }, [familyData.length, fetchAllNodes, fetchLatestNotices]);
 
   const removeLocalNoticeById = useCallback((noticeId) => {
     setNotices((prev) => prev.filter((notice) => String(notice.id) !== String(noticeId)));
@@ -1137,23 +1152,45 @@ const FamilyGraph = () => {
   }, [fetchLatestNotices, removeLocalNoticeById, showToast, sortNoticesNewestFirst]);
 
   useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        void syncVisibleAppData();
+    const scheduleResumeSync = ({ includeNodes = false, force = false } = {}) => {
+      if (resumeSyncTimeoutRef.current) {
+        clearTimeout(resumeSyncTimeoutRef.current);
       }
+
+      resumeSyncTimeoutRef.current = window.setTimeout(() => {
+        void syncVisibleAppData({ includeNodes, force });
+        resumeSyncTimeoutRef.current = null;
+      }, 350);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        hiddenSinceRef.current = Date.now();
+        return;
+      }
+
+      const hiddenDuration = hiddenSinceRef.current ? Date.now() - hiddenSinceRef.current : 0;
+      hiddenSinceRef.current = null;
+      scheduleResumeSync({
+        includeNodes: hiddenDuration > 3 * 60 * 1000
+      });
     };
 
     const handleWindowFocus = () => {
-      void syncVisibleAppData();
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+        return;
+      }
+      scheduleResumeSync();
     };
 
     const handleOnline = () => {
-      void syncVisibleAppData();
+      hiddenSinceRef.current = null;
+      scheduleResumeSync({ includeNodes: true, force: true });
     };
 
     const intervalId = window.setInterval(() => {
-      void syncVisibleAppData();
-    }, 60000);
+      void syncVisibleAppData({ includeNodes: true });
+    }, 5 * 60 * 1000);
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('focus', handleWindowFocus);
@@ -1161,6 +1198,10 @@ const FamilyGraph = () => {
 
     return () => {
       clearInterval(intervalId);
+      if (resumeSyncTimeoutRef.current) {
+        clearTimeout(resumeSyncTimeoutRef.current);
+        resumeSyncTimeoutRef.current = null;
+      }
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', handleWindowFocus);
       window.removeEventListener('online', handleOnline);
@@ -1546,109 +1587,6 @@ const FamilyGraph = () => {
     setSelectedNodeId(nodeId);
     setAncestorPath(calculateAncestorPath(nodeId));
   }, [getViewport, setViewport, nodes, triggerGlow, calculateAncestorPath]);
-
-  // Arc navigation: zoom out → pan → zoom in (for edge navigation)
-  const handleNavEdge = useCallback((direction) => {
-    if (nodes.length === 0) return;
-
-    const target = direction === 'right'
-      ? nodes.reduce((prev, curr) => curr.position.x > prev.position.x ? curr : prev)
-      : nodes.reduce((prev, curr) => curr.position.x < prev.position.x ? curr : prev);
-
-    setNavDirection(direction === 'right' ? 'left' : 'right');
-    setSelectedNodeId(target.id);
-    setAncestorPath(calculateAncestorPath(target.id));
-
-    if (animationRef.current) cancelAnimationFrame(animationRef.current);
-
-    const { x: startX, y: startY, zoom: startZoom } = getViewport();
-    const finalZoom = 1.0;
-    const vpW = window.innerWidth;
-    const vpH = window.innerHeight;
-
-    const endX = (vpW / 2) - (target.position.x * finalZoom);
-    const endY = (vpH / 2) - (target.position.y * finalZoom);
-    const distance = Math.hypot(endX - startX, endY - startY);
-    const isFar = distance > 400;
-
-    const ease = (p) => p < 0.5 ? 4 * p ** 3 : 1 - (-2 * p + 2) ** 3 / 2;
-
-    if (!appSettings.animationsEnabled || !appSettings.cameraEnabled || !isFar) {
-      // Direct smooth pan + zoom, no arc
-      const dur = (!appSettings.animationsEnabled || !appSettings.cameraEnabled) ? 0 : 600;
-      const dx = endX - startX;
-      const dy = endY - startY;
-      const startTime = performance.now();
-      const animateDirect = (time) => {
-        const p = Math.min((time - startTime) / (dur || 1), 1);
-        const e = ease(p);
-        setViewport({ x: startX + dx * e, y: startY + dy * e, zoom: startZoom + (finalZoom - startZoom) * e });
-        if (p < 1) animationRef.current = requestAnimationFrame(animateDirect);
-        else { animationRef.current = null; triggerGlow(target.id); }
-      };
-      animationRef.current = requestAnimationFrame(animateDirect);
-      return;
-    }
-
-    // ── True 3-Phase Arc ─────────────────────────────────────────────────────
-    // midZoom: zoom out enough to feel like flying, but nodes still visible (cap 0.35)
-    const safeStart = startZoom > 0 ? startZoom : 1;
-    const arcMidZoom = Math.min(Math.max(safeStart * 0.45, 0.13), 0.35);
-    const arcDuration = Math.min(Math.max(distance * 0.25, 900), 1600);
-
-    // Phase 1 end: same flow center as now, but at arcMidZoom
-    const flowCX = (vpW / 2 - startX) / safeStart;
-    const flowCY = (vpH / 2 - startY) / safeStart;
-    const midStartX = vpW / 2 - flowCX * arcMidZoom;
-    const midStartY = vpH / 2 - flowCY * arcMidZoom;
-
-    // Phase 2 end: target centered at arcMidZoom
-    const midEndX = vpW / 2 - target.position.x * arcMidZoom;
-    const midEndY = vpH / 2 - target.position.y * arcMidZoom;
-
-    const startTime = performance.now();
-
-    const animateArc = (time) => {
-      const raw = Math.min((time - startTime) / arcDuration, 1);
-      let curX, curY, curZoom;
-
-      if (raw <= 0.3) {
-        // Phase 1 (0–30%): zoom out, current view center stays fixed
-        const p = ease(raw / 0.3);
-        curZoom = safeStart + (arcMidZoom - safeStart) * p;
-        curX = startX + (midStartX - startX) * p;
-        curY = startY + (midStartY - startY) * p;
-
-      } else if (raw <= 0.7) {
-        // Phase 2 (30–70%): pan at arcMidZoom across the landscape
-        const p = ease((raw - 0.3) / 0.4);
-        curZoom = arcMidZoom;
-        curX = midStartX + (midEndX - midStartX) * p;
-        curY = midStartY + (midEndY - midStartY) * p;
-
-      } else {
-        // Phase 3 (70–100%): zoom in, target node locked to screen center
-        const p = ease((raw - 0.7) / 0.3);
-        curZoom = arcMidZoom + (finalZoom - arcMidZoom) * p;
-        curX = vpW / 2 - target.position.x * curZoom;
-        curY = vpH / 2 - target.position.y * curZoom;
-      }
-
-      setViewport({ x: curX, y: curY, zoom: curZoom });
-
-      if (raw < 1) {
-        animationRef.current = requestAnimationFrame(animateArc);
-      } else {
-        animationRef.current = null;
-        triggerGlow(target.id);
-      }
-    };
-
-    animationRef.current = requestAnimationFrame(animateArc);
-  }, [nodes, getViewport, setViewport, calculateAncestorPath, triggerGlow, appSettings]);
-
-
-
 
   const onPaneDoubleClick = useCallback((e) => {
     // Only zoom if clicking directly on pane/background — not on a node
@@ -2098,6 +2036,17 @@ const FamilyGraph = () => {
     }
 
     if (familyData.length === 0) return;
+
+    const isLikelyMobile = Capacitor.getPlatform() === 'android'
+      || (typeof window !== 'undefined' && (
+        window.innerWidth <= 768
+        || window.matchMedia?.('(pointer: coarse)')?.matches
+      ));
+
+    if (isLikelyMobile) {
+      hasInitialFocusedRef.current = true;
+      return;
+    }
 
     // User request: Focus intro explicitly on "Muhammad bin Mas'ud ... al-Mulaqqab bi-Abi Raja'"
     const rootPerson = familyData.find(p => p.arabicName && p.arabicName.includes('الملقب بأبي رجاء'))
@@ -3484,14 +3433,6 @@ const FamilyGraph = () => {
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               >
                 <ListTree size={14} />
-              </button>
-              <button
-                className="react-flow__controls-button"
-                onClick={() => handleNavEdge(navDirection)}
-                title={navDirection === 'right' ? t('goToRightmost') : t('goToLeftmost')}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-              >
-                {navDirection === 'right' ? <ArrowRight size={14} /> : <ArrowLeft size={14} />}
               </button>
               <button
                 className="react-flow__controls-button"
