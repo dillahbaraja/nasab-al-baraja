@@ -1,5 +1,6 @@
 import React from 'react';
 import { ReactFlowProvider } from '@xyflow/react';
+import { Analytics } from '@vercel/analytics/react';
 import FamilyGraph from './FamilyGraph';
 import './index.css';
 
@@ -9,6 +10,7 @@ function App() {
       <ReactFlowProvider>
         <FamilyGraph />
       </ReactFlowProvider>
+      <Analytics />
     </div>
   );
 }
