@@ -93,7 +93,7 @@ export const translations = {
   cancelSuggestion: { id: "Batalkan usulan", en: "Cancel suggestion", ar: "إلغاء الاقتراح" },
   approveSuggestion: { id: "Setujui usulan", en: "Approve suggestion", ar: "قبول الاقتراح" },
   rejectSuggestion: { id: "Tolak usulan", en: "Reject suggestion", ar: "رفض الاقتراح" },
-  pendingAdminVerification: { id: "Menunggu verifikasi admin atau member", en: "Waiting for admin or member verification", ar: "بانتظار تحقق المشرف أو الأعضاء" },
+  pendingAdminVerification: { id: "Menunggu verifikasi admin", en: "Waiting for admin verification", ar: "بانتظار تحقق المشرف" },
   pendingAddChildDescription: { id: "Usulan anak ini sudah tampil ke publik, tetapi belum menjadi data final.", en: "This child suggestion is already public, but not final yet.", ar: "اقتراح هذا الابن ظاهر للعامة لكنه ليس نهائياً بعد." },
   pendingNameChangeDescription: { id: "Usulan perubahan nama ini sudah tampil ke publik, tetapi belum menjadi data final.", en: "This name change suggestion is already public, but not final yet.", ar: "اقتراح تعديل الاسم ظاهر للعامة لكنه ليس نهائياً بعد." },
   suggestionSaved: { id: "Usulan berhasil disimpan.", en: "Suggestion saved successfully.", ar: "تم حفظ الاقتراح بنجاح." },

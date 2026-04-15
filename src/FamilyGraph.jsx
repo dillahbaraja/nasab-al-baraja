@@ -267,6 +267,7 @@ const FamilyGraph = () => {
   const searchDebounceRef = useRef(null);
   const resumeSyncTimeoutRef = useRef(null);
   const adminWalkthroughEnabledRef = useRef(false);
+  const pendingAdminAutoOpenRef = useRef(false);
   const wasAdminRef = useRef(false);
   const ignorePaneClickUntilRef = useRef(0);
 
@@ -1769,7 +1770,7 @@ const FamilyGraph = () => {
           displayEnglishName: displayNames.englishName,
           isPending: pending,
           pendingType: isPendingAddChildNode(person) ? "add_child" : (getPendingNameChange(person) ? "name_change" : null),
-          pendingLabel: pending ? '' : "",
+          pendingLabel: pending ? t('pendingAdminVerification') : "",
           isGlowing: isCollapsed, // Add glow to collapsed nodes
           isCollapsed: isCollapsed,
           hasChildren: parentToChildren.has(pid)
@@ -2014,17 +2015,28 @@ const FamilyGraph = () => {
   useEffect(() => {
     if (isAdmin && !wasAdminRef.current) {
       adminWalkthroughEnabledRef.current = true;
-      if (pendingQueueIds.length > 0) {
-        openNextPendingForAdmin();
-      }
+      pendingAdminAutoOpenRef.current = pendingQueueIds.length > 0;
     }
 
     if (!isAdmin) {
       adminWalkthroughEnabledRef.current = false;
+      pendingAdminAutoOpenRef.current = false;
     }
 
     wasAdminRef.current = isAdmin;
-  }, [isAdmin, openNextPendingForAdmin, pendingQueueIds]);
+  }, [isAdmin, pendingQueueIds]);
+
+  useEffect(() => {
+    if (!isAdmin || !pendingAdminAutoOpenRef.current) return;
+    if (activeInfoModal || isModalOpen) return;
+
+    const hasNextPending = openNextPendingForAdmin();
+    pendingAdminAutoOpenRef.current = false;
+
+    if (!hasNextPending) {
+      adminWalkthroughEnabledRef.current = false;
+    }
+  }, [activeInfoModal, isAdmin, isModalOpen, openNextPendingForAdmin]);
 
   // CINEMATIC INTRO SEQUENCE
   useEffect(() => {
