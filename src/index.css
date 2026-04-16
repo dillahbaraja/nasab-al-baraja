@@ -1000,6 +1000,11 @@ body {
   margin-bottom: 0 !important; /* Reset margin to align with label */
 }
 
+.graph-workspace.is-capturing-screenshot .react-flow__controls {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
 /* Base position for controls and label */
 .react-flow__panel.bottom.right {
   bottom: 24px !important;
@@ -1039,6 +1044,11 @@ body {
 
 .react-flow__controls-button:hover {
   background: var(--panel-highlight-bg) !important;
+}
+
+.react-flow__controls-button:disabled {
+  opacity: 0.55 !important;
+  cursor: wait !important;
 }
 
 .react-flow__controls-button svg {
@@ -1311,6 +1321,36 @@ body {
 
 .login-button:hover {
   background: var(--accent-hover);
+}
+
+.lineage-modal-sheet button,
+.info-modal-content button {
+  transition: transform 0.14s ease, box-shadow 0.14s ease, filter 0.14s ease, background 0.18s ease, opacity 0.18s ease;
+  transform: translateY(0) scale(1);
+}
+
+.lineage-modal-sheet button:not(:disabled):active,
+.info-modal-content button:not(:disabled):active {
+  transform: translateY(1px) scale(0.985);
+  filter: brightness(0.97);
+}
+
+.lineage-modal-sheet .lineage-primary-action:not(:disabled):active,
+.lineage-modal-sheet .lineage-primary-button:not(:disabled):active,
+.lineage-modal-sheet .lineage-secondary-button:not(:disabled):active,
+.lineage-modal-sheet .lineage-danger-button:not(:disabled):active,
+.lineage-modal-sheet .lineage-neutral-button:not(:disabled):active,
+.lineage-modal-sheet .lineage-success-button:not(:disabled):active,
+.lineage-modal-sheet .lineage-view-button:not(:disabled):active,
+.info-modal-content .login-button:not(:disabled):active,
+.info-modal-content .notice-view-button:not(:disabled):active,
+.info-modal-content .notice-delete-button:not(:disabled):active {
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.12) !important;
+}
+
+.lineage-modal-sheet .lineage-modal-close:not(:disabled):active,
+.info-modal-content .info-modal-close:not(:disabled):active {
+  filter: brightness(0.94);
 }
 
 .react-flow__node {

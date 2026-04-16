@@ -262,7 +262,7 @@ as $$
 declare
   target_row public.baraja_member;
 begin
-  if not public.is_admin_baraja_member() then
+  if not public.is_admin_user() then
     raise exception 'Only admins can promote another member.';
   end if;
 
@@ -280,6 +280,14 @@ begin
   return target_row;
 end;
 $$;
+
+grant execute on function public.is_admin_user() to anon, authenticated;
+grant execute on function public.current_baraja_member_id() to authenticated;
+grant execute on function public.is_verified_baraja_member() to authenticated;
+grant execute on function public.is_admin_baraja_member() to authenticated;
+grant execute on function public.can_manage_baraja_members() to authenticated;
+grant execute on function public.approve_baraja_member_claim(bigint) to authenticated;
+grant execute on function public.promote_baraja_member_admin(bigint) to authenticated;
 
 insert into public.admin_users (email)
 values ('dillahbaraja@gmail.com')

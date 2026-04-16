@@ -9,7 +9,9 @@ import {
   useOnViewportChange
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Search, Palette, Database, Bell, ListTree, Maximize } from 'lucide-react';
+import { Search, Palette, Database, Bell, ListTree, Maximize, Camera } from 'lucide-react';
+import { toCanvas, toPng } from 'html-to-image';
+import { jsPDF } from 'jspdf';
 import { initialFamilyData, generateEdges } from './data';
 import { getLayoutedElements, createNodesFromData } from './layout';
 import NodeEditModal from './NodeEditModal';
@@ -58,6 +60,8 @@ const TimeoutWarning = () => {
     </div>
   );
 };
+
+const SCREENSHOT_BUTTON_ENABLED = false;
 
 const LoadingScreen = ({ t }) => {
   return (
@@ -252,6 +256,7 @@ const FamilyGraph = () => {
   const [lastNoticeOpen, setLastNoticeOpen] = useState(() => Number(localStorage.getItem('rf-last-notice-open')) || 0);
   const [toast, setToast] = useState(null);
   const toastTimeoutRef = useRef(null);
+  const [isCapturingScreenshot, setIsCapturingScreenshot] = useState(false);
   const nodesSyncInFlightRef = useRef(false);
   const nodeFetchVersionRef = useRef(0);
   const noticesSyncInFlightRef = useRef(false);
@@ -402,6 +407,340 @@ const FamilyGraph = () => {
       toastTimeoutRef.current = null;
     }, duration);
   }, []);
+
+  const handleCaptureVisibleView = useCallback(async () => {
+    if (isCapturingScreenshot || Capacitor.getPlatform() !== 'web') return;
+
+    const flowElement = document.querySelector('.graph-workspace .react-flow');
+    if (!flowElement) {
+      showToast({ text: t('screenshotFailed') });
+      return;
+    }
+
+    setIsCapturingScreenshot(true);
+
+    try {
+      await wait(80);
+
+      const bounds = flowElement.getBoundingClientRect();
+      const requestedScale = Math.min(Math.max(window.devicePixelRatio || 1, 3), 4);
+      const maxCanvasPixels = 18000000;
+      const estimatedPixels = bounds.width * bounds.height * requestedScale * requestedScale;
+      const safeScale = estimatedPixels > maxCanvasPixels
+        ? Math.max(2, Math.sqrt(maxCanvasPixels / Math.max(bounds.width * bounds.height, 1)))
+        : requestedScale;
+
+      const dataUrl = await toPng(flowElement, {
+        cacheBust: true,
+        pixelRatio: 1,
+        canvasWidth: Math.max(1, Math.round(bounds.width * safeScale)),
+        canvasHeight: Math.max(1, Math.round(bounds.height * safeScale)),
+        backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg-color').trim() || '#ffffff',
+        filter: (node) => {
+          if (!(node instanceof HTMLElement)) return true;
+          return !node.closest('.react-flow__controls');
+        }
+      });
+
+      const now = new Date();
+      const pad = (value) => String(value).padStart(2, '0');
+      const fileName = `nasab-visible-view-${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}-${pad(now.getMinutes())}.png`;
+
+      const downloadLink = document.createElement('a');
+      downloadLink.href = dataUrl;
+      downloadLink.download = fileName;
+      downloadLink.click();
+
+      showToast({ text: t('screenshotSuccess') });
+    } catch (error) {
+      console.error('Screenshot export failed:', error);
+      showToast({ text: t('screenshotFailed') });
+    } finally {
+      setIsCapturingScreenshot(false);
+    }
+  }, [isCapturingScreenshot, showToast, t, wait]);
+
+  const handleDownloadAncestorPdf = useCallback(async (personId) => {
+    if (Capacitor.getPlatform() !== 'web') {
+      showToast({ text: t('ancestorPdfFailed') });
+      return;
+    }
+
+    const normalizedId = String(personId);
+    const chain = [];
+    let current = personMap.get(normalizedId);
+    let guard = 0;
+
+    while (current && guard < 200) {
+      chain.push(current);
+      current = current.fatherId ? personMap.get(String(current.fatherId)) : null;
+      guard += 1;
+    }
+
+    if (chain.length === 0) {
+      showToast({ text: t('ancestorPdfFailed') });
+      return;
+    }
+
+    const targetPerson = chain[0];
+    const targetNames = getDisplayNames(targetPerson);
+    const headingArabic = targetNames.arabicName || targetNames.englishName || `#${targetPerson.id}`;
+    const headingLatin = targetNames.englishName || targetNames.arabicName || `#${targetPerson.id}`;
+    const titlePeople = chain.slice(0, 3).map((person) => {
+      const names = getDisplayNames(person);
+      return {
+        arabic: names.arabicName || names.englishName || `#${person.id}`,
+        latin: names.englishName || names.arabicName || `#${person.id}`
+      };
+    });
+    const titleLatinBase = titlePeople.map((item) => item.latin).join(' bin ');
+    const titleArabicBase = titlePeople.map((item) => item.arabic).join(' بن ');
+    const titleLatinFull = `${titleLatinBase} Baraja`;
+    const titleArabicFull = `${titleArabicBase} بارجاء`;
+    const combinedLineageName = `${titleLatinFull} (${titleArabicFull})`;
+    const documentTitle = lang === 'id'
+      ? `Silsilah nasab dari ${combinedLineageName}`
+      : lang === 'ar'
+        ? `سلسلة النسب من ${titleArabicFull} (${titleLatinFull})`
+        : `Lineage of ${combinedLineageName}`;
+    const exportShell = document.createElement('div');
+    const exportCard = document.createElement('div');
+    const measureCanvas = document.createElement('canvas');
+    const measureContext = measureCanvas.getContext('2d');
+    const escapeXml = (value) => String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+    const measureTextWidth = (text, font) => {
+      if (!measureContext) return String(text || '').length * 14;
+      measureContext.font = font;
+      return measureContext.measureText(String(text || '')).width;
+    };
+
+    const metrics = chain.map((person) => {
+      const names = getDisplayNames(person);
+      const arabicName = names.arabicName || names.englishName || `#${person.id}`;
+      const latinName = names.englishName || names.arabicName || `#${person.id}`;
+      const arabicWidth = measureTextWidth(arabicName, '700 30px Tahoma');
+      const latinWidth = measureTextWidth(latinName, 'italic 18px Segoe UI');
+      const width = Math.min(420, Math.max(150, Math.ceil(Math.max(arabicWidth, latinWidth) + 56)));
+      const contentWidth = Math.max(90, width - 34);
+      const arabicLines = Math.max(1, Math.ceil(arabicWidth / contentWidth));
+      const latinLines = Math.max(1, Math.ceil(latinWidth / contentWidth));
+      const height = Math.max(94, 22 + arabicLines * 34 + latinLines * 22 + 20);
+      return {
+        id: String(person.id),
+        arabicName,
+        latinName,
+        width,
+        height,
+        arabicLines,
+        latinLines
+      };
+    });
+
+    const horizontalGap = 56;
+    const verticalGap = 76;
+    const outerPadding = 48;
+    const maxDiagramWidth = 1320;
+    const contentWidth = maxDiagramWidth;
+    const rows = [];
+    let currentRow = [];
+    let currentRowWidth = 0;
+
+    metrics.forEach((item) => {
+      const projectedWidth = currentRow.length === 0
+        ? item.width
+        : currentRowWidth + horizontalGap + item.width;
+
+      if (currentRow.length > 0 && projectedWidth > contentWidth) {
+        rows.push(currentRow);
+        currentRow = [item];
+        currentRowWidth = item.width;
+      } else {
+        currentRow.push(item);
+        currentRowWidth = projectedWidth;
+      }
+    });
+
+    if (currentRow.length > 0) rows.push(currentRow);
+
+    const diagramWidth = outerPadding * 2 + contentWidth;
+    const titleHeight = 118;
+    const rowPositions = [];
+    const rowHeights = rows.map((row) => Math.max(...row.map((item) => item.height), 94));
+    let accumulatedHeight = outerPadding + titleHeight;
+
+    rows.forEach((row, rowIndex) => {
+      const isRightToLeft = rowIndex % 2 === 0;
+      const rowHeight = rowHeights[rowIndex];
+      const y = accumulatedHeight;
+      const rowWidth = row.reduce((sum, item, itemIndex) => sum + item.width + (itemIndex > 0 ? horizontalGap : 0), 0);
+      const positioned = [];
+
+      if (isRightToLeft) {
+        let xCursor = outerPadding + contentWidth;
+        row.forEach((item) => {
+          const x = xCursor - item.width;
+          positioned.push({
+            ...item,
+            x,
+            y: y + (rowHeight - item.height) / 2,
+            centerX: x + item.width / 2,
+            centerY: y + (rowHeight - item.height) / 2 + item.height / 2
+          });
+          xCursor = x - horizontalGap;
+        });
+      } else {
+        let xCursor = outerPadding;
+        row.forEach((item) => {
+          const x = xCursor;
+          positioned.push({
+            ...item,
+            x,
+            y: y + (rowHeight - item.height) / 2,
+            centerX: x + item.width / 2,
+            centerY: y + (rowHeight - item.height) / 2 + item.height / 2
+          });
+          xCursor += item.width + horizontalGap;
+        });
+      }
+
+      rowPositions.push({
+        isRightToLeft,
+        items: positioned
+      });
+      accumulatedHeight += rowHeight;
+      if (rowIndex < rows.length - 1) accumulatedHeight += verticalGap;
+    });
+    const diagramHeight = accumulatedHeight + outerPadding;
+
+    const svgParts = [
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${diagramWidth}" height="${diagramHeight}" viewBox="0 0 ${diagramWidth} ${diagramHeight}" role="img" aria-label="${escapeXml(headingLatin)}">`,
+      '<defs>',
+      '<marker id="ancestor-arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">',
+      '<path d="M 0 0 L 10 5 L 0 10 z" fill="#111827" />',
+      '</marker>',
+      '</defs>',
+      `<rect x="0" y="0" width="${diagramWidth}" height="${diagramHeight}" fill="#ffffff" />`,
+      `<text x="${diagramWidth / 2}" y="${diagramHeight / 2}" text-anchor="middle" font-family="Tahoma, Arial, sans-serif" font-size="138" font-weight="800" fill="rgba(15,23,42,0.08)" transform="rotate(-10 ${diagramWidth / 2} ${diagramHeight / 2})">شجرة آل بارجاء</text>`,
+      `<text x="${diagramWidth / 2}" y="${outerPadding + 2}" text-anchor="middle" font-family="${lang === 'ar' ? 'Tahoma, Arial, sans-serif' : 'Segoe UI, Arial, sans-serif'}" font-size="28" font-weight="700" fill="#111827">${escapeXml(documentTitle)}</text>`,
+      `<text x="${diagramWidth / 2}" y="${outerPadding + 38}" text-anchor="middle" font-family="Tahoma, Arial, sans-serif" font-size="30" font-weight="700" fill="#111827">${escapeXml(headingArabic)}</text>`,
+      `<text x="${diagramWidth / 2}" y="${outerPadding + 72}" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-style="italic" fill="#475569">${escapeXml(headingLatin)}</text>`
+    ];
+
+    rowPositions.forEach((row, rowIndex) => {
+      row.items.forEach((item, itemIndex) => {
+        svgParts.push(`<rect x="${item.x}" y="${item.y}" rx="18" ry="18" width="${item.width}" height="${item.height}" fill="#ffffff" stroke="#111827" stroke-width="3" />`);
+        svgParts.push(`<foreignObject x="${item.x + 10}" y="${item.y + 10}" width="${item.width - 20}" height="${item.height - 20}">`);
+        svgParts.push('<div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden;">');
+        svgParts.push(`<div style="font-family:Tahoma, Arial, sans-serif;font-size:30px;font-weight:700;line-height:1.15;color:#111827;word-break:break-word;overflow-wrap:anywhere;max-width:100%;margin-bottom:6px;">${escapeXml(item.arabicName)}</div>`);
+        svgParts.push(`<div style="font-family:'Segoe UI', Arial, sans-serif;font-size:17px;font-style:italic;line-height:1.18;color:#475569;word-break:break-word;overflow-wrap:anywhere;max-width:100%;">${escapeXml(item.latinName)}</div>`);
+        svgParts.push('</div>');
+        svgParts.push('</foreignObject>');
+
+        if (itemIndex < row.items.length - 1) {
+          const next = row.items[itemIndex + 1];
+          const startX = row.isRightToLeft ? item.x - 8 : item.x + item.width + 8;
+          const endX = row.isRightToLeft ? next.x + next.width + 8 : next.x - 8;
+          svgParts.push(`<line x1="${startX}" y1="${item.centerY}" x2="${endX}" y2="${next.centerY}" stroke="#111827" stroke-width="4" stroke-linecap="round" marker-end="url(#ancestor-arrow)" />`);
+        }
+      });
+
+      if (rowIndex < rowPositions.length - 1) {
+        const currentLast = row.items[row.items.length - 1];
+        const nextFirst = rowPositions[rowIndex + 1].items[0];
+        const startY = currentLast.y + currentLast.height + 8;
+        const endY = nextFirst.y - 8;
+
+        svgParts.push(`<line x1="${currentLast.centerX}" y1="${startY}" x2="${nextFirst.centerX}" y2="${endY}" stroke="#111827" stroke-width="4" stroke-linecap="round" marker-end="url(#ancestor-arrow)" />`);
+      }
+    });
+
+    svgParts.push('</svg>');
+
+    exportShell.style.cssText = 'position:fixed;left:-100000px;top:0;pointer-events:none;opacity:1;z-index:-1;padding:0;margin:0;';
+    exportCard.style.cssText = `width:${diagramWidth}px;background:#ffffff;padding:0;box-sizing:border-box;font-family:Segoe UI, Arial, sans-serif;color:#0f172a;`;
+    exportCard.innerHTML = svgParts.join('');
+
+    exportShell.appendChild(exportCard);
+    document.body.appendChild(exportShell);
+
+    try {
+      await wait(90);
+
+      const bounds = exportCard.getBoundingClientRect();
+      const requestedScale = 2.8;
+      const maxCanvasPixels = 24000000;
+      const estimatedPixels = bounds.width * bounds.height * requestedScale * requestedScale;
+      const safeScale = estimatedPixels > maxCanvasPixels
+        ? Math.max(1.6, Math.sqrt(maxCanvasPixels / Math.max(bounds.width * bounds.height, 1)))
+        : requestedScale;
+
+      const canvas = await toCanvas(exportCard, {
+        cacheBust: true,
+        pixelRatio: 1,
+        canvasWidth: Math.max(1, Math.round(bounds.width * safeScale)),
+        canvasHeight: Math.max(1, Math.round(bounds.height * safeScale)),
+        backgroundColor: '#f8fafc'
+      });
+
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4', compress: true });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 24;
+      const printableWidth = pageWidth - margin * 2;
+      const printableHeight = pageHeight - margin * 2;
+      const renderedHeight = canvas.height * (printableWidth / canvas.width);
+
+      if (renderedHeight <= printableHeight) {
+        const imageData = canvas.toDataURL('image/png', 1.0);
+        pdf.addImage(imageData, 'PNG', margin, margin, printableWidth, renderedHeight, undefined, 'FAST');
+      } else {
+        const sliceHeightPx = Math.max(1, Math.floor(printableHeight * (canvas.width / printableWidth)));
+        let offsetY = 0;
+        let pageIndex = 0;
+
+        while (offsetY < canvas.height) {
+          const currentSliceHeight = Math.min(sliceHeightPx, canvas.height - offsetY);
+          const sliceCanvas = document.createElement('canvas');
+          const sliceContext = sliceCanvas.getContext('2d');
+
+          sliceCanvas.width = canvas.width;
+          sliceCanvas.height = currentSliceHeight;
+
+          if (!sliceContext) throw new Error('Unable to prepare PDF page canvas');
+
+          sliceContext.fillStyle = '#f8fafc';
+          sliceContext.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+          sliceContext.drawImage(canvas, 0, offsetY, canvas.width, currentSliceHeight, 0, 0, sliceCanvas.width, sliceCanvas.height);
+
+          if (pageIndex > 0) pdf.addPage();
+
+          const imageData = sliceCanvas.toDataURL('image/png', 1.0);
+          const imageHeight = currentSliceHeight * (printableWidth / canvas.width);
+          pdf.addImage(imageData, 'PNG', margin, margin, printableWidth, imageHeight, undefined, 'FAST');
+
+          offsetY += currentSliceHeight;
+          pageIndex += 1;
+        }
+      }
+
+      const fileBaseName = (lang === 'ar' ? headingArabic : headingLatin || `person-${normalizedId}`)
+        .replace(/[\\/:*?"<>|]/g, '')
+        .trim() || `person-${normalizedId}`;
+
+      pdf.save(`nasab-${fileBaseName}.pdf`);
+      showToast({ text: t('ancestorPdfSuccess') });
+    } catch (error) {
+      console.error('Ancestor PDF export failed:', error);
+      showToast({ text: t('ancestorPdfFailed') });
+    } finally {
+      exportShell.remove();
+    }
+  }, [lang, personMap, showToast, t, wait]);
 
   const stopCameraMotion = useCallback(() => {
     lineageTourTokenRef.current += 1;
@@ -3365,6 +3704,7 @@ const FamilyGraph = () => {
         onRemoveChild={handleRemoveChild}
         onViewPerson={handleViewPerson}
         onShowLineageOnly={handleShowLineageOnly}
+        onDownloadAncestorPdf={handleDownloadAncestorPdf}
         onShowRelationshipWithMe={handleShowRelationshipWithMe}
         onSubmitChildSuggestion={handleSubmitChildSuggestion}
         onSubmitNameSuggestion={handleSubmitNameSuggestion}
@@ -3394,7 +3734,7 @@ const FamilyGraph = () => {
       {/* Only show standalone search for Android (since it's in the header for Web) */}
       {Capacitor.getPlatform() === 'android' && renderSearchForm()}
 
-      <div className={`graph-workspace ${Capacitor.getPlatform()}`} style={{ width: '100%', height: '100%', pointerEvents: isIntroRunning ? 'none' : 'auto' }} onDoubleClick={onPaneDoubleClick}>
+      <div className={`graph-workspace ${Capacitor.getPlatform()} ${isCapturingScreenshot ? 'is-capturing-screenshot' : ''}`} style={{ width: '100%', height: '100%', pointerEvents: isIntroRunning ? 'none' : 'auto' }} onDoubleClick={onPaneDoubleClick}>
         {isLoading ? (
           <LoadingScreen t={t} />
         ) : (
@@ -3446,6 +3786,17 @@ const FamilyGraph = () => {
               >
                 <ListTree size={14} />
               </button>
+              {SCREENSHOT_BUTTON_ENABLED && Capacitor.getPlatform() === 'web' && (
+                <button
+                  className="react-flow__controls-button"
+                  onClick={handleCaptureVisibleView}
+                  title={t('screenshotVisibleView')}
+                  disabled={isCapturingScreenshot}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <Camera size={14} />
+                </button>
+              )}
               <button
                 className="react-flow__controls-button"
                 onClick={toggleTheme}

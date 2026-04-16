@@ -12,6 +12,7 @@ const NodeEditModal = ({
   onRemoveChild,
   onViewPerson,
   onShowLineageOnly,
+  onDownloadAncestorPdf,
   onShowRelationshipWithMe,
   onSubmitChildSuggestion,
   onSubmitNameSuggestion,
@@ -145,6 +146,7 @@ const NodeEditModal = ({
   };
 
   const personHasDescendants = children.length > 0;
+  const canDownloadAncestorPdf = true;
 
   const handleAdd = async (e) => {
     e.preventDefault();
@@ -586,12 +588,32 @@ const NodeEditModal = ({
               width: '100%',
               justifyContent: 'center'
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.88'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(0)'; }}
           >
             <span style={{ fontSize: '16px' }}>🌿</span>
             {t('showLineageOnly')}
           </button>
+          {canDownloadAncestorPdf && (
+            <button
+              onClick={() => onDownloadAncestorPdf && onDownloadAncestorPdf(person.id)}
+              className="lineage-secondary-button"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '10px 20px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '13px',
+                fontWeight: 'bold',
+                letterSpacing: '0.01em',
+                width: '100%',
+                justifyContent: 'center'
+              }}
+            >
+              <span style={{ fontSize: '16px' }}>📄</span>
+              {t('downloadAncestorPdf')}
+            </button>
+          )}
           {canShowRelationshipWithMe && (
             <button
               onClick={() => onShowRelationshipWithMe && onShowRelationshipWithMe(person.id)}
