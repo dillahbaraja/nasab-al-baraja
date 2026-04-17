@@ -932,7 +932,7 @@ const FamilyGraph = () => {
     const flowElem = document.querySelector('.react-flow');
     const initialVpW = flowElem ? flowElem.clientWidth : window.innerWidth;
     const initialVpH = flowElem ? flowElem.clientHeight : window.innerHeight;
-    const introStartZoom = 2.2;
+    const introStartZoom = 1.3;
 
     setViewport({
       x: (initialVpW / 2) - (initCX * introStartZoom),
@@ -946,6 +946,7 @@ const FamilyGraph = () => {
         : 1 - ((-2 * p + 2) ** 3) / 2
     );
     const easeOutQuad = (p) => 1 - ((1 - p) * (1 - p));
+    const easeOutQuint = (p) => 1 - Math.pow(1 - p, 5);
 
     if (animationRef.current) {
       cancelAnimationFrame(animationRef.current);
@@ -953,7 +954,7 @@ const FamilyGraph = () => {
     }
     clearIntroTimers();
 
-    const duration = 17600;
+    const duration = 14000;
     const startT = window.performance.now();
 
     const animateCamera = (timestamp) => {
@@ -966,15 +967,14 @@ const FamilyGraph = () => {
         return;
       }
 
-      let currentZoom;
-      if (progress < 0.72) {
-        currentZoom = introStartZoom - easeInOutCubic(progress / 0.72) * 1.5;
-      } else {
-        currentZoom = 0.7 + easeInOutCubic((progress - 0.72) / 0.28) * 0.38;
-      }
+      // Smoothly zoom out as the tree expands to reveal more generations
+      // Using easeOutQuint for a much more aggressive and fast initial zoom out
+      const zoomProgress = easeOutQuint(rawProgress);
+      const targetEndZoom = 0.25;
+      const currentZoom = introStartZoom - zoomProgress * (introStartZoom - targetEndZoom);
 
-      const driftX = Math.sin(progress * Math.PI * 0.9) * 80;
-      const driftY = Math.sin(progress * Math.PI) * 56;
+      const driftX = Math.sin(progress * Math.PI * 0.9) * 120;
+      const driftY = Math.sin(progress * Math.PI) * 80;
       const activeH = liveRoot.measured?.height || liveRoot.height || 100;
       const nodeCenterX = liveRoot.position.x;
       const nodeCenterY = liveRoot.position.y + (activeH / 2);
@@ -993,21 +993,18 @@ const FamilyGraph = () => {
       } else {
         animationRef.current = null;
         clearIntroTimers();
-        fitView({ duration: 900, padding: 0.14 });
-        scheduleIntroAction(940, () => {
-          setIsIntroRunning(false);
-        });
+        // Pertahankan posisi terakhir (jangan di fitView/zoom out lagi)
+        setIsIntroRunning(false);
       }
     };
 
     animationRef.current = requestAnimationFrame(animateCamera);
 
-    scheduleIntroAction(2600, () => setCollapsedIds(tier1, false));
-    scheduleIntroAction(5200, () => setCollapsedIds(tier2, false));
-    scheduleIntroAction(7800, () => setCollapsedIds(tier3, false));
-    scheduleIntroAction(10400, () => setCollapsedIds(tier4, false));
-    scheduleIntroAction(13000, () => setCollapsedIds(tier5, false));
-    scheduleIntroAction(15000, () => setCollapsedIds(familyData.map((person) => String(person.id)), false));
+    scheduleIntroAction(2000, () => setCollapsedIds(tier1, false));
+    scheduleIntroAction(4500, () => setCollapsedIds(tier2, false));
+    scheduleIntroAction(7000, () => setCollapsedIds(tier3, false));
+    scheduleIntroAction(9500, () => setCollapsedIds(tier4, false));
+    scheduleIntroAction(12000, () => setCollapsedIds(tier5, false));
 
     return true;
   }, [buildParentToChildrenMap, clearIntroTimers, familyData, fitView, getNode, nodes, scheduleIntroAction, setCollapsedIds, setViewport]);
@@ -2424,16 +2421,25 @@ const FamilyGraph = () => {
         || window.matchMedia?.('(pointer: coarse)')?.matches
       ));
 
-    if (isLikelyMobile) {
-      hasInitialFocusedRef.current = true;
-      return;
-    }
-
     // User request: Focus intro explicitly on "Muhammad bin Mas'ud ... al-Mulaqqab bi-Abi Raja'"
     const rootPerson = familyData.find(p => p.arabicName && p.arabicName.includes('الملقب بأبي رجاء'))
       || familyData.find(p => !p.fatherId);
 
     if (!rootPerson) return;
+
+    if (isLikelyMobile) {
+      hasInitialFocusedRef.current = true;
+      // Langsung buka semua node tanpa tunda
+      const allIds = familyData.map(p => String(p.id));
+      setCollapsedIds(allIds, false);
+      sessionStorage.setItem('rf-cinematic-forced', '1');
+
+      // Fokus langsung ke rootPerson dengan cepat
+      requestAnimationFrame(() => {
+        smoothFocusNode(String(rootPerson.id), { targetZoom: 0.6, customDuration: 0 });
+      });
+      return;
+    }
 
     // Step 0: ensure the tree is forcefully collapsed before cinematic starts.
     const hasBeenForced = sessionStorage.getItem('rf-cinematic-forced');
@@ -2458,7 +2464,7 @@ const FamilyGraph = () => {
     }
 
     runIntroStrategy(INTRO_STRATEGY, rootPerson);
-  }, [buildParentToChildrenMap, familyData, initialViewport, isLoading, nodes, runIntroStrategy, setCollapsedIds]);
+  }, [buildParentToChildrenMap, familyData, initialViewport, isLoading, nodes, runIntroStrategy, setCollapsedIds, smoothFocusNode]);
 
 
 
