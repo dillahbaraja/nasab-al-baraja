@@ -288,6 +288,8 @@ const FamilyGraph = () => {
 
     return searchablePeople.map(person => {
       const displayNames = getDisplayNames(person);
+      const englishClean = cleanText((displayNames.englishName || '').toLowerCase());
+      const arabicClean = cleanText(normalizeArabic(displayNames.arabicName || ''));
       let current = person;
       let lineageLatinArr = [];
       let lineageArabArr = [];
@@ -303,6 +305,8 @@ const FamilyGraph = () => {
         id: person.id,
         englishName: displayNames.englishName,
         arabicName: displayNames.arabicName,
+        englishClean,
+        arabicClean,
         lineageLatin: cleanText(lineageLatinArr.join('')),
         lineageArab: cleanText(lineageArabArr.join('')),
         info: (person.info || '').toLowerCase()
@@ -2497,7 +2501,7 @@ const FamilyGraph = () => {
       return;
     }
 
-    if (val.length >= 3) {
+    if (val.trim().length >= 1) {
       searchDebounceRef.current = setTimeout(() => {
         const queryLatin = cleanText(val.toLowerCase());
         const queryArab = cleanText(normalizeArabic(val));
@@ -2508,8 +2512,8 @@ const FamilyGraph = () => {
             entry.info.includes(queryLower) ||
             (queryLatin.length > 0 && entry.lineageLatin.startsWith(queryLatin)) ||
             (queryArab.length > 0 && entry.lineageArab.startsWith(queryArab)) ||
-            cleanText((entry.englishName || '').toLowerCase()).includes(queryLatin) ||
-            cleanText(normalizeArabic(entry.arabicName || '')).includes(queryArab)
+            (queryLatin.length > 0 && entry.englishClean.includes(queryLatin)) ||
+            (queryArab.length > 0 && entry.arabicClean.includes(queryArab))
           )
           .slice(0, 10)
           .map((entry) => personMap.get(String(entry.id)))
@@ -2560,6 +2564,8 @@ const FamilyGraph = () => {
     const matches = searchIndex
       .filter(entry =>
         entry.info.includes(queryLower) ||
+        (queryLatinClean.length > 0 && entry.englishClean.includes(queryLatinClean)) ||
+        (queryArabClean.length > 0 && entry.arabicClean.includes(queryArabClean)) ||
         (queryLatinClean.length > 0 && entry.lineageLatin.startsWith(queryLatinClean)) ||
         (queryArabClean.length > 0 && entry.lineageArab.startsWith(queryArabClean))
       )
@@ -3639,11 +3645,11 @@ const FamilyGraph = () => {
             className="search-input"
             value={searchQuery}
             onChange={handleQueryChange}
-            onFocus={() => { if (searchQuery.length >= 3) setShowSuggestions(true) }}
+            onFocus={() => { if (searchQuery.trim().length >= 1 && searchSuggestions.length > 0) setShowSuggestions(true) }}
             onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
           />
           {showSuggestions && searchSuggestions.length > 0 && (
-            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--panel-bg)', borderRadius: '8px', border: '1px solid var(--panel-border)', marginTop: '12px', padding: '4px', maxHeight: '250px', overflowY: 'auto' }}>
+            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 120, background: 'var(--panel-bg)', borderRadius: '8px', border: '1px solid var(--panel-border)', marginTop: '12px', padding: '4px', maxHeight: '250px', overflowY: 'auto', boxShadow: '0 12px 28px rgba(15, 23, 42, 0.18)' }}>
               {searchSuggestions.map(s => (
                 <div key={s.id} onClick={() => selectSuggestion(s)} className="suggestion-item" style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--panel-border)' }}>
                   <div style={{ fontWeight: 'bold' }}>{lang === 'ar' ? getDisplayNames(s).arabicName : (getDisplayNames(s).englishName || getDisplayNames(s).arabicName)}</div>
