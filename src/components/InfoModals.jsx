@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { X, Shield, Info, Bell, Trash2, Settings, User, Users, UserCog, ShieldCheck } from 'lucide-react';
+import { X, Shield, Info, Bell, Trash2, Settings, User, Users, UserCog, ShieldCheck, MessageCircle } from 'lucide-react';
+import { buildLocationState, ensureCurrentOption, getCityOptions, getCountryLabelFromCode, getCountryOptions, getRegionOptions } from '../locationData';
 
 const InfoModal = ({
   isOpen,
@@ -16,6 +17,7 @@ const InfoModal = ({
   familyData = [],
   notices = [],
   onViewNotice,
+  onViewMember,
   onDeleteNotice,
   appSettings,
   setAppSettings,
@@ -29,7 +31,7 @@ const InfoModal = ({
   loadingMembers = false
 }) => {
   const [formData, setFormData] = useState({ email: '', password: '' });
-  const [profileData, setProfileData] = useState({ phone: '', city: '', country: '' });
+  const [profileData, setProfileData] = useState({ phone: '', city: '', region: '', country: '', countryCode: '', regionCode: '' });
   const [pwData, setPwData] = useState({ newPassword: '', confirmPassword: '' });
   const [errorMsg, setErrorMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -47,12 +49,18 @@ const InfoModal = ({
   }, [isOpen, type]);
 
   useEffect(() => {
+    const nextLocation = buildLocationState({
+      country: currentMember?.country || '',
+      countryCode: currentMember?.country_code || currentMember?.countryCode || '',
+      region: currentMember?.region || '',
+      regionCode: currentMember?.region_code || currentMember?.regionCode || '',
+      city: currentMember?.city || ''
+    }, lang);
     setProfileData({
       phone: currentMember?.phone || '',
-      city: currentMember?.city || '',
-      country: currentMember?.country || ''
+      ...nextLocation
     });
-  }, [currentMember]);
+  }, [currentMember, lang]);
 
   const accountStatusLabel = useMemo(() => {
     if (currentRole === 'admin') return t('adminRole');
@@ -67,6 +75,19 @@ const InfoModal = ({
     });
     return map;
   }, [familyData]);
+
+  const countryOptions = useMemo(
+    () => ensureCurrentOption(getCountryOptions(lang), profileData.countryCode, profileData.country),
+    [lang, profileData.country, profileData.countryCode]
+  );
+  const regionOptions = useMemo(
+    () => ensureCurrentOption(getRegionOptions(profileData.countryCode), profileData.regionCode, profileData.region),
+    [profileData.countryCode, profileData.region, profileData.regionCode]
+  );
+  const cityOptions = useMemo(
+    () => ensureCurrentOption(getCityOptions(profileData.countryCode, profileData.regionCode), profileData.city, profileData.city),
+    [profileData.city, profileData.countryCode, profileData.regionCode]
+  );
 
   if (!isOpen) return null;
 
@@ -83,6 +104,39 @@ const InfoModal = ({
   const handleProfileChange = (e) => {
     const { name, value } = e.target;
     setProfileData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleProfileCountryChange = (e) => {
+    const nextCountryCode = e.target.value;
+    const selectedCountry = countryOptions.find((option) => option.code === nextCountryCode);
+    setProfileData((prev) => ({
+      ...prev,
+      countryCode: nextCountryCode,
+      country: selectedCountry?.label || getCountryLabelFromCode(nextCountryCode, lang, ''),
+      regionCode: '',
+      region: '',
+      city: ''
+    }));
+  };
+
+  const handleProfileRegionChange = (e) => {
+    const nextRegionCode = e.target.value;
+    const selectedRegion = regionOptions.find((option) => option.code === nextRegionCode);
+    setProfileData((prev) => ({
+      ...prev,
+      regionCode: nextRegionCode,
+      region: selectedRegion?.label || '',
+      city: ''
+    }));
+  };
+
+  const handleProfileCityChange = (e) => {
+    const nextCity = e.target.value;
+    const selectedCity = cityOptions.find((option) => option.code === nextCity || option.label === nextCity);
+    setProfileData((prev) => ({
+      ...prev,
+      city: selectedCity?.label || nextCity
+    }));
   };
 
   const isWideListModal = type === 'memberManager' || type === 'listMember' || type === 'listAdmin';
@@ -117,6 +171,17 @@ const InfoModal = ({
     };
   };
 
+  const getWhatsAppLink = (phone) => {
+    const normalizedPhone = String(phone || '').replace(/[^\d+]/g, '');
+    if (!normalizedPhone) return null;
+    const waPhone = normalizedPhone.startsWith('+')
+      ? normalizedPhone.slice(1)
+      : normalizedPhone.startsWith('0')
+        ? `62${normalizedPhone.slice(1)}`
+        : normalizedPhone;
+    return `https://wa.me/${waPhone}`;
+  };
+
   const renderMemberCard = (member, actionLabel = null, actionHandler = null, iconColor = 'var(--accent)', options = {}) => {
     const { compact = false, approvalCompact = false, secondaryActionLabel = null, secondaryActionHandler = null } = options;
     const personName = lang === 'ar'
@@ -139,7 +204,13 @@ const InfoModal = ({
       grandfatherLatinName
     ].filter(Boolean).join(' bin ');
 
-    const approvalSubtitle = [member.email, member.city || member.country || '-'].filter(Boolean).join(' • ');
+    const displayCountry = getCountryLabelFromCode(
+      member.country_code || member.countryCode || '',
+      lang,
+      member.country || '-'
+    );
+    const approvalSubtitle = [member.email, member.city || member.region || displayCountry || '-'].filter(Boolean).join(' • ');
+    const whatsappLink = getWhatsAppLink(member.phone);
 
     const isCompactCard = compact || approvalCompact;
 
@@ -232,9 +303,25 @@ const InfoModal = ({
           <>
             <div style={{ display: 'grid', gap: '6px', marginTop: '12px', fontSize: '13px' }}>
               <div><strong>{t('email')}:</strong> {member.email}</div>
-              <div><strong>{t('phone')}:</strong> {member.phone || '-'}</div>
+              <div>
+                <strong>{t('phone')}:</strong>{' '}
+                {whatsappLink ? (
+                  <a
+                    href={whatsappLink}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#16a34a', fontWeight: 600, textDecoration: 'none' }}
+                  >
+                    <span>{member.phone}</span>
+                    <MessageCircle size={14} />
+                  </a>
+                ) : (
+                  member.phone || '-'
+                )}
+              </div>
               <div><strong>{t('city')}:</strong> {member.city || '-'}</div>
-              <div><strong>{t('country')}:</strong> {member.country || '-'}</div>
+              <div><strong>{t('region')}:</strong> {member.region || '-'}</div>
+              <div><strong>{t('country')}:</strong> {displayCountry || '-'}</div>
               {submittedAt && (
                 <div>
                   <strong>{t('submittedAt')}:</strong>{' '}
@@ -243,8 +330,18 @@ const InfoModal = ({
               )}
             </div>
 
-            {(actionLabel && actionHandler) || (secondaryActionLabel && secondaryActionHandler) ? (
+            {(onViewMember || (actionLabel && actionHandler) || (secondaryActionLabel && secondaryActionHandler)) ? (
               <div style={{ marginTop: '14px', display: 'flex', justifyContent: 'flex-end', gap: '8px', flexWrap: 'wrap' }}>
+                {relatedPerson && onViewMember && (
+                  <button
+                    type="button"
+                    className="lineage-secondary-button"
+                    onClick={() => onViewMember(relatedPerson.id)}
+                    style={{ width: 'auto', paddingLeft: '14px', paddingRight: '14px' }}
+                  >
+                    {t('view')}
+                  </button>
+                )}
                 {secondaryActionLabel && secondaryActionHandler && (
                   <button
                     type="button"
@@ -455,12 +552,37 @@ const InfoModal = ({
                 <input type="text" name="phone" value={profileData.phone} onChange={handleProfileChange} className="login-input" style={{ width: '100%' }} required />
               </div>
               <div className="input-group">
-                <label style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>{t('city')}</label>
-                <input type="text" name="city" value={profileData.city} onChange={handleProfileChange} className="login-input" style={{ width: '100%' }} required />
+                <label style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>{t('country')}</label>
+                <select value={profileData.countryCode} onChange={handleProfileCountryChange} className="login-input" style={{ width: '100%' }}>
+                  <option value="">{t('selectCountry')}</option>
+                  {countryOptions.map((country) => (
+                    <option key={country.code} value={country.code}>{country.label}</option>
+                  ))}
+                </select>
               </div>
               <div className="input-group">
-                <label style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>{t('country')}</label>
-                <input type="text" name="country" value={profileData.country} onChange={handleProfileChange} className="login-input" style={{ width: '100%' }} />
+                <label style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>{t('region')}</label>
+                <select value={profileData.regionCode} onChange={handleProfileRegionChange} className="login-input" style={{ width: '100%' }} disabled={!profileData.countryCode || regionOptions.length === 0}>
+                  <option value="">{t('selectRegion')}</option>
+                  {regionOptions.map((region) => (
+                    <option key={region.code} value={region.code}>{region.label}</option>
+                  ))}
+                </select>
+                {!profileData.countryCode || regionOptions.length > 0 ? null : (
+                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>{t('noRegionOptions')}</div>
+                )}
+              </div>
+              <div className="input-group">
+                <label style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>{t('city')}</label>
+                <select value={profileData.city} onChange={handleProfileCityChange} className="login-input" style={{ width: '100%' }} disabled={!profileData.countryCode || cityOptions.length === 0}>
+                  <option value="">{t('selectCity')}</option>
+                  {cityOptions.map((city) => (
+                    <option key={city.code} value={city.code}>{city.label}</option>
+                  ))}
+                </select>
+                {!profileData.countryCode || cityOptions.length > 0 ? null : (
+                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>{t('noCityOptions')}</div>
+                )}
               </div>
               <button type="submit" className="login-button" style={{ marginTop: '10px' }} disabled={isSubmitting}>
                 {t('saveProfile')}

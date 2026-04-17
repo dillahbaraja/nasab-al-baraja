@@ -71,19 +71,15 @@ const SideDrawer = ({
             </div>
           )}
 
-          {isVerifiedMember && (
-            <div className="drawer-item" onClick={() => { onMenuClick('List Member'); onClose(); }}>
-              <UserCog size={20} />
-              <span>{t('listMember')}</span>
-            </div>
-          )}
+          <div className="drawer-item" onClick={() => { onMenuClick('List Member'); onClose(); }}>
+            <UserCog size={20} />
+            <span>{t('listMember')}</span>
+          </div>
 
-          {isAdmin && (
-            <div className="drawer-item" onClick={() => { onMenuClick('List Admin'); onClose(); }}>
-              <ShieldCheck size={20} />
-              <span>{t('listAdmin')}</span>
-            </div>
-          )}
+          <div className="drawer-item" onClick={() => { onMenuClick('List Admin'); onClose(); }}>
+            <ShieldCheck size={20} />
+            <span>{t('listAdmin')}</span>
+          </div>
 
           {renderNoticeItem()}
 

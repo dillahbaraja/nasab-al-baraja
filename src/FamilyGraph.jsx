@@ -209,32 +209,6 @@ const FamilyGraph = () => {
     return map;
   }, [familyData]);
 
-  // Pre-built search index — computed once on data load, not on every search keystroke
-  const searchIndex = useMemo(() => {
-    return familyData.map(person => {
-      const displayNames = getDisplayNames(person);
-      let current = person;
-      let lineageLatinArr = [];
-      let lineageArabArr = [];
-      let limit = 0;
-      while (current && limit < 10) {
-        const currentDisplay = getDisplayNames(current);
-        lineageLatinArr.push((currentDisplay.englishName || '').toLowerCase());
-        lineageArabArr.push(normalizeArabic(currentDisplay.arabicName || ''));
-        current = personMap.get(String(current.fatherId));
-        limit++;
-      }
-      return {
-        id: person.id,
-        englishName: displayNames.englishName,
-        arabicName: displayNames.arabicName,
-        lineageLatin: cleanText(lineageLatinArr.join('')),
-        lineageArab: cleanText(lineageArabArr.join('')),
-        info: (person.info || '').toLowerCase()
-      };
-    });
-  }, [personMap]); // personMap already depends on familyData
-
   const [selectedPerson, setSelectedPerson] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -289,9 +263,52 @@ const FamilyGraph = () => {
   const isVerifiedMember = effectiveRole === 'verified' || effectiveRole === 'admin';
   const isAdmin = effectiveRole === 'admin';
   const canModerateProposals = isVerifiedMember;
+  const canViewPendingChildNodes = isVerifiedMember;
   const pendingMemberClaims = useMemo(() => memberRecords.filter((member) => member.claim_status === 'pending'), [memberRecords]);
   const verifiedMembers = useMemo(() => memberRecords.filter((member) => member.claim_status === 'approved' && member.member_level === 'verified'), [memberRecords]);
   const adminMembers = useMemo(() => memberRecords.filter((member) => member.claim_status === 'approved' && member.member_level === 'admin'), [memberRecords]);
+  const visibleNotices = useMemo(() => (
+    effectiveRole === 'guest'
+      ? notices.filter((notice) => notice.type !== 'proposal_add_child' && notice.type !== 'proposal_name_change')
+      : notices
+  ), [effectiveRole, notices]);
+  const visibleToast = useMemo(() => {
+    if (!toast) return null;
+    if (effectiveRole === 'guest' && (toast.type === 'proposal_add_child' || toast.type === 'proposal_name_change')) {
+      return null;
+    }
+    return toast;
+  }, [effectiveRole, toast]);
+
+  // Pre-built search index — computed once on data load, not on every search keystroke
+  const searchIndex = useMemo(() => {
+    const searchablePeople = canViewPendingChildNodes
+      ? familyData
+      : familyData.filter((person) => !isPendingAddChildNode(person));
+
+    return searchablePeople.map(person => {
+      const displayNames = getDisplayNames(person);
+      let current = person;
+      let lineageLatinArr = [];
+      let lineageArabArr = [];
+      let limit = 0;
+      while (current && limit < 10) {
+        const currentDisplay = getDisplayNames(current);
+        lineageLatinArr.push((currentDisplay.englishName || '').toLowerCase());
+        lineageArabArr.push(normalizeArabic(currentDisplay.arabicName || ''));
+        current = personMap.get(String(current.fatherId));
+        limit++;
+      }
+      return {
+        id: person.id,
+        englishName: displayNames.englishName,
+        arabicName: displayNames.arabicName,
+        lineageLatin: cleanText(lineageLatinArr.join('')),
+        lineageArab: cleanText(lineageArabArr.join('')),
+        info: (person.info || '').toLowerCase()
+      };
+    });
+  }, [canViewPendingChildNodes, familyData, personMap]); // personMap already depends on familyData
 
   const pendingQueueIds = useMemo(() => {
     const getDepth = (id) => {
@@ -909,18 +926,18 @@ const FamilyGraph = () => {
     const tier4 = tier3.flatMap((id) => (parentToChildrenMap.get(id) || []).map((child) => String(child.id)));
     const tier5 = tier4.flatMap((id) => (parentToChildrenMap.get(id) || []).map((child) => String(child.id)));
 
-    const initW = rootNode.measured?.width || rootNode.width || 260;
     const initH = rootNode.measured?.height || rootNode.height || 100;
-    const initCX = rootNode.position.x + (initW / 2);
+    const initCX = rootNode.position.x;
     const initCY = rootNode.position.y + (initH / 2);
     const flowElem = document.querySelector('.react-flow');
     const initialVpW = flowElem ? flowElem.clientWidth : window.innerWidth;
     const initialVpH = flowElem ? flowElem.clientHeight : window.innerHeight;
+    const introStartZoom = 2.2;
 
     setViewport({
-      x: (initialVpW / 2) - (initCX * 2.85),
-      y: (initialVpH / 2) - (initCY * 2.85),
-      zoom: 2.85
+      x: (initialVpW / 2) - (initCX * introStartZoom),
+      y: (initialVpH / 2) - (initCY * introStartZoom),
+      zoom: introStartZoom
     }, { duration: 0 });
 
     const easeInOutCubic = (p) => (
@@ -936,7 +953,7 @@ const FamilyGraph = () => {
     }
     clearIntroTimers();
 
-    const duration = 15400;
+    const duration = 17600;
     const startT = window.performance.now();
 
     const animateCamera = (timestamp) => {
@@ -950,19 +967,16 @@ const FamilyGraph = () => {
       }
 
       let currentZoom;
-      if (progress < 0.08) {
-        currentZoom = 2.85 - easeOutQuad(progress / 0.08) * 1.95;
-      } else if (progress < 0.36) {
-        currentZoom = 0.90 - easeInOutCubic((progress - 0.08) / 0.28) * 0.42;
+      if (progress < 0.72) {
+        currentZoom = introStartZoom - easeInOutCubic(progress / 0.72) * 1.5;
       } else {
-        currentZoom = 0.48 - easeInOutCubic((progress - 0.36) / 0.64) * 0.30;
+        currentZoom = 0.7 + easeInOutCubic((progress - 0.72) / 0.28) * 0.38;
       }
 
       const driftX = Math.sin(progress * Math.PI * 0.9) * 80;
       const driftY = Math.sin(progress * Math.PI) * 56;
-      const activeW = liveRoot.measured?.width || liveRoot.width || 260;
       const activeH = liveRoot.measured?.height || liveRoot.height || 100;
-      const nodeCenterX = liveRoot.position.x + (activeW / 2);
+      const nodeCenterX = liveRoot.position.x;
       const nodeCenterY = liveRoot.position.y + (activeH / 2);
       const activeFlowElem = document.querySelector('.react-flow');
       const vpW = activeFlowElem ? activeFlowElem.clientWidth : window.innerWidth;
@@ -988,12 +1002,12 @@ const FamilyGraph = () => {
 
     animationRef.current = requestAnimationFrame(animateCamera);
 
-    scheduleIntroAction(3000, () => setCollapsedIds(tier1, false));
-    scheduleIntroAction(5300, () => setCollapsedIds(tier2, false));
+    scheduleIntroAction(2600, () => setCollapsedIds(tier1, false));
+    scheduleIntroAction(5200, () => setCollapsedIds(tier2, false));
     scheduleIntroAction(7800, () => setCollapsedIds(tier3, false));
-    scheduleIntroAction(10300, () => setCollapsedIds(tier4, false));
-    scheduleIntroAction(12700, () => setCollapsedIds(tier5, false));
-    scheduleIntroAction(14500, () => setCollapsedIds(familyData.map((person) => String(person.id)), false));
+    scheduleIntroAction(10400, () => setCollapsedIds(tier4, false));
+    scheduleIntroAction(13000, () => setCollapsedIds(tier5, false));
+    scheduleIntroAction(15000, () => setCollapsedIds(familyData.map((person) => String(person.id)), false));
 
     return true;
   }, [buildParentToChildrenMap, clearIntroTimers, familyData, fitView, getNode, nodes, scheduleIntroAction, setCollapsedIds, setViewport]);
@@ -1228,12 +1242,6 @@ const FamilyGraph = () => {
   }, []);
 
   const fetchManageableMembers = useCallback(async (roleOverride = effectiveRole) => {
-    if (!(roleOverride === 'verified' || roleOverride === 'admin')) {
-      setMemberRecords([]);
-      setIsMemberDataLoading(false);
-      return;
-    }
-
     setIsMemberDataLoading(true);
     const { data, error } = await supabase
       .from('baraja_member')
@@ -1249,6 +1257,23 @@ const FamilyGraph = () => {
     setMemberRecords(data || []);
     setIsMemberDataLoading(false);
   }, [effectiveRole]);
+
+  const fetchPublicMemberDirectory = useCallback(async () => {
+    setIsMemberDataLoading(true);
+    const { data, error } = await supabase
+      .from('baraja_member_directory')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Public member directory lookup failed:', error);
+      setIsMemberDataLoading(false);
+      return;
+    }
+
+    setMemberRecords(data || []);
+    setIsMemberDataLoading(false);
+  }, []);
 
   const resolveMemberContext = useCallback(async (user) => {
     if (!user || user.is_anonymous) {
@@ -1550,10 +1575,10 @@ const FamilyGraph = () => {
 
   // 3. Reactive Unread Count Calculation
   useEffect(() => {
-    const unread = notices.filter(n => (n.timestamp || 0) > lastNoticeOpen).length;
+    const unread = visibleNotices.filter(n => (n.timestamp || 0) > lastNoticeOpen).length;
 
     setUnreadCount(unread);
-  }, [notices, lastNoticeOpen]);
+  }, [visibleNotices, lastNoticeOpen]);
 
   const getActorId = useCallback(() => {
     if (!currentUser) return 'public';
@@ -2081,10 +2106,14 @@ const FamilyGraph = () => {
     }
 
     try {
+      const renderableFamilyData = canViewPendingChildNodes
+        ? familyData
+        : familyData.filter((person) => !isPendingAddChildNode(person));
+
       // 1. Build lookup maps for O(N) performance
       const personMapLocal = new Map();
       const parentToChildren = new Map();
-      familyData.forEach(p => {
+      renderableFamilyData.forEach(p => {
         const id = String(p.id);
         const fid = p.fatherId ? String(p.fatherId) : null;
         personMapLocal.set(id, { ...p, id, fatherId: fid });
@@ -2094,7 +2123,7 @@ const FamilyGraph = () => {
         }
       });
 
-      const rootList = familyData.filter(p => !p.fatherId);
+      const rootList = renderableFamilyData.filter(p => !p.fatherId);
       const visibleData = [];
       const traverse = (person) => {
         const pid = String(person.id);
@@ -2116,7 +2145,8 @@ const FamilyGraph = () => {
         });
 
         if (!isCollapsed || isCurrentlyCollapsing) {
-          const children = parentToChildren.get(pid) || [];
+          const children = (parentToChildren.get(pid) || [])
+            .filter((child) => canViewPendingChildNodes || !isPendingAddChildNode(child));
           children.forEach(c => traverse(c));
         }
       };
@@ -2305,7 +2335,7 @@ const FamilyGraph = () => {
     } catch (err) {
       console.error("Layout Rendering Crash Prevented:", err);
     }
-  }, [familyData, collapsedStateById, isLoading, collapsingParentId, handleNodeLongPress, appSettings.layoutStyle]);
+  }, [familyData, canViewPendingChildNodes, collapsedStateById, isLoading, collapsingParentId, handleNodeLongPress, appSettings.layoutStyle]);
 
 
   const getNextPendingIdForAdmin = useCallback((excludeId = null) => {
@@ -3045,11 +3075,14 @@ const FamilyGraph = () => {
     setActiveInfoModal(null);
   };
 
-  const handleUpdateProfile = async ({ phone, city, country }) => {
+  const handleUpdateProfile = async ({ phone, city, region, regionCode, country, countryCode }) => {
     if (!currentMember?.id) return;
     const trimmedPhone = (phone || '').trim();
     const trimmedCity = (city || '').trim();
+    const trimmedRegion = (region || '').trim();
     const trimmedCountry = (country || '').trim();
+    const trimmedRegionCode = (regionCode || '').trim();
+    const trimmedCountryCode = (countryCode || '').trim();
     if (!trimmedPhone || !trimmedCity) {
       throw new Error(t('fillAllFields'));
     }
@@ -3059,7 +3092,10 @@ const FamilyGraph = () => {
       .update({
         phone: trimmedPhone,
         city: trimmedCity,
-        country: trimmedCountry
+        region: trimmedRegion,
+        region_code: trimmedRegionCode,
+        country: trimmedCountry,
+        country_code: trimmedCountryCode
       })
       .eq('id', currentMember.id)
       .select('*')
@@ -3080,6 +3116,10 @@ const FamilyGraph = () => {
     const password = payload.password || '';
     const phone = (payload.phone || '').trim();
     const city = (payload.city || '').trim();
+    const regionCode = (payload.regionCode || '').trim();
+    const region = (payload.region || '').trim();
+    const countryCode = (payload.countryCode || '').trim();
+    const country = (payload.country || '').trim();
 
     if (!email || !password || !phone || !city) {
       throw new Error(t('fillAllFields'));
@@ -3166,6 +3206,10 @@ const FamilyGraph = () => {
       email,
       phone,
       city,
+      country_code: countryCode,
+      region,
+      region_code: regionCode,
+      country,
       claim_status: 'pending',
       member_level: 'guest',
       arabic_name_snapshot: person.arabicName || '',
@@ -3238,11 +3282,11 @@ const FamilyGraph = () => {
       setActiveInfoModal('memberManager');
     }
     if (item === 'List Member') {
-      void fetchManageableMembers('admin');
+      void fetchPublicMemberDirectory();
       setActiveInfoModal('listMember');
     }
     if (item === 'List Admin') {
-      void fetchManageableMembers('admin');
+      void fetchPublicMemberDirectory();
       setActiveInfoModal('listAdmin');
     }
     if (item === 'Sign Out') handleSignOut();
@@ -3250,7 +3294,7 @@ const FamilyGraph = () => {
     if (item === 'Notice') {
       setActiveInfoModal('notice');
       // Fix: Use the max timestamp from the actual data to avoid local clock skew issues
-      const maxTs = notices.length > 0 ? Math.max(...notices.map(n => n.timestamp || 0)) : Date.now();
+      const maxTs = visibleNotices.length > 0 ? Math.max(...visibleNotices.map(n => n.timestamp || 0)) : Date.now();
       setLastNoticeOpen(maxTs);
       localStorage.setItem('rf-last-notice-open', String(maxTs));
       setUnreadCount(0);
@@ -3559,6 +3603,20 @@ const FamilyGraph = () => {
   }, [calculateRelationshipPath, currentMember?.person_id, familyData, personMap, runLineageCameraTour]);
 
   const handleViewNotice = (notice) => {
+    if (notice?.type === 'new_member' && notice?.id) {
+      supabase
+        .from('notices')
+        .delete()
+        .eq('id', notice.id)
+        .then(({ error }) => {
+          if (error) {
+            console.error("Auto Delete Notice Error:", error);
+            return;
+          }
+          removeLocalNoticeById(notice.id);
+        });
+    }
+
     handleViewPerson(notice.targetId);
   };
 
@@ -3652,8 +3710,9 @@ const FamilyGraph = () => {
         currentMember={currentMember}
         currentRole={effectiveRole}
         familyData={familyData}
-        notices={notices}
+        notices={visibleNotices}
         onViewNotice={handleViewNotice}
+        onViewMember={handleViewPerson}
         onDeleteNotice={handleDeleteNotice}
         appSettings={appSettings}
         setAppSettings={setAppSettings}
@@ -3668,14 +3727,14 @@ const FamilyGraph = () => {
       />
 
       {/* Toast Notification */}
-      {toast && (
+      {visibleToast && (
         <div className="glass-panel toast-notification" style={{
           position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)',
           zIndex: 9999, padding: '12px 24px', display: 'flex', alignItems: 'center', gap: '12px',
           animation: 'slideUp 0.3s ease-out'
         }}>
           <Bell size={20} color="var(--accent)" />
-          <div style={{ fontSize: '14px', fontWeight: 'bold' }}>{toast.text}</div>
+          <div style={{ fontSize: '14px', fontWeight: 'bold' }}>{visibleToast.text}</div>
         </div>
       )}
 

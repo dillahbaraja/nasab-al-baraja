@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Pencil, Trash2 } from 'lucide-react';
+import { getCountryLabelFromCode, getCountryOptions, getRegionOptions, getCityOptions } from './locationData';
 
 const createEmptyChildInput = () => ({ latin: '', arab: '' });
 
@@ -48,7 +50,7 @@ const NodeEditModal = ({
   const [isSaving, setIsSaving] = useState(false);
   const [activeSuggestionMode, setActiveSuggestionMode] = useState(null);
   const [proposalNameForm, setProposalNameForm] = useState({ latin: '', arab: '' });
-  const [claimForm, setClaimForm] = useState({ email: '', password: '', phone: '', city: '' });
+  const [claimForm, setClaimForm] = useState({ email: '', password: '', phone: '', country: '', countryCode: '', region: '', regionCode: '', city: '' });
   const suggestionFormRef = useRef(null);
   const primarySuggestionInputRef = useRef(null);
 
@@ -86,6 +88,10 @@ const NodeEditModal = ({
       email: '',
       password: '',
       phone: '',
+      country: '',
+      countryCode: '',
+      region: '',
+      regionCode: '',
       city: ''
     });
   }, [person, displayNames]);
@@ -108,6 +114,10 @@ const NodeEditModal = ({
     if (!person) return [];
     return familyData.filter((member) => String(member.fatherId) === String(person.id));
   }, [familyData, person]);
+  const canEditPendingChildFromList = true;
+  const claimCountryOptions = useMemo(() => getCountryOptions(lang), [lang]);
+  const claimRegionOptions = useMemo(() => getRegionOptions(claimForm.countryCode), [claimForm.countryCode]);
+  const claimCityOptions = useMemo(() => getCityOptions(claimForm.countryCode, claimForm.regionCode), [claimForm.countryCode, claimForm.regionCode]);
 
   if (!isOpen || !person) return null;
 
@@ -252,6 +262,10 @@ const NodeEditModal = ({
       email: (claimForm.email || '').trim(),
       password: claimForm.password || '',
       phone: (claimForm.phone || '').trim(),
+      countryCode: claimForm.countryCode || '',
+      country: (claimForm.country || '').trim(),
+      regionCode: claimForm.regionCode || '',
+      region: (claimForm.region || '').trim(),
       city: (claimForm.city || '').trim()
     };
 
@@ -448,15 +462,60 @@ const NodeEditModal = ({
           onChange={(e) => setClaimForm((prev) => ({ ...prev, phone: e.target.value }))}
           required
         />
-        <input
-          type="text"
-          placeholder={`${t('city')} *`}
+        <select
+          className="search-input"
+          style={{ padding: '12px 14px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', color: 'var(--text-primary)' }}
+          value={claimForm.countryCode}
+          onChange={(e) => {
+            const selected = claimCountryOptions.find((country) => country.code === e.target.value);
+            setClaimForm((prev) => ({
+              ...prev,
+              countryCode: e.target.value,
+              country: selected?.label || getCountryLabelFromCode(e.target.value, lang, ''),
+              regionCode: '',
+              region: '',
+              city: ''
+            }));
+          }}
+        >
+          <option value="">{t('selectCountry')}</option>
+          {claimCountryOptions.map((country) => (
+            <option key={country.code} value={country.code}>{country.label}</option>
+          ))}
+        </select>
+        <select
+          className="search-input"
+          style={{ padding: '12px 14px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', color: 'var(--text-primary)' }}
+          value={claimForm.regionCode}
+          onChange={(e) => {
+            const selected = claimRegionOptions.find((region) => region.code === e.target.value);
+            setClaimForm((prev) => ({
+              ...prev,
+              regionCode: e.target.value,
+              region: selected?.label || '',
+              city: ''
+            }));
+          }}
+          disabled={!claimForm.countryCode || claimRegionOptions.length === 0}
+        >
+          <option value="">{t('selectRegion')}</option>
+          {claimRegionOptions.map((region) => (
+            <option key={region.code} value={region.code}>{region.label}</option>
+          ))}
+        </select>
+        <select
           className="search-input"
           style={{ padding: '12px 14px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', color: 'var(--text-primary)' }}
           value={claimForm.city}
           onChange={(e) => setClaimForm((prev) => ({ ...prev, city: e.target.value }))}
+          disabled={!claimForm.countryCode || claimCityOptions.length === 0}
           required
-        />
+        >
+          <option value="">{t('selectCity')}</option>
+          {claimCityOptions.map((city) => (
+            <option key={city.code} value={city.label}>{city.label}</option>
+          ))}
+        </select>
         <div className="lineage-button-row">
           <button type="button" onClick={() => setActiveSuggestionMode(null)} className="lineage-secondary-button" style={{ flex: 1 }}>
             {t('cancel')}
@@ -787,25 +846,52 @@ const NodeEditModal = ({
                     )}
                   </div>
 
-                  <button
-                    className="lineage-view-button"
-                    onClick={() => onViewPerson && onViewPerson(c.id)}
-                    style={{
-                      background: 'var(--accent)',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '4px',
-                      padding: '6px 12px',
-                      fontSize: '12px',
-                      cursor: 'pointer',
-                      fontWeight: 'bold',
-                      transition: 'background 0.2s'
-                    }}
-                    onMouseEnter={(e) => { e.target.style.background = 'var(--accent-hover)'; }}
-                    onMouseLeave={(e) => { e.target.style.background = 'var(--accent)'; }}
-                  >
-                    {t('view')}
-                  </button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button
+                      className="lineage-view-button"
+                      onClick={() => onViewPerson && onViewPerson(c.id)}
+                      style={{
+                        background: 'var(--accent)',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        padding: '6px 12px',
+                        fontSize: '12px',
+                        cursor: 'pointer',
+                        fontWeight: 'bold',
+                        transition: 'background 0.2s'
+                      }}
+                      onMouseEnter={(e) => { e.target.style.background = 'var(--accent-hover)'; }}
+                      onMouseLeave={(e) => { e.target.style.background = 'var(--accent)'; }}
+                    >
+                      {t('view')}
+                    </button>
+                    {c?.moderation?.status === 'pending' && canEditPendingChildFromList && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => onViewPerson && onViewPerson(c.id)}
+                          title={t('editPendingSuggestion')}
+                          aria-label={t('editPendingSuggestion')}
+                          style={{ background: 'transparent', border: 'none', color: 'var(--accent)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          <Pencil size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!window.confirm(t('confirmCancelSuggestion'))) return;
+                            await onCancelProposal(c);
+                          }}
+                          title={t('cancelSuggestion')}
+                          aria-label={t('cancelSuggestion')}
+                          style={{ background: 'transparent', border: 'none', color: '#dc2626', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>

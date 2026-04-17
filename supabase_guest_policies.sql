@@ -20,7 +20,10 @@ create table if not exists public.baraja_member (
   email text not null unique,
   phone text not null default '',
   city text not null default '',
+  country_code text not null default '',
+  region_code text not null default '',
   country text not null default '',
+  region text not null default '',
   claim_status text not null default 'pending',
   member_level text not null default 'guest',
   arabic_name_snapshot text not null default '',
@@ -39,6 +42,7 @@ alter table public.nodes enable row level security;
 alter table public.notices enable row level security;
 
 drop view if exists public.baraja_member_public_status;
+drop view if exists public.baraja_member_directory;
 
 alter table public.baraja_member
 alter column person_id type text
@@ -46,6 +50,15 @@ using person_id::text;
 
 alter table public.baraja_member
 add column if not exists country text not null default '';
+
+alter table public.baraja_member
+add column if not exists region text not null default '';
+
+alter table public.baraja_member
+add column if not exists country_code text not null default '';
+
+alter table public.baraja_member
+add column if not exists region_code text not null default '';
 
 grant usage on schema public to anon, authenticated;
 grant select on public.admin_users to authenticated;
@@ -199,6 +212,28 @@ where claim_status in ('pending', 'approved')
 group by person_id;
 
 grant select on public.baraja_member_public_status to anon, authenticated;
+
+create or replace view public.baraja_member_directory as
+select
+  id,
+  person_id,
+  claim_status,
+  member_level,
+  email,
+  phone,
+  country_code,
+  region_code,
+  region,
+  city,
+  country,
+  arabic_name_snapshot,
+  english_name_snapshot,
+  created_at
+from public.baraja_member
+where claim_status = 'approved'
+  and member_level in ('verified', 'admin');
+
+grant select on public.baraja_member_directory to anon, authenticated;
 
 create or replace function public.approve_baraja_member_claim(target_member_id bigint)
 returns public.baraja_member
