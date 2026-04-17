@@ -2383,21 +2383,21 @@ const FamilyGraph = () => {
   }, [nodes, pendingFocusTarget, smoothFocusNode]);
 
   useEffect(() => {
-    if (canModerateProposals && !wasAdminRef.current) {
+    if (isAdmin && !wasAdminRef.current) {
       adminWalkthroughEnabledRef.current = true;
       pendingAdminAutoOpenRef.current = pendingQueueIds.length > 0;
     }
 
-    if (!canModerateProposals) {
+    if (!isAdmin) {
       adminWalkthroughEnabledRef.current = false;
       pendingAdminAutoOpenRef.current = false;
     }
 
-    wasAdminRef.current = canModerateProposals;
-  }, [canModerateProposals, pendingQueueIds]);
+    wasAdminRef.current = isAdmin;
+  }, [isAdmin, pendingQueueIds]);
 
   useEffect(() => {
-    if (!canModerateProposals || !pendingAdminAutoOpenRef.current) return;
+    if (!isAdmin || !pendingAdminAutoOpenRef.current) return;
     if (activeInfoModal || isModalOpen) return;
 
     const hasNextPending = openNextPendingForModerator();
@@ -2406,7 +2406,7 @@ const FamilyGraph = () => {
     if (!hasNextPending) {
       adminWalkthroughEnabledRef.current = false;
     }
-  }, [activeInfoModal, canModerateProposals, isModalOpen, openNextPendingForModerator]);
+  }, [activeInfoModal, isAdmin, isModalOpen, openNextPendingForModerator]);
 
   // CINEMATIC INTRO SEQUENCE
   useEffect(() => {
@@ -3405,14 +3405,14 @@ const FamilyGraph = () => {
   }, [isAdmin, openNextPendingForModerator]);
 
   const continueAdminVerification = useCallback((currentPersonId) => {
-    if (!canModerateProposals) return;
+    if (!isAdmin) return;
     adminWalkthroughEnabledRef.current = true;
     setIsModalOpen(false);
     setSelectedPerson(null);
     setTimeout(() => {
       openNextPendingForModerator(currentPersonId);
     }, 250);
-  }, [canModerateProposals, openNextPendingForModerator]);
+  }, [isAdmin, openNextPendingForModerator]);
 
 
   const handleViewPerson = (personId) => {
