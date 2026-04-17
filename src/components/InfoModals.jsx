@@ -477,6 +477,10 @@ const InfoModal = ({
             <p style={{ textAlign: 'center', marginBottom: '20px' }}>
               {t('signInDescription')}
             </p>
+            <div className="sign-in-hint-box">
+              <div className="sign-in-hint-title">{t('signInClaimRequiredTitle')}</div>
+              <div>{t('signInClaimRequiredBody')}</div>
+            </div>
             {errorMsg && (
               <div style={{ color: '#ff4444', textAlign: 'center', marginBottom: '16px', fontSize: '13px', background: 'rgba(255, 68, 68, 0.1)', padding: '8px', borderRadius: '4px' }}>
                 {errorMsg}
