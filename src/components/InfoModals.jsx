@@ -68,6 +68,8 @@ const InfoModal = ({
     return t('guestRole');
   }, [currentRole, t]);
 
+  const canViewProposalNotice = currentRole === 'verified' || currentRole === 'admin';
+
   const personMap = useMemo(() => {
     const map = new Map();
     familyData.forEach((person) => {
@@ -427,6 +429,8 @@ const InfoModal = ({
                 <div className="notice-feed">
                   {notices.map((n, idx) => {
                     const meta = getNoticeMeta(n);
+                    const isProposalNotice = n.type === 'proposal_add_child' || n.type === 'proposal_name_change';
+                    const canViewThisNotice = !isProposalNotice || canViewProposalNotice;
                     return (
                       <div key={n.id || idx} className="glass-panel notice-card" style={{ borderLeft: `4px solid ${meta.borderColor}` }}>
                         <div className="notice-card-main" style={{ flex: 1 }}>
@@ -442,9 +446,21 @@ const InfoModal = ({
                           <button
                             className="notice-view-button"
                             onClick={() => onViewNotice && onViewNotice(n)}
-                            style={{ background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '4px', padding: '6px 10px', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold' }}
+                            disabled={!canViewThisNotice}
+                            title={!canViewThisNotice ? t('proposalNoticeRestricted') : ''}
+                            style={{
+                              background: canViewThisNotice ? 'var(--accent)' : 'var(--panel-border)',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              padding: '6px 10px',
+                              fontSize: '12px',
+                              cursor: canViewThisNotice ? 'pointer' : 'not-allowed',
+                              fontWeight: 'bold',
+                              opacity: canViewThisNotice ? 1 : 0.7
+                            }}
                           >
-                            {t('view')}
+                            {canViewThisNotice ? t('view') : t('memberOnly')}
                           </button>
                           {currentRole === 'admin' && (
                             <button

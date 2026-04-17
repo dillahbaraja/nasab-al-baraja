@@ -117,6 +117,8 @@ export const translations = {
   skipVerification: { id: "Skip, saya tidak tahu person ini", en: "Skip, I don't know this person", ar: "تخط، أنا لا أعرف هذا الشخص" },
   skipVerificationHelp: { id: "Anda dapat skip ke verifikasi person berikutnya jika belum yakin dengan data ini.", en: "You can skip to the next pending person if you are not sure about this data yet.", ar: "يمكنك التخطي إلى الشخص المعلق التالي إذا لم تكن متأكداً من هذه البيانات بعد." },
   adminVerificationHelp: { id: "Sebagai admin atau member terverifikasi, anda dapat memeriksa apakah usulan person ini benar atau tidak.", en: "As an admin or verified member, you can review whether this person proposal is correct.", ar: "بصفتك مشرفاً أو عضواً موثقاً، يمكنك مراجعة ما إذا كان هذا الاقتراح صحيحاً أم لا." },
+  proposalNoticeRestricted: { id: "Detail usulan hanya bisa dibuka oleh member terverifikasi atau admin.", en: "Proposal details can only be opened by verified members or admins.", ar: "لا يمكن فتح تفاصيل الاقتراح إلا بواسطة الأعضاء الموثقين أو المشرفين." },
+  memberOnly: { id: "Khusus member", en: "Members only", ar: "للأعضاء فقط" },
   confirmDeleteLeafPerson: { id: "Anda akan menghapus person ini. Apakah anda yakin ingin menghapus", en: "You are about to delete this person. Are you sure you want to delete", ar: "أنت على وشك حذف هذا الشخص. هل أنت متأكد أنك تريد حذف" },
   confirmCancelSuggestion: { id: "Yakin ingin membatalkan usulan ini?", en: "Are you sure you want to cancel this suggestion?", ar: "هل أنت متأكد أنك تريد إلغاء هذا الاقتراح؟" },
   confirmRejectSuggestion: { id: "Yakin ingin menolak usulan ini?", en: "Are you sure you want to reject this suggestion?", ar: "هل أنت متأكد أنك تريد رفض هذا الاقتراح؟" },

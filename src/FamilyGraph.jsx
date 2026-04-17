@@ -267,18 +267,11 @@ const FamilyGraph = () => {
   const pendingMemberClaims = useMemo(() => memberRecords.filter((member) => member.claim_status === 'pending'), [memberRecords]);
   const verifiedMembers = useMemo(() => memberRecords.filter((member) => member.claim_status === 'approved' && member.member_level === 'verified'), [memberRecords]);
   const adminMembers = useMemo(() => memberRecords.filter((member) => member.claim_status === 'approved' && member.member_level === 'admin'), [memberRecords]);
-  const visibleNotices = useMemo(() => (
-    effectiveRole === 'guest'
-      ? notices.filter((notice) => notice.type !== 'proposal_add_child' && notice.type !== 'proposal_name_change')
-      : notices
-  ), [effectiveRole, notices]);
+  const visibleNotices = useMemo(() => notices, [notices]);
   const visibleToast = useMemo(() => {
     if (!toast) return null;
-    if (effectiveRole === 'guest' && (toast.type === 'proposal_add_child' || toast.type === 'proposal_name_change')) {
-      return null;
-    }
     return toast;
-  }, [effectiveRole, toast]);
+  }, [toast]);
 
   // Pre-built search index — computed once on data load, not on every search keystroke
   const searchIndex = useMemo(() => {
@@ -3615,6 +3608,12 @@ const FamilyGraph = () => {
   }, [calculateRelationshipPath, currentMember?.person_id, familyData, personMap, runLineageCameraTour]);
 
   const handleViewNotice = (notice) => {
+    const isProposalNotice = notice?.type === 'proposal_add_child' || notice?.type === 'proposal_name_change';
+    if (isProposalNotice && !isVerifiedMember) {
+      alert(t('proposalNoticeRestricted'));
+      return;
+    }
+
     if (notice?.type === 'new_member' && notice?.id) {
       supabase
         .from('notices')
