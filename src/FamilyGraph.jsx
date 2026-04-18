@@ -259,10 +259,20 @@ const FamilyGraph = () => {
   const hasInitialFocusedRef = useRef(false); // tracks first-load root focus
 
   const t = useCallback((key) => translations[key]?.[lang] || translations[key]?.['en'] || key, [lang]);
-  const isIPhoneDevice = useMemo(() => {
+  const isMobileDevice = useMemo(() => {
+    if (Capacitor.getPlatform() === 'android') return true;
     if (typeof navigator === 'undefined') return false;
-    return /iPhone|iPod/i.test(navigator.userAgent);
+    return /iPhone|iPod|Android/i.test(navigator.userAgent)
+      || (typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)')?.matches);
   }, []);
+  const setAncestorPathSafe = useCallback((nextPath) => {
+    if (isMobileDevice) return;
+    setAncestorPath(nextPath);
+  }, [isMobileDevice]);
+  const clearAncestorPathSafe = useCallback(() => {
+    if (isMobileDevice) return;
+    setAncestorPath({ nodeIds: new Set(), edgeIds: new Set() });
+  }, [isMobileDevice]);
 
   // Memoized O(1) person lookup map — replaces O(N) familyData.find() calls
   const personMap = useMemo(() => {
@@ -1923,7 +1933,7 @@ const FamilyGraph = () => {
   useEffect(() => {
     setNodes(nds => nds.map(node => {
       const nid = String(node.id);
-      const isPathGlow = !isIPhoneDevice && ancestorPath.nodeIds.has(nid);
+      const isPathGlow = !isMobileDevice && ancestorPath.nodeIds.has(nid);
       if (node.data.isPathGlow === isPathGlow) return node;
       return {
         ...node,
@@ -1934,7 +1944,7 @@ const FamilyGraph = () => {
       };
     }));
     setEdges(eds => eds.map(edge => {
-      const isPathGlow = !isIPhoneDevice && ancestorPath.edgeIds.has(edge.id);
+      const isPathGlow = !isMobileDevice && ancestorPath.edgeIds.has(edge.id);
       const className = isPathGlow ? 'ancestor-edge-glow' : '';
       if (edge.className === className) return edge;
       return {
@@ -1942,7 +1952,7 @@ const FamilyGraph = () => {
         className
       };
     }));
-  }, [ancestorPath, isIPhoneDevice]);
+  }, [ancestorPath, isMobileDevice]);
 
   useEffect(() => {
     setNodes((nds) => nds.map((node) => {
@@ -2058,8 +2068,8 @@ const FamilyGraph = () => {
 
     // Select the node without forcing a full graph relayout.
     setSelectedNodeId(nodeId);
-    setAncestorPath(calculateAncestorPath(nodeId));
-  }, [getViewport, setViewport, nodes, triggerGlow, calculateAncestorPath]);
+    setAncestorPathSafe(calculateAncestorPath(nodeId));
+  }, [calculateAncestorPath, getViewport, nodes, setAncestorPathSafe, setViewport, triggerGlow]);
 
   const onPaneDoubleClick = useCallback((e) => {
     // Only zoom if clicking directly on pane/background — not on a node
@@ -2074,9 +2084,9 @@ const FamilyGraph = () => {
     }
     setSelectedPerson(null);
     setSelectedNodeId(null);
-    setAncestorPath({ nodeIds: new Set(), edgeIds: new Set() });
+    clearAncestorPathSafe();
     stopCameraMotion();
-  }, [stopCameraMotion]);
+  }, [clearAncestorPathSafe, stopCameraMotion]);
 
   const onNodesChange = useCallback(
     (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
@@ -2101,7 +2111,7 @@ const FamilyGraph = () => {
     let lastHeight = window.innerHeight;
 
     const handleResize = () => {
-      if (isIPhoneDevice && (isModalOpen || activeInfoModal)) return;
+      if (isMobileDevice && (isModalOpen || activeInfoModal)) return;
 
       const currentWidth = window.innerWidth;
       const currentHeight = window.innerHeight;
@@ -2134,7 +2144,7 @@ const FamilyGraph = () => {
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('orientationchange', handleResize);
     };
-  }, [activeInfoModal, getViewport, isIPhoneDevice, isModalOpen, setCenter]);
+  }, [activeInfoModal, getViewport, isMobileDevice, isModalOpen, setCenter]);
 
 
   const ensurePathVisible = useCallback((targetId) => {
@@ -2197,9 +2207,9 @@ const FamilyGraph = () => {
     const normalizedNodeId = String(nodeId);
     ignorePaneClickUntilRef.current = Date.now() + 500;
     setSelectedNodeId(normalizedNodeId);
-    setAncestorPath(calculateAncestorPath(normalizedNodeId));
+    setAncestorPathSafe(calculateAncestorPath(normalizedNodeId));
     openNodeDetails(personMap.get(normalizedNodeId) || rawData);
-  }, [calculateAncestorPath, openNodeDetails, personMap]);
+  }, [calculateAncestorPath, openNodeDetails, personMap, setAncestorPathSafe]);
 
   // Update layout diagram on data change
   useEffect(() => {
@@ -2327,7 +2337,7 @@ const FamilyGraph = () => {
         // #7: Preserve nav glow (from triggerGlow) across layout re-renders
         const nid2 = String(n.id);
         const isNavGlowing = lastGlowNodeIdRef.current === nid2;
-        const isPathGlow = !isIPhoneDevice && ancestorPath.nodeIds.has(nid2);
+        const isPathGlow = !isMobileDevice && ancestorPath.nodeIds.has(nid2);
         const isGlowing = isNavGlowing || n.isGlowing || !!(toggledNodeInfo && toggledNodeInfo.id === n.id);
 
         // Ungrouping Animation: New nodes start at the parent's position
@@ -2350,7 +2360,7 @@ const FamilyGraph = () => {
       }));
       setEdges(layoutedEdges.map((edge) => ({
         ...edge,
-        className: (!isIPhoneDevice && ancestorPath.edgeIds.has(edge.id)) ? 'ancestor-edge-glow' : ''
+        className: (!isMobileDevice && ancestorPath.edgeIds.has(edge.id)) ? 'ancestor-edge-glow' : ''
       })));
 
       // 3. Stabilization: Keep the toggled node at the same screen position
@@ -2448,7 +2458,7 @@ const FamilyGraph = () => {
     } catch (err) {
       console.error("Layout Rendering Crash Prevented:", err);
     }
-  }, [familyData, canViewPendingChildNodes, collapsedStateById, isLoading, collapsingParentId, handleNodeLongPress, appSettings.layoutStyle, isIPhoneDevice]);
+  }, [familyData, canViewPendingChildNodes, collapsedStateById, isLoading, collapsingParentId, handleNodeLongPress, appSettings.layoutStyle, isMobileDevice]);
 
 
   const getNextPendingIdForModerator = useCallback((excludeId = null) => {
@@ -3687,7 +3697,7 @@ const FamilyGraph = () => {
     });
 
     // Aktifkan garis biru ancestor path + select node (sama seperti klik node biasa)
-    setAncestorPath(calculateAncestorPath(selectedId));
+    setAncestorPathSafe(calculateAncestorPath(selectedId));
     setSelectedNodeId(selectedId);
 
     const ancestorChain = [selectedId];
@@ -3734,7 +3744,7 @@ const FamilyGraph = () => {
       return next;
     });
 
-    setAncestorPath({
+    setAncestorPathSafe({
       nodeIds: relationshipPath.nodeIds,
       edgeIds: relationshipPath.edgeIds
     });
