@@ -57,6 +57,26 @@ const clearStorage = (storageName) => {
   }
 };
 
+const wouldCreateFatherCycle = (familyList, childId, nextFatherId) => {
+  if (!nextFatherId) return false;
+
+  const childKey = String(childId);
+  const targetKey = String(nextFatherId);
+  if (childKey === targetKey) return true;
+
+  const personMap = new Map(familyList.map((person) => [String(person.id), person]));
+  let currentId = targetKey;
+  let guard = 0;
+
+  while (currentId && guard < 200) {
+    if (currentId === childKey) return true;
+    currentId = personMap.get(currentId)?.fatherId ? String(personMap.get(currentId).fatherId) : null;
+    guard += 1;
+  }
+
+  return false;
+};
+
 const TimeoutWarning = () => {
   const lang = readStorage('localStorage', 'rf-lang', 'en');
   const translate = (key) => translations[key]?.[lang] || translations[key]?.en || key;
@@ -2729,7 +2749,22 @@ const FamilyGraph = () => {
       if (updates.englishName !== undefined) dbUpdates.english_name = updates.englishName;
       if (updates.arabicName !== undefined) dbUpdates.arabic_name = updates.arabicName;
       if (updates.info !== undefined) dbUpdates.info = updates.info;
-      if (updates.fatherId !== undefined) dbUpdates.father_id = updates.fatherId;
+      if (updates.fatherId !== undefined) {
+        const nextFatherId = updates.fatherId === '' ? null : updates.fatherId;
+        const normalizedChildId = String(childId);
+
+        if (nextFatherId != null) {
+          const normalizedFatherId = String(nextFatherId);
+          if (!personMap.has(normalizedFatherId)) {
+            throw new Error(t('invalidFatherReference'));
+          }
+          if (normalizedFatherId === normalizedChildId || wouldCreateFatherCycle(familyData, normalizedChildId, normalizedFatherId)) {
+            throw new Error(t('invalidFatherRelation'));
+          }
+        }
+
+        dbUpdates.father_id = nextFatherId;
+      }
       if (updates.moderation !== undefined) dbUpdates.moderation = updates.moderation;
 
       const { error } = await supabase
@@ -2742,7 +2777,7 @@ const FamilyGraph = () => {
       await fetchAllNodes({ markLoaded: false });
     } catch (err) {
       console.error(err);
-      alert(t('updateFailed'));
+      alert(err?.message || t('updateFailed'));
       throw err;
     }
   };

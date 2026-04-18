@@ -19,6 +19,8 @@ export const translations = {
   descendantOf: { id: "Keturunan ", en: "Descendant of ", ar: "من نسل " },
   addFailed: { id: "Gagal menambahkan data.", en: "Failed to add data.", ar: "فشل في إضافة البيانات." },
   updateFailed: { id: "Gagal memperbarui data.", en: "Failed to update data.", ar: "فشل في تحديث البيانات." },
+  invalidFatherReference: { id: "Ayah yang dipilih tidak ditemukan.", en: "The selected father could not be found.", ar: "تعذر العثور على الأب المحدد." },
+  invalidFatherRelation: { id: "Relasi ayah tidak valid karena akan membentuk siklus.", en: "Invalid father relation because it would create a cycle.", ar: "علاقة الأب غير صالحة لأنها ستنشئ حلقة." },
   deleteFailed: { id: "Gagal menghapus data.", en: "Failed to delete data.", ar: "فشل في حذف البيانات." },
   seedSuccess: { id: "Data dummy berhasil di-seed!", en: "Dummy data successfully seeded!", ar: "تم إدراج البيانات التجريبية بنجاح!" },
   seedFailed: { id: "Gagal seed database.", en: "Failed to seed database.", ar: "فشل في إدراج البيانات." },
