@@ -2,6 +2,11 @@ import React, { useRef, useState, useCallback } from 'react';
 import { Handle, Position } from '@xyflow/react';
 
 const FamilyNode = ({ id, data, selected }) => {
+  const isMobileDevice = (() => {
+    if (typeof navigator === 'undefined') return false;
+    return /iPhone|iPod|Android/i.test(navigator.userAgent)
+      || (typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)')?.matches);
+  })();
   const [interactionStage, setInteractionStage] = useState('none'); // 'none', 'pressing', 'hinting'
   const actionTimerRef = useRef(null);
   const hintTimerRef = useRef(null);
@@ -20,6 +25,8 @@ const FamilyNode = ({ id, data, selected }) => {
   }, []);
 
   const handlePointerDown = (e) => {
+    if (isMobileDevice) return;
+
     // Only handle primary button/touch
     if (e.button != null && e.button !== 0) return;
     if (!e.isPrimary) {
@@ -55,6 +62,8 @@ const FamilyNode = ({ id, data, selected }) => {
   };
 
   const handlePointerMove = (e) => {
+    if (isMobileDevice) return;
+
     if (!touchStartPosRef.current || isCancelledRef.current) return;
 
     const dx = e.clientX - touchStartPosRef.current.x;
@@ -69,6 +78,8 @@ const FamilyNode = ({ id, data, selected }) => {
   };
 
   const cancelInteraction = useCallback((e) => {
+    if (isMobileDevice) return;
+
     if (e?.currentTarget?.releasePointerCapture && e.currentTarget.hasPointerCapture?.(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
@@ -77,6 +88,8 @@ const FamilyNode = ({ id, data, selected }) => {
   }, [cleanup]);
 
   const handlePointerUp = (e) => {
+    if (isMobileDevice) return;
+
     if (e.currentTarget.releasePointerCapture && e.currentTarget.hasPointerCapture?.(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
@@ -87,6 +100,8 @@ const FamilyNode = ({ id, data, selected }) => {
   };
 
   const handleClickCapture = (e) => {
+    if (isMobileDevice) return;
+
     if (!suppressClickRef.current) return;
     suppressClickRef.current = false;
     e.preventDefault();

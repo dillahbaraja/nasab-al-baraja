@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Pencil, Trash2 } from 'lucide-react';
-import { getCountryLabelFromCode, getCountryOptions, getRegionOptions, getCityOptions } from './locationData';
 
 const createEmptyChildInput = () => ({ latin: '', arab: '' });
 
@@ -51,6 +50,7 @@ const NodeEditModal = ({
   const [activeSuggestionMode, setActiveSuggestionMode] = useState(null);
   const [proposalNameForm, setProposalNameForm] = useState({ latin: '', arab: '' });
   const [claimForm, setClaimForm] = useState({ email: '', password: '', phone: '', country: '', countryCode: '', region: '', regionCode: '', city: '' });
+  const [locationApi, setLocationApi] = useState(null);
   const suggestionFormRef = useRef(null);
   const primarySuggestionInputRef = useRef(null);
 
@@ -59,9 +59,10 @@ const NodeEditModal = ({
     : null;
   const isPendingAddSuggestion = person?.moderation?.status === 'pending' && person?.moderation?.type === 'add_child';
   const hasPendingProposal = Boolean(isPendingAddSuggestion || pendingNameChange);
-  const isIPhoneDevice = useMemo(() => {
+  const isMobileDevice = useMemo(() => {
     if (typeof navigator === 'undefined') return false;
-    return /iPhone|iPod/i.test(navigator.userAgent);
+    return /iPhone|iPod|Android/i.test(navigator.userAgent)
+      || (typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)')?.matches);
   }, []);
 
   const displayNames = useMemo(() => {
@@ -101,7 +102,7 @@ const NodeEditModal = ({
   }, [person, displayNames]);
 
   useEffect(() => {
-    if (isIPhoneDevice) return;
+    if (isMobileDevice) return;
     if (!activeSuggestionMode) return;
 
     const timer = setTimeout(() => {
@@ -113,16 +114,32 @@ const NodeEditModal = ({
     }, 60);
 
     return () => clearTimeout(timer);
-  }, [activeSuggestionMode, isIPhoneDevice]);
+  }, [activeSuggestionMode, isMobileDevice]);
+
+  useEffect(() => {
+    if (isMobileDevice || activeSuggestionMode !== 'claimMember') return;
+    if (locationApi) return;
+
+    let cancelled = false;
+    import('./locationData').then((mod) => {
+      if (!cancelled) setLocationApi(mod);
+    }).catch((error) => {
+      console.error('Location data failed to load:', error);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSuggestionMode, isMobileDevice, locationApi]);
 
   const children = useMemo(() => {
     if (!person) return [];
     return familyData.filter((member) => String(member.fatherId) === String(person.id));
   }, [familyData, person]);
   const canEditPendingChildFromList = true;
-  const claimCountryOptions = useMemo(() => getCountryOptions(lang), [lang]);
-  const claimRegionOptions = useMemo(() => getRegionOptions(claimForm.countryCode), [claimForm.countryCode]);
-  const claimCityOptions = useMemo(() => getCityOptions(claimForm.countryCode, claimForm.regionCode), [claimForm.countryCode, claimForm.regionCode]);
+  const claimCountryOptions = useMemo(() => (locationApi?.getCountryOptions ? locationApi.getCountryOptions(lang) : []), [locationApi, lang]);
+  const claimRegionOptions = useMemo(() => (locationApi?.getRegionOptions ? locationApi.getRegionOptions(claimForm.countryCode) : []), [locationApi, claimForm.countryCode]);
+  const claimCityOptions = useMemo(() => (locationApi?.getCityOptions ? locationApi.getCityOptions(claimForm.countryCode, claimForm.regionCode) : []), [locationApi, claimForm.countryCode, claimForm.regionCode]);
 
   if (!isOpen || !person) return null;
 
@@ -147,6 +164,25 @@ const NodeEditModal = ({
       current = current?.fatherId ? familyMap.get(String(current.fatherId)) : null;
       count++;
     }
+    return nasab.join(language === 'ar' ? ' بن ' : ' bin ');
+  };
+
+  const getShortNasab = (targetPerson, language, ancestorLimit = 5) => {
+    const nasab = [];
+    let current = targetPerson?.fatherId ? familyMap.get(String(targetPerson.fatherId)) : null;
+    let count = 0;
+
+    while (current && count < ancestorLimit) {
+      const currentPendingName = current?.moderation?.nameChange?.status === 'pending'
+        ? current.moderation.nameChange
+        : null;
+      nasab.push(language === 'ar'
+        ? (currentPendingName?.proposedArabicName || current.arabicName)
+        : (currentPendingName?.proposedEnglishName || current.englishName || current.arabicName));
+      current = current?.fatherId ? familyMap.get(String(current.fatherId)) : null;
+      count++;
+    }
+
     return nasab.join(language === 'ar' ? ' بن ' : ' bin ');
   };
 
@@ -476,7 +512,7 @@ const NodeEditModal = ({
             setClaimForm((prev) => ({
               ...prev,
               countryCode: e.target.value,
-              country: selected?.label || getCountryLabelFromCode(e.target.value, lang, ''),
+              country: selected?.label || locationApi?.getCountryLabelFromCode?.(e.target.value, lang, '') || e.target.value,
               regionCode: '',
               region: '',
               city: ''
@@ -613,11 +649,14 @@ const NodeEditModal = ({
         </div>
 
         <div className="lineage-hero-card" style={{ background: 'var(--panel-highlight-bg)', padding: '16px', borderRadius: '8px', marginBottom: '24px', textAlign: 'center', border: '1px solid var(--panel-border)' }}>
+          <div className="lineage-hero-name" style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--text-primary)', marginBottom: '10px', lineHeight: '1.4' }}>
+            {displayName}
+          </div>
           <div className="lineage-hero-arabic" style={{ fontSize: '20px', fontWeight: 'bold', fontFamily: 'serif', color: 'var(--text-primary)', marginBottom: '8px', lineHeight: '1.4' }}>
-            {getFullNasab(person, 'ar', showFullNasab)}
+            {(isMobileDevice && !showFullNasab) ? getShortNasab(person, 'ar', 5) : getFullNasab(person, 'ar', showFullNasab)}
           </div>
           <div className="lineage-hero-latin" style={{ fontSize: '14px', color: 'var(--text-secondary)', fontStyle: 'italic', lineHeight: '1.4' }}>
-            {getFullNasab(person, lang !== 'ar' ? lang : 'en', showFullNasab)}
+            {(isMobileDevice && !showFullNasab) ? getShortNasab(person, lang !== 'ar' ? lang : 'en', 5) : getFullNasab(person, lang !== 'ar' ? lang : 'en', showFullNasab)}
           </div>
           {getAncestorCount(person) >= 5 && !showFullNasab && (
             <button

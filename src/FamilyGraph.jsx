@@ -17,6 +17,7 @@ import { translations } from './i18n';
 import MobileHeader from './components/MobileHeader';
 import WebsiteHeader from './components/WebsiteHeader';
 import { nodeTypes } from './reactFlowTypes';
+import GraphErrorBoundary from './components/GraphErrorBoundary';
 import { StatusBar, Style } from '@capacitor/status-bar';
 import { Capacitor } from '@capacitor/core';
 
@@ -254,6 +255,7 @@ const FamilyGraph = () => {
 
   const glowTimeoutRef = useRef(null);
   const lastGlowNodeIdRef = useRef(null);
+  const mobilePathGlowEnabledRef = useRef(false);
   const prevVisibleSetRef = useRef(new Set());
   const expandAllViewportCenterLockRef = useRef(null);
   const hasInitialFocusedRef = useRef(false); // tracks first-load root focus
@@ -270,8 +272,18 @@ const FamilyGraph = () => {
     setAncestorPath(nextPath);
   }, [isMobileDevice]);
   const clearAncestorPathSafe = useCallback(() => {
-    if (isMobileDevice) return;
+    mobilePathGlowEnabledRef.current = false;
     setAncestorPath({ nodeIds: new Set(), edgeIds: new Set() });
+  }, []);
+
+  const setAncestorPathForMobile = useCallback((nextPath) => {
+    if (!isMobileDevice) {
+      setAncestorPath(nextPath);
+      return;
+    }
+
+    mobilePathGlowEnabledRef.current = true;
+    setAncestorPath(nextPath);
   }, [isMobileDevice]);
 
   // Memoized O(1) person lookup map — replaces O(N) familyData.find() calls
@@ -331,8 +343,12 @@ const FamilyGraph = () => {
       : 'guest';
 
   useEffect(() => {
+    if (isMobileDevice) {
+      selectedNodeIdRef.current = null;
+      return;
+    }
     selectedNodeIdRef.current = selectedNodeId ? String(selectedNodeId) : null;
-  }, [selectedNodeId]);
+  }, [isMobileDevice, selectedNodeId]);
   const isVerifiedMember = effectiveRole === 'verified' || effectiveRole === 'admin';
   const isAdmin = effectiveRole === 'admin';
   const canModerateProposals = isVerifiedMember;
@@ -1933,7 +1949,7 @@ const FamilyGraph = () => {
   useEffect(() => {
     setNodes(nds => nds.map(node => {
       const nid = String(node.id);
-      const isPathGlow = !isMobileDevice && ancestorPath.nodeIds.has(nid);
+        const isPathGlow = (mobilePathGlowEnabledRef.current || !isMobileDevice) && ancestorPath.nodeIds.has(nid);
       if (node.data.isPathGlow === isPathGlow) return node;
       return {
         ...node,
@@ -1955,12 +1971,13 @@ const FamilyGraph = () => {
   }, [ancestorPath, isMobileDevice]);
 
   useEffect(() => {
+    if (isMobileDevice) return;
     setNodes((nds) => nds.map((node) => {
       const isSelected = selectedNodeId != null && String(node.id) === String(selectedNodeId);
       if (!!node.selected === isSelected) return node;
       return { ...node, selected: isSelected };
     }));
-  }, [selectedNodeId]);
+  }, [isMobileDevice, selectedNodeId]);
 
   useEffect(() => {
     setNodes((nds) => nds.map((node) => {
@@ -2067,7 +2084,9 @@ const FamilyGraph = () => {
     animationRef.current = requestAnimationFrame(animate);
 
     // Select the node without forcing a full graph relayout.
-    setSelectedNodeId(nodeId);
+    if (!isMobileDevice) {
+      setSelectedNodeId(nodeId);
+    }
     setAncestorPathSafe(calculateAncestorPath(nodeId));
   }, [calculateAncestorPath, getViewport, nodes, setAncestorPathSafe, setViewport, triggerGlow]);
 
@@ -2206,10 +2225,15 @@ const FamilyGraph = () => {
   const handleNodeClick = useCallback((nodeId, rawData) => {
     const normalizedNodeId = String(nodeId);
     ignorePaneClickUntilRef.current = Date.now() + 500;
-    setSelectedNodeId(normalizedNodeId);
-    setAncestorPathSafe(calculateAncestorPath(normalizedNodeId));
+    if (isMobileDevice) {
+      setSelectedNodeId(null);
+      selectedNodeIdRef.current = null;
+    } else {
+      setSelectedNodeId(normalizedNodeId);
+      setAncestorPathSafe(calculateAncestorPath(normalizedNodeId));
+    }
     openNodeDetails(personMap.get(normalizedNodeId) || rawData);
-  }, [calculateAncestorPath, openNodeDetails, personMap, setAncestorPathSafe]);
+  }, [calculateAncestorPath, isMobileDevice, openNodeDetails, personMap, setAncestorPathSafe]);
 
   // Update layout diagram on data change
   useEffect(() => {
@@ -2348,7 +2372,7 @@ const FamilyGraph = () => {
 
         return {
           ...n,
-            selected: selectedNodeIdRef.current != null && String(n.id) === String(selectedNodeIdRef.current),
+            selected: !isMobileDevice && selectedNodeIdRef.current != null && String(n.id) === String(selectedNodeIdRef.current),
             data: {
               ...n.data,
               isGlowing,
@@ -2360,8 +2384,8 @@ const FamilyGraph = () => {
       }));
       setEdges(layoutedEdges.map((edge) => ({
         ...edge,
-        className: (!isMobileDevice && ancestorPath.edgeIds.has(edge.id)) ? 'ancestor-edge-glow' : ''
-      })));
+        className: ((mobilePathGlowEnabledRef.current || !isMobileDevice) && ancestorPath.edgeIds.has(edge.id)) ? 'ancestor-edge-glow' : ''
+      }))); 
 
       // 3. Stabilization: Keep the toggled node at the same screen position
       if (toggledNodeInfo) {
@@ -3528,10 +3552,15 @@ const FamilyGraph = () => {
   }, [getViewport, familyData, nodes]);
 
   const handleModalClose = useCallback(() => {
+    const closingPersonId = selectedPerson ? String(selectedPerson.id) : null;
     adminWalkthroughEnabledRef.current = false;
     setIsModalOpen(false);
     setSelectedPerson(null);
-  }, []);
+    clearAncestorPathSafe();
+    if (isMobileDevice && closingPersonId) {
+      requestAnimationFrame(() => triggerGlow(closingPersonId));
+    }
+  }, [clearAncestorPathSafe, isMobileDevice, selectedPerson, triggerGlow]);
 
   const handleSkipPending = useCallback((personId) => {
     if (!isAdmin) return;
@@ -3697,8 +3726,10 @@ const FamilyGraph = () => {
     });
 
     // Aktifkan garis biru ancestor path + select node (sama seperti klik node biasa)
-    setAncestorPathSafe(calculateAncestorPath(selectedId));
-    setSelectedNodeId(selectedId);
+    setAncestorPathForMobile(calculateAncestorPath(selectedId));
+    if (!isMobileDevice) {
+      setSelectedNodeId(selectedId);
+    }
 
     const ancestorChain = [selectedId];
     let climbId = selectedPerson?.fatherId || null;
@@ -3712,8 +3743,11 @@ const FamilyGraph = () => {
 
     // Tutup modal, lalu jalankan tur kamera dari selected node ke atas hingga framing akhir pas.
     setIsModalOpen(false);
+    if (isMobileDevice) {
+      requestAnimationFrame(() => triggerGlow(selectedId));
+    }
     runLineageCameraTour(selectedId, ancestorChain);
-  }, [familyData, calculateAncestorPath, runLineageCameraTour]);
+  }, [calculateAncestorPath, isMobileDevice, runLineageCameraTour, setAncestorPathForMobile, triggerGlow]);
 
   const handleShowRelationshipWithMe = useCallback((personId) => {
     const memberPersonId = currentMember?.person_id ? String(currentMember.person_id) : null;
@@ -3744,14 +3778,19 @@ const FamilyGraph = () => {
       return next;
     });
 
-    setAncestorPathSafe({
+    setAncestorPathForMobile({
       nodeIds: relationshipPath.nodeIds,
       edgeIds: relationshipPath.edgeIds
     });
-    setSelectedNodeId(targetId);
+    if (!isMobileDevice) {
+      setSelectedNodeId(targetId);
+    }
     setIsModalOpen(false);
+    if (isMobileDevice) {
+      requestAnimationFrame(() => triggerGlow(targetId));
+    }
     runLineageCameraTour(targetId, [...relationshipPath.orderedNodeIds].reverse());
-  }, [calculateRelationshipPath, currentMember?.person_id, familyData, personMap, runLineageCameraTour]);
+  }, [calculateRelationshipPath, currentMember?.person_id, familyData, isMobileDevice, personMap, runLineageCameraTour, setAncestorPathForMobile, triggerGlow]);
 
   const handleViewNotice = (notice) => {
     const isProposalNotice = notice?.type === 'proposal_add_child' || notice?.type === 'proposal_name_change';
@@ -3914,133 +3953,141 @@ const FamilyGraph = () => {
         </button>
       )}
 
-      {isModalOpen && selectedPerson && (
-        <Suspense fallback={null}>
-          <LazyNodeEditModal
-            isOpen={isModalOpen}
-            onClose={handleModalClose}
-            person={selectedPerson}
-            familyData={familyData}
-            onAddChild={handleAddChild}
-            onUpdateChild={handleUpdateChild}
-            onRemoveChild={handleRemoveChild}
-            onViewPerson={handleViewPerson}
-            onShowLineageOnly={handleShowLineageOnly}
-            onDownloadAncestorPdf={handleDownloadAncestorPdf}
-            onShowRelationshipWithMe={handleShowRelationshipWithMe}
-            onSubmitChildSuggestion={handleSubmitChildSuggestion}
-            onSubmitNameSuggestion={handleSubmitNameSuggestion}
-            onUpdateProposal={handleUpdateProposal}
-            onCancelProposal={handleCancelProposal}
-            onApproveProposal={handleApproveProposal}
-            onRejectProposal={handleRejectProposal}
-            onSkipPending={handleSkipPending}
-            lang={lang}
-            t={t}
-            currentUser={currentUser}
-            isAdmin={isAdmin}
-            canModerateProposals={canModerateProposals}
-            currentRole={effectiveRole}
-            canShowRelationshipWithMe={
-              isVerifiedMember &&
-              Boolean(currentMember?.person_id) &&
-              selectedPerson &&
-              String(currentMember.person_id) !== String(selectedPerson.id)
-            }
-            memberClaimStatus={selectedPerson ? (memberStatuses[String(selectedPerson.id)] || 'none') : 'none'}
-            allowMemberClaim={effectiveRole === 'guest' && (!currentMember || ['rejected', 'cancelled'].includes(currentMember.claim_status))}
-            currentMemberClaimStatus={currentMember?.claim_status || 'none'}
-            onSubmitMemberClaim={handleSubmitMemberClaim}
-          />
-        </Suspense>
-      )}
-
-      {/* Only show standalone search for Android (since it's in the header for Web) */}
-      {Capacitor.getPlatform() === 'android' && renderSearchForm()}
-
-      <div className={`graph-workspace ${Capacitor.getPlatform()} ${isCapturingScreenshot ? 'is-capturing-screenshot' : ''}`} style={{ width: '100%', height: '100%', pointerEvents: isIntroRunning ? 'none' : 'auto' }} onDoubleClick={onPaneDoubleClick}>
-        {isLoading ? (
-          <LoadingScreen t={t} />
-        ) : (
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onMoveEnd={handleMoveEnd}
-            onPaneClick={onPaneClick}
-            onNodeClick={(event, node) => {
-              event?.preventDefault?.();
-              event?.stopPropagation?.();
-              handleNodeClick(node.id, node.data?.raw);
-            }}
-            zoomOnDoubleClick={false}
-            onMoveStart={(e) => {
-              if (e && e.type !== 'animation') {
-                stopCameraMotion();
+      <GraphErrorBoundary fallback={(
+        <div style={{ padding: '24px', margin: '24px', borderRadius: '16px', background: 'var(--panel-bg)', border: '1px solid var(--panel-border)', color: 'var(--text-primary)' }}>
+          <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>Graph crashed</div>
+          <div style={{ marginBottom: '12px', color: 'var(--text-secondary)' }}>Try reload if the tree renderer overflowed on this device.</div>
+          <button className="lineage-primary-button" onClick={() => window.location.reload()}>Reload</button>
+        </div>
+      )}>
+        {isModalOpen && selectedPerson && (
+          <Suspense fallback={null}>
+            <LazyNodeEditModal
+              isOpen={isModalOpen}
+              onClose={handleModalClose}
+              person={selectedPerson}
+              familyData={familyData}
+              onAddChild={handleAddChild}
+              onUpdateChild={handleUpdateChild}
+              onRemoveChild={handleRemoveChild}
+              onViewPerson={handleViewPerson}
+              onShowLineageOnly={handleShowLineageOnly}
+              onDownloadAncestorPdf={handleDownloadAncestorPdf}
+              onShowRelationshipWithMe={handleShowRelationshipWithMe}
+              onSubmitChildSuggestion={handleSubmitChildSuggestion}
+              onSubmitNameSuggestion={handleSubmitNameSuggestion}
+              onUpdateProposal={handleUpdateProposal}
+              onCancelProposal={handleCancelProposal}
+              onApproveProposal={handleApproveProposal}
+              onRejectProposal={handleRejectProposal}
+              onSkipPending={handleSkipPending}
+              lang={lang}
+              t={t}
+              currentUser={currentUser}
+              isAdmin={isAdmin}
+              canModerateProposals={canModerateProposals}
+              currentRole={effectiveRole}
+              canShowRelationshipWithMe={
+                isVerifiedMember &&
+                Boolean(currentMember?.person_id) &&
+                selectedPerson &&
+                String(currentMember.person_id) !== String(selectedPerson.id)
               }
-            }}
-            nodeTypes={nodeTypes}
-            minZoom={0.05}
-            maxZoom={3}
-            fitView={!initialViewport}
-            fitViewOptions={{ padding: 0.2, duration: 800, maxZoom: 1 }}
-            defaultViewport={initialViewport || undefined}
-            nodesDraggable={false}
-            nodesConnectable={false}
-            onlyRenderVisibleElements={true}
-            defaultEdgeOptions={{ type: 'smoothstep', animated: true }}
-            proOptions={{ hideAttribution: true }}
-          >
-            <Background color="var(--grid-color)" gap={24} size={2} />
-            <Controls position="bottom-right" showInteractive={false} showFitView={false}>
-              <button
-                className="react-flow__controls-button"
-                onClick={handleCustomFitView}
-                title={t('fitView')}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-              >
-                <Maximize size={14} />
-              </button>
-              <button
-                className="react-flow__controls-button"
-                onClick={handleExpandAll}
-                title={t('expandAll')}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-              >
-                <ListTree size={14} />
-              </button>
-              {SCREENSHOT_BUTTON_ENABLED && Capacitor.getPlatform() === 'web' && (
+              memberClaimStatus={selectedPerson ? (memberStatuses[String(selectedPerson.id)] || 'none') : 'none'}
+              allowMemberClaim={effectiveRole === 'guest' && (!currentMember || ['rejected', 'cancelled'].includes(currentMember.claim_status))}
+              currentMemberClaimStatus={currentMember?.claim_status || 'none'}
+              onSubmitMemberClaim={handleSubmitMemberClaim}
+            />
+          </Suspense>
+        )}
+
+        {/* Only show standalone search for Android (since it's in the header for Web) */}
+        {Capacitor.getPlatform() === 'android' && renderSearchForm()}
+
+        <div className={`graph-workspace ${Capacitor.getPlatform()} ${isCapturingScreenshot ? 'is-capturing-screenshot' : ''}`} style={{ width: '100%', height: '100%', pointerEvents: isIntroRunning ? 'none' : 'auto' }} onDoubleClick={onPaneDoubleClick}>
+          {isLoading ? (
+            <LoadingScreen t={t} />
+          ) : (
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onMoveEnd={handleMoveEnd}
+              onPaneClick={onPaneClick}
+              onNodeClick={(event, node) => {
+                event?.preventDefault?.();
+                event?.stopPropagation?.();
+                handleNodeClick(node.id, node.data?.raw);
+              }}
+              zoomOnDoubleClick={false}
+              onMoveStart={(e) => {
+                if (e && e.type !== 'animation') {
+                  stopCameraMotion();
+                }
+              }}
+              nodeTypes={nodeTypes}
+              minZoom={0.05}
+              maxZoom={3}
+              fitView={!initialViewport}
+              fitViewOptions={{ padding: 0.2, duration: 800, maxZoom: 1 }}
+              defaultViewport={initialViewport || undefined}
+              nodesDraggable={false}
+              nodesConnectable={false}
+              onlyRenderVisibleElements={true}
+              defaultEdgeOptions={{ type: 'smoothstep', animated: true }}
+              proOptions={{ hideAttribution: true }}
+            >
+              <Background color="var(--grid-color)" gap={24} size={2} />
+              <Controls position="bottom-right" showInteractive={false} showFitView={false}>
                 <button
                   className="react-flow__controls-button"
-                  onClick={handleCaptureVisibleView}
-                  title={t('screenshotVisibleView')}
-                  disabled={isCapturingScreenshot}
+                  onClick={handleCustomFitView}
+                  title={t('fitView')}
                   style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 >
-                  <Camera size={14} />
+                  <Maximize size={14} />
                 </button>
-              )}
-              <button
-                className="react-flow__controls-button"
-                onClick={toggleTheme}
-                title={t('themeTitle')}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-              >
-                <Palette size={14} />
-              </button>
-              <button
-                className="react-flow__controls-button"
-                onClick={toggleLang}
-                title={t('langTitle')}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 'bold' }}
-              >
-                {lang.toUpperCase()}
-              </button>
-            </Controls>
-          </ReactFlow>
-        )}
-      </div>
+                <button
+                  className="react-flow__controls-button"
+                  onClick={handleExpandAll}
+                  title={t('expandAll')}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <ListTree size={14} />
+                </button>
+                {SCREENSHOT_BUTTON_ENABLED && Capacitor.getPlatform() === 'web' && (
+                  <button
+                    className="react-flow__controls-button"
+                    onClick={handleCaptureVisibleView}
+                    title={t('screenshotVisibleView')}
+                    disabled={isCapturingScreenshot}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <Camera size={14} />
+                  </button>
+                )}
+                <button
+                  className="react-flow__controls-button"
+                  onClick={toggleTheme}
+                  title={t('themeTitle')}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <Palette size={14} />
+                </button>
+                <button
+                  className="react-flow__controls-button"
+                  onClick={toggleLang}
+                  title={t('langTitle')}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 'bold' }}
+                >
+                  {lang.toUpperCase()}
+                </button>
+              </Controls>
+            </ReactFlow>
+          )}
+        </div>
+      </GraphErrorBoundary>
     </div>
   );
 };
