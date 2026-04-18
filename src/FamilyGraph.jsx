@@ -213,6 +213,7 @@ const FamilyGraph = () => {
   });
 
   const animationRef = useRef(null);
+  const openNodeDetailsTimeoutRef = useRef(null);
   const lineageTourTokenRef = useRef(0);
   const introTimeoutsRef = useRef([]);
   const [collapsedStateById, setCollapsedStateById] = useState(() => {
@@ -232,6 +233,10 @@ const FamilyGraph = () => {
     return () => {
       introTimeoutsRef.current.forEach((timeoutId) => clearTimeout(timeoutId));
       introTimeoutsRef.current = [];
+      if (openNodeDetailsTimeoutRef.current) {
+        clearTimeout(openNodeDetailsTimeoutRef.current);
+        openNodeDetailsTimeoutRef.current = null;
+      }
       if (searchDebounceRef.current) {
         clearTimeout(searchDebounceRef.current);
         searchDebounceRef.current = null;
@@ -254,6 +259,10 @@ const FamilyGraph = () => {
   const hasInitialFocusedRef = useRef(false); // tracks first-load root focus
 
   const t = useCallback((key) => translations[key]?.[lang] || translations[key]?.['en'] || key, [lang]);
+  const isIPhoneDevice = useMemo(() => {
+    if (typeof navigator === 'undefined') return false;
+    return /iPhone|iPod/i.test(navigator.userAgent);
+  }, []);
 
   // Memoized O(1) person lookup map — replaces O(N) familyData.find() calls
   const personMap = useMemo(() => {
@@ -1788,9 +1797,19 @@ const FamilyGraph = () => {
   const openNodeDetails = useCallback((rawData) => {
     if (!rawData) return;
     void fetchPublicMemberStatuses();
-    setSelectedPerson(rawData);
-    setIsModalOpen(true);
-  }, [fetchPublicMemberStatuses]);
+    const normalizedId = String(rawData.id);
+    const personToOpen = personMap.get(normalizedId) || rawData;
+
+    if (openNodeDetailsTimeoutRef.current) {
+      clearTimeout(openNodeDetailsTimeoutRef.current);
+    }
+
+    openNodeDetailsTimeoutRef.current = setTimeout(() => {
+      setSelectedPerson(personToOpen);
+      setIsModalOpen(true);
+      openNodeDetailsTimeoutRef.current = null;
+    }, 0);
+  }, [fetchPublicMemberStatuses, personMap]);
 
   const toggleNodeCollapse = useCallback((nodeId) => {
     const normalizedNodeId = String(nodeId);
@@ -1904,7 +1923,7 @@ const FamilyGraph = () => {
   useEffect(() => {
     setNodes(nds => nds.map(node => {
       const nid = String(node.id);
-      const isPathGlow = ancestorPath.nodeIds.has(nid);
+      const isPathGlow = !isIPhoneDevice && ancestorPath.nodeIds.has(nid);
       if (node.data.isPathGlow === isPathGlow) return node;
       return {
         ...node,
@@ -1915,7 +1934,7 @@ const FamilyGraph = () => {
       };
     }));
     setEdges(eds => eds.map(edge => {
-      const isPathGlow = ancestorPath.edgeIds.has(edge.id);
+      const isPathGlow = !isIPhoneDevice && ancestorPath.edgeIds.has(edge.id);
       const className = isPathGlow ? 'ancestor-edge-glow' : '';
       if (edge.className === className) return edge;
       return {
@@ -1923,7 +1942,7 @@ const FamilyGraph = () => {
         className
       };
     }));
-  }, [ancestorPath]);
+  }, [ancestorPath, isIPhoneDevice]);
 
   useEffect(() => {
     setNodes((nds) => nds.map((node) => {
@@ -2082,6 +2101,8 @@ const FamilyGraph = () => {
     let lastHeight = window.innerHeight;
 
     const handleResize = () => {
+      if (isIPhoneDevice && (isModalOpen || activeInfoModal)) return;
+
       const currentWidth = window.innerWidth;
       const currentHeight = window.innerHeight;
 
@@ -2113,7 +2134,7 @@ const FamilyGraph = () => {
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('orientationchange', handleResize);
     };
-  }, [getViewport, setCenter]);
+  }, [activeInfoModal, getViewport, isIPhoneDevice, isModalOpen, setCenter]);
 
 
   const ensurePathVisible = useCallback((targetId) => {
@@ -2153,8 +2174,6 @@ const FamilyGraph = () => {
     if (!person) return;
 
     void fetchPublicMemberStatuses();
-    setSelectedPerson(person);
-    setIsModalOpen(true);
 
     const wasHidden = ensurePathVisible(targetId);
     if (wasHidden) {
@@ -2165,6 +2184,8 @@ const FamilyGraph = () => {
         smoothFocusNode(targetId, options);
       }
     }
+
+    openNodeDetails(person);
   }, [ensurePathVisible, fetchPublicMemberStatuses, nodes, personMap, smoothFocusNode]);
 
   const handleNodeLongPress = useCallback((nodeId) => {
@@ -2177,7 +2198,7 @@ const FamilyGraph = () => {
     ignorePaneClickUntilRef.current = Date.now() + 500;
     setSelectedNodeId(normalizedNodeId);
     setAncestorPath(calculateAncestorPath(normalizedNodeId));
-    openNodeDetails(rawData || personMap.get(normalizedNodeId));
+    openNodeDetails(personMap.get(normalizedNodeId) || rawData);
   }, [calculateAncestorPath, openNodeDetails, personMap]);
 
   // Update layout diagram on data change
@@ -2306,7 +2327,7 @@ const FamilyGraph = () => {
         // #7: Preserve nav glow (from triggerGlow) across layout re-renders
         const nid2 = String(n.id);
         const isNavGlowing = lastGlowNodeIdRef.current === nid2;
-        const isPathGlow = ancestorPath.nodeIds.has(nid2);
+        const isPathGlow = !isIPhoneDevice && ancestorPath.nodeIds.has(nid2);
         const isGlowing = isNavGlowing || n.isGlowing || !!(toggledNodeInfo && toggledNodeInfo.id === n.id);
 
         // Ungrouping Animation: New nodes start at the parent's position
@@ -2329,7 +2350,7 @@ const FamilyGraph = () => {
       }));
       setEdges(layoutedEdges.map((edge) => ({
         ...edge,
-        className: ancestorPath.edgeIds.has(edge.id) ? 'ancestor-edge-glow' : ''
+        className: (!isIPhoneDevice && ancestorPath.edgeIds.has(edge.id)) ? 'ancestor-edge-glow' : ''
       })));
 
       // 3. Stabilization: Keep the toggled node at the same screen position
@@ -2427,7 +2448,7 @@ const FamilyGraph = () => {
     } catch (err) {
       console.error("Layout Rendering Crash Prevented:", err);
     }
-  }, [familyData, canViewPendingChildNodes, collapsedStateById, isLoading, collapsingParentId, handleNodeLongPress, appSettings.layoutStyle]);
+  }, [familyData, canViewPendingChildNodes, collapsedStateById, isLoading, collapsingParentId, handleNodeLongPress, appSettings.layoutStyle, isIPhoneDevice]);
 
 
   const getNextPendingIdForModerator = useCallback((excludeId = null) => {

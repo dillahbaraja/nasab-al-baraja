@@ -59,6 +59,10 @@ const NodeEditModal = ({
     : null;
   const isPendingAddSuggestion = person?.moderation?.status === 'pending' && person?.moderation?.type === 'add_child';
   const hasPendingProposal = Boolean(isPendingAddSuggestion || pendingNameChange);
+  const isIPhoneDevice = useMemo(() => {
+    if (typeof navigator === 'undefined') return false;
+    return /iPhone|iPod/i.test(navigator.userAgent);
+  }, []);
 
   const displayNames = useMemo(() => {
     if (!person) return { englishName: '', arabicName: '' };
@@ -97,6 +101,7 @@ const NodeEditModal = ({
   }, [person, displayNames]);
 
   useEffect(() => {
+    if (isIPhoneDevice) return;
     if (!activeSuggestionMode) return;
 
     const timer = setTimeout(() => {
@@ -108,7 +113,7 @@ const NodeEditModal = ({
     }, 60);
 
     return () => clearTimeout(timer);
-  }, [activeSuggestionMode]);
+  }, [activeSuggestionMode, isIPhoneDevice]);
 
   const children = useMemo(() => {
     if (!person) return [];
