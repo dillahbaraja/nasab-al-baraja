@@ -24,8 +24,42 @@ import { nodeTypes } from './reactFlowTypes';
 import { StatusBar, Style } from '@capacitor/status-bar';
 import { Capacitor } from '@capacitor/core';
 
+const readStorage = (storageName, key, fallback = null) => {
+  try {
+    if (typeof window === 'undefined') return fallback;
+    const storage = window[storageName];
+    if (!storage) return fallback;
+    const value = storage.getItem(key);
+    return value === null ? fallback : value;
+  } catch {
+    return fallback;
+  }
+};
+
+const writeStorage = (storageName, key, value) => {
+  try {
+    if (typeof window === 'undefined') return;
+    const storage = window[storageName];
+    if (!storage) return;
+    storage.setItem(key, value);
+  } catch {
+    // Ignore storage failures on restrictive browsers like iOS private mode.
+  }
+};
+
+const clearStorage = (storageName) => {
+  try {
+    if (typeof window === 'undefined') return;
+    const storage = window[storageName];
+    if (!storage) return;
+    storage.clear();
+  } catch {
+    // Ignore storage failures on restrictive browsers like iOS private mode.
+  }
+};
+
 const TimeoutWarning = () => {
-  const lang = localStorage.getItem('rf-lang') || 'en';
+  const lang = readStorage('localStorage', 'rf-lang', 'en');
   const translate = (key) => translations[key]?.[lang] || translations[key]?.en || key;
   const [show, setShow] = useState(false);
   useEffect(() => {
@@ -34,8 +68,8 @@ const TimeoutWarning = () => {
   }, []);
 
   const handleReset = async () => {
-    localStorage.clear();
-    sessionStorage.clear();
+    clearStorage('localStorage');
+    clearStorage('sessionStorage');
     // Best-effort cache cleanup for browsers that may keep stale local DB state.
     try {
       const dbs = await window.indexedDB.databases();
@@ -138,8 +172,8 @@ const buildNoticeText = ({ type, lang, personName = '', parentName = '', grandPa
 };
 
 const FamilyGraph = () => {
-  const [theme, setTheme] = useState(() => localStorage.getItem('rf-theme') || 'light');
-  const [lang, setLang] = useState(() => localStorage.getItem('rf-lang') || 'en');
+  const [theme, setTheme] = useState(() => readStorage('localStorage', 'rf-theme', 'light'));
+  const [lang, setLang] = useState(() => readStorage('localStorage', 'rf-lang', 'en'));
   const [familyData, setFamilyData] = useState([]);
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
@@ -164,7 +198,7 @@ const FamilyGraph = () => {
   const introTimeoutsRef = useRef([]);
   const [collapsedStateById, setCollapsedStateById] = useState(() => {
     try {
-      const saved = localStorage.getItem('rf-collapsed-state');
+      const saved = readStorage('localStorage', 'rf-collapsed-state', null);
       return saved ? JSON.parse(saved) : {};
     } catch (e) {
       return {};
@@ -172,7 +206,7 @@ const FamilyGraph = () => {
   });
 
   useEffect(() => {
-    localStorage.setItem('rf-collapsed-state', JSON.stringify(collapsedStateById));
+    writeStorage('localStorage', 'rf-collapsed-state', JSON.stringify(collapsedStateById));
   }, [collapsedStateById]);
 
   useEffect(() => {
@@ -227,7 +261,7 @@ const FamilyGraph = () => {
   const [isMemberDataLoading, setIsMemberDataLoading] = useState(false);
   const [notices, setNotices] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [lastNoticeOpen, setLastNoticeOpen] = useState(() => Number(localStorage.getItem('rf-last-notice-open')) || 0);
+  const [lastNoticeOpen, setLastNoticeOpen] = useState(() => Number(readStorage('localStorage', 'rf-last-notice-open', '0')) || 0);
   const [toast, setToast] = useState(null);
   const toastTimeoutRef = useRef(null);
   const [isCapturingScreenshot, setIsCapturingScreenshot] = useState(false);
@@ -336,7 +370,7 @@ const FamilyGraph = () => {
 
   const [appSettings, setAppSettings] = useState(() => {
     try {
-      const saved = localStorage.getItem('rf-app-settings');
+      const saved = readStorage('localStorage', 'rf-app-settings', null);
       return saved ? JSON.parse(saved) : {
         animationsEnabled: true,
         cameraEnabled: true,
@@ -356,7 +390,7 @@ const FamilyGraph = () => {
   });
 
   useEffect(() => {
-    localStorage.setItem('rf-app-settings', JSON.stringify(appSettings));
+    writeStorage('localStorage', 'rf-app-settings', JSON.stringify(appSettings));
   }, [appSettings]);
 
   // Trigger fitView whenever layout changes
@@ -800,7 +834,7 @@ const FamilyGraph = () => {
           changed = true;
         }
       });
-      if (changed) localStorage.setItem('rf-collapsed-state', JSON.stringify(next));
+      if (changed) writeStorage('localStorage', 'rf-collapsed-state', JSON.stringify(next));
       return next;
     });
   }, []);
@@ -1130,7 +1164,7 @@ const FamilyGraph = () => {
   // Apply Theme Toggle
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('rf-theme', theme);
+    writeStorage('localStorage', 'rf-theme', theme);
 
     // Sync Status Bar on Android
     if (Capacitor.getPlatform() === 'android') {
@@ -1154,7 +1188,7 @@ const FamilyGraph = () => {
   };
 
   useEffect(() => {
-    localStorage.setItem('rf-lang', lang);
+    writeStorage('localStorage', 'rf-lang', lang);
   }, [lang]);
 
   const toggleLang = () => {
@@ -1753,7 +1787,7 @@ const FamilyGraph = () => {
         setCollapsedStateById(prev => {
           const newState = { ...prev, [normalizedNodeId]: true };
           descendants.forEach(cid => { newState[cid] = true; }); // RECURSIVE COLLAPSE
-          localStorage.setItem('rf-collapsed-state', JSON.stringify(newState));
+          writeStorage('localStorage', 'rf-collapsed-state', JSON.stringify(newState));
           return newState;
         });
         setCollapsingParentId(null);
@@ -1795,7 +1829,7 @@ const FamilyGraph = () => {
       setCollapsedStateById(prev => {
         const newState = { ...prev };
         newState[normalizedNodeId] = false;
-        localStorage.setItem('rf-collapsed-state', JSON.stringify(newState));
+        writeStorage('localStorage', 'rf-collapsed-state', JSON.stringify(newState));
         return newState;
       });
     }
@@ -1855,7 +1889,7 @@ const FamilyGraph = () => {
 
   const [initialViewport] = useState(() => {
     try {
-      const saved = localStorage.getItem('rf-viewport');
+      const saved = readStorage('localStorage', 'rf-viewport', null);
       if (saved && saved !== "undefined" && saved !== "null") {
         const vp = JSON.parse(saved);
         if (vp && typeof vp.x === 'number' && !isNaN(vp.x) && typeof vp.zoom === 'number') {
@@ -1975,7 +2009,7 @@ const FamilyGraph = () => {
 
   const handleMoveEnd = useCallback((_, viewport) => {
     if (viewport && typeof viewport.x === 'number' && !isNaN(viewport.x)) {
-      localStorage.setItem('rf-viewport', JSON.stringify(viewport));
+      writeStorage('localStorage', 'rf-viewport', JSON.stringify(viewport));
     }
   }, []);
 
@@ -2429,7 +2463,7 @@ const FamilyGraph = () => {
       // Langsung buka semua node tanpa tunda
       const allIds = familyData.map(p => String(p.id));
       setCollapsedIds(allIds, false);
-      sessionStorage.setItem('rf-cinematic-forced', '1');
+      writeStorage('sessionStorage', 'rf-cinematic-forced', '1');
 
       // Fokus langsung ke rootPerson dengan cepat
       requestAnimationFrame(() => {
@@ -2439,7 +2473,7 @@ const FamilyGraph = () => {
     }
 
     // Step 0: ensure the tree is forcefully collapsed before cinematic starts.
-    const hasBeenForced = sessionStorage.getItem('rf-cinematic-forced');
+    const hasBeenForced = readStorage('sessionStorage', 'rf-cinematic-forced', null);
     if (!hasBeenForced) {
       const parentToChildrenMap = buildParentToChildrenMap(familyData);
 
@@ -2456,7 +2490,7 @@ const FamilyGraph = () => {
 
       const descendants = gatherDescendantIds(rootPerson.id);
       setCollapsedIds([String(rootPerson.id), ...descendants], true);
-      sessionStorage.setItem('rf-cinematic-forced', '1');
+      writeStorage('sessionStorage', 'rf-cinematic-forced', '1');
       return;
     }
 
@@ -3301,7 +3335,7 @@ const FamilyGraph = () => {
       // Fix: Use the max timestamp from the actual data to avoid local clock skew issues
       const maxTs = visibleNotices.length > 0 ? Math.max(...visibleNotices.map(n => n.timestamp || 0)) : Date.now();
       setLastNoticeOpen(maxTs);
-      localStorage.setItem('rf-last-notice-open', String(maxTs));
+      writeStorage('localStorage', 'rf-last-notice-open', String(maxTs));
       setUnreadCount(0);
     }
   };
@@ -3376,7 +3410,7 @@ const FamilyGraph = () => {
       familyData.forEach(p => {
         next[p.id] = false;
       });
-      localStorage.setItem('rf-collapsed-state', JSON.stringify(next));
+      writeStorage('localStorage', 'rf-collapsed-state', JSON.stringify(next));
       return next;
     });
   }, [getViewport, familyData, nodes]);
@@ -3546,7 +3580,7 @@ const FamilyGraph = () => {
         }
       });
 
-      localStorage.setItem('rf-collapsed-state', JSON.stringify(next));
+      writeStorage('localStorage', 'rf-collapsed-state', JSON.stringify(next));
       return next;
     });
 
@@ -3594,7 +3628,7 @@ const FamilyGraph = () => {
         const id = String(person.id);
         next[id] = !scaffoldNodeIds.has(id);
       });
-      localStorage.setItem('rf-collapsed-state', JSON.stringify(next));
+      writeStorage('localStorage', 'rf-collapsed-state', JSON.stringify(next));
       return next;
     });
 

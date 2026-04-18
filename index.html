@@ -7,7 +7,12 @@
     <title>Nasab Al-Baraja</title>
     <script>
       (function() {
-        const theme = localStorage.getItem('rf-theme') || 'light';
+        let theme = 'light';
+        try {
+          theme = localStorage.getItem('rf-theme') || 'light';
+        } catch (e) {
+          theme = 'light';
+        }
         document.documentElement.setAttribute('data-theme', theme);
       })();
     </script>
