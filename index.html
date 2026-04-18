@@ -14,6 +14,21 @@
           theme = 'light';
         }
         document.documentElement.setAttribute('data-theme', theme);
+
+        // Debug Logger for Mobile
+        window.onerror = function(msg, url, line, col, error) {
+          var div = document.createElement('div');
+          div.style.cssText = 'position:fixed;top:0;left:0;width:100%;background:red;color:white;z-index:9999;padding:15px;font-size:13px;font-family:monospace;word-break:break-all;box-shadow:0 0 10px rgba(0,0,0,0.5);';
+          div.innerHTML = '<strong>JS ERROR:</strong><br>' + msg + '<br><br><strong>File:</strong> ' + url + ':' + line + ':' + col + (error && error.stack ? '<br><br><strong>Stack:</strong><br>' + error.stack : '');
+          document.body.appendChild(div);
+          return false;
+        };
+        window.onunhandledrejection = function(event) {
+          var div = document.createElement('div');
+          div.style.cssText = 'position:fixed;top:0;left:0;width:100%;background:orange;color:white;z-index:9999;padding:15px;font-size:13px;font-family:monospace;word-break:break-all;box-shadow:0 0 10px rgba(0,0,0,0.5);';
+          div.innerHTML = '<strong>PROMISE REJECTION:</strong><br>' + event.reason;
+          document.body.appendChild(div);
+        };
       })();
     </script>
   </head>

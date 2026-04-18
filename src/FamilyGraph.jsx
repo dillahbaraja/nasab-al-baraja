@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { Suspense, lazy, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   ReactFlow,
   Controls,
@@ -10,19 +10,18 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Search, Palette, Database, Bell, ListTree, Maximize, Camera } from 'lucide-react';
-import { toCanvas, toPng } from 'html-to-image';
-import { jsPDF } from 'jspdf';
 import { initialFamilyData, generateEdges } from './data';
 import { getLayoutedElements, createNodesFromData } from './layout';
-import NodeEditModal from './NodeEditModal';
 import { supabase } from './supabase';
 import { translations } from './i18n';
 import MobileHeader from './components/MobileHeader';
 import WebsiteHeader from './components/WebsiteHeader';
-import InfoModal from './components/InfoModals';
 import { nodeTypes } from './reactFlowTypes';
 import { StatusBar, Style } from '@capacitor/status-bar';
 import { Capacitor } from '@capacitor/core';
+
+const LazyNodeEditModal = lazy(() => import('./NodeEditModal'));
+const LazyInfoModal = lazy(() => import('./components/InfoModals'));
 
 const readStorage = (storageName, key, fallback = null) => {
   try {
@@ -268,6 +267,7 @@ const FamilyGraph = () => {
   const nodesSyncInFlightRef = useRef(false);
   const nodeFetchVersionRef = useRef(0);
   const noticesSyncInFlightRef = useRef(false);
+  const exportModulesRef = useRef(null);
   const pendingDeletedIdsRef = useRef(new Set());
   const lastVisibleSyncAtRef = useRef(0);
   const hiddenSinceRef = useRef(null);
@@ -456,6 +456,18 @@ const FamilyGraph = () => {
     }, duration);
   }, []);
 
+  const loadExportModules = useCallback(async () => {
+    if (exportModulesRef.current) return exportModulesRef.current;
+
+    const [{ toCanvas, toPng }, { jsPDF }] = await Promise.all([
+      import('html-to-image'),
+      import('jspdf')
+    ]);
+
+    exportModulesRef.current = { toCanvas, toPng, jsPDF };
+    return exportModulesRef.current;
+  }, []);
+
   const handleCaptureVisibleView = useCallback(async () => {
     if (isCapturingScreenshot || Capacitor.getPlatform() !== 'web') return;
 
@@ -469,6 +481,7 @@ const FamilyGraph = () => {
 
     try {
       await wait(80);
+      const { toPng } = await loadExportModules();
 
       const bounds = flowElement.getBoundingClientRect();
       const requestedScale = Math.min(Math.max(window.devicePixelRatio || 1, 3), 4);
@@ -506,7 +519,7 @@ const FamilyGraph = () => {
     } finally {
       setIsCapturingScreenshot(false);
     }
-  }, [isCapturingScreenshot, showToast, t, wait]);
+  }, [isCapturingScreenshot, loadExportModules, showToast, t, wait]);
 
   const handleDownloadAncestorPdf = useCallback(async (personId) => {
     if (Capacitor.getPlatform() !== 'web') {
@@ -718,6 +731,7 @@ const FamilyGraph = () => {
 
     try {
       await wait(90);
+      const { toCanvas, jsPDF } = await loadExportModules();
 
       const bounds = exportCard.getBoundingClientRect();
       const requestedScale = 2.8;
@@ -788,7 +802,7 @@ const FamilyGraph = () => {
     } finally {
       exportShell.remove();
     }
-  }, [lang, personMap, showToast, t, wait]);
+  }, [lang, loadExportModules, personMap, showToast, t, wait]);
 
   const stopCameraMotion = useCallback(() => {
     lineageTourTokenRef.current += 1;
@@ -985,7 +999,14 @@ const FamilyGraph = () => {
     }
     clearIntroTimers();
 
-    const duration = 14000;
+    const isLikelyMobile = Capacitor.getPlatform() === 'android'
+      || (typeof window !== 'undefined' && (
+        window.innerWidth <= 768
+        || window.matchMedia?.('(pointer: coarse)')?.matches
+      ));
+
+    // Jika mobile, durasi animasi ngebut, jika desktop durasi normal
+    const duration = isLikelyMobile ? 5500 : 14000;
     const startT = window.performance.now();
 
     const animateCamera = (timestamp) => {
@@ -1031,11 +1052,21 @@ const FamilyGraph = () => {
 
     animationRef.current = requestAnimationFrame(animateCamera);
 
-    scheduleIntroAction(2000, () => setCollapsedIds(tier1, false));
-    scheduleIntroAction(4500, () => setCollapsedIds(tier2, false));
-    scheduleIntroAction(7000, () => setCollapsedIds(tier3, false));
-    scheduleIntroAction(9500, () => setCollapsedIds(tier4, false));
-    scheduleIntroAction(12000, () => setCollapsedIds(tier5, false));
+    if (isLikelyMobile) {
+      // Jadwal ngebut untuk mobile (Total ~5 detik)
+      scheduleIntroAction(600, () => setCollapsedIds(tier1, false));
+      scheduleIntroAction(1600, () => setCollapsedIds(tier2, false));
+      scheduleIntroAction(2600, () => setCollapsedIds(tier3, false));
+      scheduleIntroAction(3600, () => setCollapsedIds(tier4, false));
+      scheduleIntroAction(4600, () => setCollapsedIds(tier5, false));
+    } else {
+      // Jadwal normal untuk desktop
+      scheduleIntroAction(2000, () => setCollapsedIds(tier1, false));
+      scheduleIntroAction(4500, () => setCollapsedIds(tier2, false));
+      scheduleIntroAction(7000, () => setCollapsedIds(tier3, false));
+      scheduleIntroAction(9500, () => setCollapsedIds(tier4, false));
+      scheduleIntroAction(12000, () => setCollapsedIds(tier5, false));
+    }
 
     return true;
   }, [buildParentToChildrenMap, clearIntroTimers, familyData, fitView, getNode, nodes, scheduleIntroAction, setCollapsedIds, setViewport]);
@@ -2458,20 +2489,6 @@ const FamilyGraph = () => {
 
     if (!rootPerson) return;
 
-    if (isLikelyMobile) {
-      hasInitialFocusedRef.current = true;
-      // Langsung buka semua node tanpa tunda
-      const allIds = familyData.map(p => String(p.id));
-      setCollapsedIds(allIds, false);
-      writeStorage('sessionStorage', 'rf-cinematic-forced', '1');
-
-      // Fokus langsung ke rootPerson dengan cepat
-      requestAnimationFrame(() => {
-        smoothFocusNode(String(rootPerson.id), { targetZoom: 0.6, customDuration: 0 });
-      });
-      return;
-    }
-
     // Step 0: ensure the tree is forcefully collapsed before cinematic starts.
     const hasBeenForced = readStorage('sessionStorage', 'rf-cinematic-forced', null);
     if (!hasBeenForced) {
@@ -3733,43 +3750,47 @@ const FamilyGraph = () => {
         {renderSearchForm()}
       </WebsiteHeader>
 
-      <InfoModal
-        isOpen={!!activeInfoModal}
-        onClose={() => setActiveInfoModal(null)}
-        type={activeInfoModal}
-        title={t(
-          activeInfoModal === 'signin' ? 'signIn'
-            : activeInfoModal === 'about' ? 'about'
-              : activeInfoModal === 'notice' ? 'notice'
-                  : activeInfoModal === 'profile' ? 'profile'
-                    : activeInfoModal === 'memberManager' ? 'memberManager'
-                      : activeInfoModal === 'listMember' ? 'listMember'
-                        : activeInfoModal === 'listAdmin' ? 'listAdmin'
-                      : 'settings'
-        )}
-        t={t}
-        lang={lang}
-        onSignIn={handleSignIn}
-        onChangePassword={handleChangePassword}
-        currentUser={isSignedInUser ? currentUser : null}
-        currentMember={currentMember}
-        currentRole={effectiveRole}
-        familyData={familyData}
-        notices={visibleNotices}
-        onViewNotice={handleViewNotice}
-        onViewMember={handleViewPerson}
-        onDeleteNotice={handleDeleteNotice}
-        appSettings={appSettings}
-        setAppSettings={setAppSettings}
-        onUpdateProfile={handleUpdateProfile}
-        memberClaims={pendingMemberClaims}
-        verifiedMembers={verifiedMembers}
-        adminMembers={adminMembers}
-        onApproveMember={handleApproveMember}
-        onRejectMember={handleRejectMember}
-        onPromoteAdmin={handlePromoteAdmin}
-        loadingMembers={isMemberDataLoading}
-      />
+      {!!activeInfoModal && (
+        <Suspense fallback={null}>
+          <LazyInfoModal
+            isOpen={!!activeInfoModal}
+            onClose={() => setActiveInfoModal(null)}
+            type={activeInfoModal}
+            title={t(
+              activeInfoModal === 'signin' ? 'signIn'
+                : activeInfoModal === 'about' ? 'about'
+                  : activeInfoModal === 'notice' ? 'notice'
+                    : activeInfoModal === 'profile' ? 'profile'
+                      : activeInfoModal === 'memberManager' ? 'memberManager'
+                        : activeInfoModal === 'listMember' ? 'listMember'
+                          : activeInfoModal === 'listAdmin' ? 'listAdmin'
+                            : 'settings'
+            )}
+            t={t}
+            lang={lang}
+            onSignIn={handleSignIn}
+            onChangePassword={handleChangePassword}
+            currentUser={isSignedInUser ? currentUser : null}
+            currentMember={currentMember}
+            currentRole={effectiveRole}
+            familyData={familyData}
+            notices={visibleNotices}
+            onViewNotice={handleViewNotice}
+            onViewMember={handleViewPerson}
+            onDeleteNotice={handleDeleteNotice}
+            appSettings={appSettings}
+            setAppSettings={setAppSettings}
+            onUpdateProfile={handleUpdateProfile}
+            memberClaims={pendingMemberClaims}
+            verifiedMembers={verifiedMembers}
+            adminMembers={adminMembers}
+            onApproveMember={handleApproveMember}
+            onRejectMember={handleRejectMember}
+            onPromoteAdmin={handlePromoteAdmin}
+            loadingMembers={isMemberDataLoading}
+          />
+        </Suspense>
+      )}
 
       {/* Toast Notification */}
       {visibleToast && (
@@ -3798,42 +3819,46 @@ const FamilyGraph = () => {
         </button>
       )}
 
-      <NodeEditModal
-        isOpen={isModalOpen}
-        onClose={handleModalClose}
-        person={selectedPerson}
-        familyData={familyData}
-        onAddChild={handleAddChild}
-        onUpdateChild={handleUpdateChild}
-        onRemoveChild={handleRemoveChild}
-        onViewPerson={handleViewPerson}
-        onShowLineageOnly={handleShowLineageOnly}
-        onDownloadAncestorPdf={handleDownloadAncestorPdf}
-        onShowRelationshipWithMe={handleShowRelationshipWithMe}
-        onSubmitChildSuggestion={handleSubmitChildSuggestion}
-        onSubmitNameSuggestion={handleSubmitNameSuggestion}
-        onUpdateProposal={handleUpdateProposal}
-        onCancelProposal={handleCancelProposal}
-        onApproveProposal={handleApproveProposal}
-        onRejectProposal={handleRejectProposal}
-        onSkipPending={handleSkipPending}
-        lang={lang}
-        t={t}
-        currentUser={currentUser}
-        isAdmin={isAdmin}
-        canModerateProposals={canModerateProposals}
-        currentRole={effectiveRole}
-        canShowRelationshipWithMe={
-          isVerifiedMember &&
-          Boolean(currentMember?.person_id) &&
-          selectedPerson &&
-          String(currentMember.person_id) !== String(selectedPerson.id)
-        }
-        memberClaimStatus={selectedPerson ? (memberStatuses[String(selectedPerson.id)] || 'none') : 'none'}
-        allowMemberClaim={effectiveRole === 'guest' && (!currentMember || ['rejected', 'cancelled'].includes(currentMember.claim_status))}
-        currentMemberClaimStatus={currentMember?.claim_status || 'none'}
-        onSubmitMemberClaim={handleSubmitMemberClaim}
-      />
+      {isModalOpen && selectedPerson && (
+        <Suspense fallback={null}>
+          <LazyNodeEditModal
+            isOpen={isModalOpen}
+            onClose={handleModalClose}
+            person={selectedPerson}
+            familyData={familyData}
+            onAddChild={handleAddChild}
+            onUpdateChild={handleUpdateChild}
+            onRemoveChild={handleRemoveChild}
+            onViewPerson={handleViewPerson}
+            onShowLineageOnly={handleShowLineageOnly}
+            onDownloadAncestorPdf={handleDownloadAncestorPdf}
+            onShowRelationshipWithMe={handleShowRelationshipWithMe}
+            onSubmitChildSuggestion={handleSubmitChildSuggestion}
+            onSubmitNameSuggestion={handleSubmitNameSuggestion}
+            onUpdateProposal={handleUpdateProposal}
+            onCancelProposal={handleCancelProposal}
+            onApproveProposal={handleApproveProposal}
+            onRejectProposal={handleRejectProposal}
+            onSkipPending={handleSkipPending}
+            lang={lang}
+            t={t}
+            currentUser={currentUser}
+            isAdmin={isAdmin}
+            canModerateProposals={canModerateProposals}
+            currentRole={effectiveRole}
+            canShowRelationshipWithMe={
+              isVerifiedMember &&
+              Boolean(currentMember?.person_id) &&
+              selectedPerson &&
+              String(currentMember.person_id) !== String(selectedPerson.id)
+            }
+            memberClaimStatus={selectedPerson ? (memberStatuses[String(selectedPerson.id)] || 'none') : 'none'}
+            allowMemberClaim={effectiveRole === 'guest' && (!currentMember || ['rejected', 'cancelled'].includes(currentMember.claim_status))}
+            currentMemberClaimStatus={currentMember?.claim_status || 'none'}
+            onSubmitMemberClaim={handleSubmitMemberClaim}
+          />
+        </Suspense>
+      )}
 
       {/* Only show standalone search for Android (since it's in the header for Web) */}
       {Capacitor.getPlatform() === 'android' && renderSearchForm()}
