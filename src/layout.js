@@ -15,19 +15,32 @@ export const getLayoutedElements = (nodes, edges) => {
   });
 
   const roots = nodes.filter(n => inDegree[n.id] === 0).map(n => n.id);
+  const rootIds = roots.length > 0 ? roots : nodes.map(n => n.id);
   const contours = {}; // node -> array of {left, right} for each depth relative to node's center
   const localX = {}; 
-  
-  const calculateLocalPositions = (id) => {
+
+  const calculateLocalPositions = (id, visiting = new Set()) => {
+    if (visiting.has(id)) {
+      if (!contours[id]) {
+        contours[id] = [{ left: -nodeWidth / 2, right: nodeWidth / 2 }];
+      }
+      if (localX[id] == null) {
+        localX[id] = 0;
+      }
+      return;
+    }
+
+    visiting.add(id);
     const children = childrenMap[id];
     
     if (!children || children.length === 0) {
       contours[id] = [ { left: -nodeWidth/2, right: nodeWidth/2 } ];
       localX[id] = 0;
+      visiting.delete(id);
       return;
     }
 
-    children.forEach(c => calculateLocalPositions(c));
+    children.forEach(c => calculateLocalPositions(c, visiting));
 
     localX[children[0]] = 0;
     
@@ -84,19 +97,20 @@ export const getLayoutedElements = (nodes, edges) => {
         myContour.push({ left: minLeft, right: maxRight });
     }
     contours[id] = myContour;
+    visiting.delete(id);
   };
 
-  roots.forEach(r => calculateLocalPositions(r));
+  rootIds.forEach(r => calculateLocalPositions(r));
   
   const globalX = {};
-  if (roots.length > 0) {
-      globalX[roots[0]] = 0;
-      for (let i = 1; i < roots.length; i++) {
-        const rootId = roots[i];
+  if (rootIds.length > 0) {
+      globalX[rootIds[0]] = 0;
+      for (let i = 1; i < rootIds.length; i++) {
+        const rootId = rootIds[i];
         let maxShift = 0;
         
         for (let j = 0; j < i; j++) {
-            const leftSib = roots[j];
+            const leftSib = rootIds[j];
             const leftContour = contours[leftSib];
             const rightContour = contours[rootId];
             
@@ -111,23 +125,26 @@ export const getLayoutedElements = (nodes, edges) => {
                 }
             }
         }
-        maxShift = Math.max(maxShift, globalX[roots[i-1]] + nodeWidth + gapX);
+        maxShift = Math.max(maxShift, globalX[rootIds[i-1]] + nodeWidth + gapX);
         globalX[rootId] = maxShift;
       }
   }
 
   const pos = {};
-  const calculateFinalPositions = (id, currentRelativeX, currentY) => {
+  const calculateFinalPositions = (id, currentRelativeX, currentY, visiting = new Set()) => {
+      if (visiting.has(id)) return;
+      visiting.add(id);
       pos[id] = { x: currentRelativeX, y: currentY };
       const children = childrenMap[id] || [];
       children.forEach(c => {
-          calculateFinalPositions(c, currentRelativeX + localX[c], currentY + nodeHeight + gapY);
+          calculateFinalPositions(c, currentRelativeX + localX[c], currentY + nodeHeight + gapY, visiting);
       });
+      visiting.delete(id);
   };
 
   let minGlobalX = Infinity;
-  roots.forEach(r => {
-    calculateFinalPositions(r, globalX[r], 0);
+  rootIds.forEach(r => {
+    calculateFinalPositions(r, globalX[r] || 0, 0);
   });
   
   Object.values(pos).forEach(p => {

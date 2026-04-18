@@ -1793,13 +1793,18 @@ const FamilyGraph = () => {
         }
       });
 
-      const gatherDescendantIds = (parentId) => {
-        let results = [];
+      const gatherDescendantIds = (parentId, visited = new Set()) => {
         const pid = String(parentId);
+        if (visited.has(pid)) return [];
+        visited.add(pid);
+
+        let results = [];
         const children = parentToChildrenMap.get(pid) || [];
         children.forEach(child => {
-          results.push(String(child.id));
-          results = results.concat(gatherDescendantIds(child.id));
+          const cid = String(child.id);
+          if (visited.has(cid)) return;
+          results.push(cid);
+          results = results.concat(gatherDescendantIds(cid, visited));
         });
         return results;
       };
@@ -1836,13 +1841,18 @@ const FamilyGraph = () => {
         }
       });
 
-      const gatherDescendantIds = (parentId) => {
-        let results = [];
+      const gatherDescendantIds = (parentId, visited = new Set()) => {
         const pid = String(parentId);
+        if (visited.has(pid)) return [];
+        visited.add(pid);
+
+        let results = [];
         const children = parentToChildrenMap.get(pid) || [];
         children.forEach(child => {
-          results.push(String(child.id));
-          results = results.concat(gatherDescendantIds(child.id));
+          const cid = String(child.id);
+          if (visited.has(cid)) return;
+          results.push(cid);
+          results = results.concat(gatherDescendantIds(cid, visited));
         });
         return results;
       };
@@ -2184,8 +2194,11 @@ const FamilyGraph = () => {
 
       const rootList = renderableFamilyData.filter(p => !p.fatherId);
       const visibleData = [];
+      const visitedTraversalIds = new Set();
       const traverse = (person) => {
         const pid = String(person.id);
+        if (visitedTraversalIds.has(pid)) return;
+        visitedTraversalIds.add(pid);
         const isCollapsed = !!collapsedStateById[pid];
         const isCurrentlyCollapsing = collapsingParentId === pid;
         const displayNames = getDisplayNames(person);
@@ -2494,13 +2507,18 @@ const FamilyGraph = () => {
     if (!hasBeenForced) {
       const parentToChildrenMap = buildParentToChildrenMap(familyData);
 
-      const gatherDescendantIds = (parentId) => {
+      const gatherDescendantIds = (parentId, visited = new Set()) => {
+        const pid = String(parentId);
+        if (visited.has(pid)) return [];
+        visited.add(pid);
+
         let results = [];
-        const children = parentToChildrenMap.get(String(parentId)) || [];
+        const children = parentToChildrenMap.get(pid) || [];
         children.forEach(child => {
           const cid = String(child.id);
+          if (visited.has(cid)) return;
           results.push(cid);
-          results = results.concat(gatherDescendantIds(cid));
+          results = results.concat(gatherDescendantIds(cid, visited));
         });
         return results;
       };
@@ -2741,9 +2759,20 @@ const FamilyGraph = () => {
         parentToChildrenMap.get(fatherId).push(String(person.id));
       });
 
-      const gatherDescendantIds = (parentId) => {
-        const directChildren = parentToChildrenMap.get(String(parentId)) || [];
-        return directChildren.flatMap((descendantId) => [descendantId, ...gatherDescendantIds(descendantId)]);
+      const gatherDescendantIds = (parentId, visited = new Set()) => {
+        const pid = String(parentId);
+        if (visited.has(pid)) return [];
+        visited.add(pid);
+
+        const directChildren = parentToChildrenMap.get(pid) || [];
+        const results = [];
+        directChildren.forEach((descendantId) => {
+          const cid = String(descendantId);
+          if (visited.has(cid)) return;
+          results.push(cid);
+          results.push(...gatherDescendantIds(cid, visited));
+        });
+        return results;
       };
 
       idsToDelete = [String(childId), ...gatherDescendantIds(childId)];
