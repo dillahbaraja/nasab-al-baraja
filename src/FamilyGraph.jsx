@@ -945,29 +945,67 @@ const FamilyGraph = () => {
     };
   }, []);
 
-  const runLineageCameraTour = useCallback(async (selectedId, chainIds) => {
+  const runLineageCameraTour = useCallback(async (selectedId, chainIds, options = {}) => {
+    const {
+      startViewport = null,
+      preserveZoomOnMobile = false,
+      preserveCurrentZoom = false,
+      skipInitialFocus = false,
+      relationshipMode = false
+    } = options;
+
     const tourToken = Date.now();
     lineageTourTokenRef.current = tourToken;
 
-    await wait(appSettings.animationsEnabled && appSettings.cameraEnabled ? 520 : 60);
+    const initialWait = relationshipMode
+      ? 180
+      : preserveZoomOnMobile && isMobileDevice
+        ? 200
+        : (appSettings.animationsEnabled && appSettings.cameraEnabled ? 520 : 60);
+
+    await wait(initialWait);
     if (lineageTourTokenRef.current !== tourToken) return;
+
+    if ((preserveZoomOnMobile && isMobileDevice && startViewport) || (preserveCurrentZoom && startViewport && !relationshipMode)) {
+      setViewport({
+        x: startViewport.x,
+        y: startViewport.y,
+        zoom: preserveCurrentZoom
+          ? Math.min(Math.max(startViewport.zoom || 1, 0.72), 1.12)
+          : Math.min(Math.max(startViewport.zoom || 1, 0.6), 1.2)
+      }, { duration: 0 });
+      await wait(50);
+      if (lineageTourTokenRef.current !== tourToken) return;
+    }
 
     const liveNodes = getNodes();
     if (!liveNodes || liveNodes.length === 0) return;
 
     const selectedNode = getNode(String(selectedId));
     const visibleNodes = liveNodes.filter((node) => node && !node.hidden);
-    const overviewViewport = getViewportForVisibleNodes(visibleNodes);
+    const overviewViewport = (preserveZoomOnMobile && isMobileDevice) || preserveCurrentZoom
+      ? null
+      : getViewportForVisibleNodes(visibleNodes);
+    const viewportSeed = startViewport || getViewport();
+    const seedZoom = Number.isFinite(viewportSeed?.zoom) ? viewportSeed.zoom : 1;
 
-    if (!selectedNode || !overviewViewport) {
+    if (!selectedNode || (!overviewViewport && !(preserveZoomOnMobile && isMobileDevice) && !preserveCurrentZoom)) {
       fitView({ duration: appSettings.animationsEnabled && appSettings.cameraEnabled ? 700 : 0, padding: 0.18 });
       return;
     }
 
     const transitionsEnabled = appSettings.animationsEnabled && appSettings.cameraEnabled;
     const totalSteps = Math.max(chainIds.length - 1, 1);
-    const endZoom = Math.max(overviewViewport.zoom, 0.6);
-    const startZoom = Math.min(Math.max(endZoom + 0.22, 0.9), 1.18);
+    const endZoom = preserveCurrentZoom
+      ? Math.min(Math.max(seedZoom, 0.72), 1.05)
+      : preserveZoomOnMobile && isMobileDevice
+      ? Math.min(Math.max(seedZoom, 0.9), 1.15)
+      : Math.max(overviewViewport.zoom, 0.6);
+    const startZoom = preserveCurrentZoom
+      ? endZoom
+      : preserveZoomOnMobile && isMobileDevice
+      ? Math.min(Math.max(seedZoom + 0.08, 0.92), 1.18)
+      : Math.min(Math.max(endZoom + 0.22, 0.9), 1.18);
 
     const centerNodeInViewport = (liveNode, zoom, duration) => {
       const nodeHeight = liveNode.height || liveNode.measured?.height || 72;
@@ -993,22 +1031,40 @@ const FamilyGraph = () => {
       return;
     }
 
-    await centerNode(selectedId, startZoom, 920, 440, false);
-    if (lineageTourTokenRef.current !== tourToken) return;
+    let startIndex = 1;
+    if (!skipInitialFocus) {
+      await centerNode(selectedId, startZoom, preserveCurrentZoom ? 560 : 920, preserveCurrentZoom ? 120 : 440, false);
+      if (lineageTourTokenRef.current !== tourToken) return;
+      startIndex = 1;
+    }
 
-    for (let index = 1; index < chainIds.length; index += 1) {
+    for (let index = startIndex; index < chainIds.length; index += 1) {
       if (lineageTourTokenRef.current !== tourToken) return;
       const progress = index / totalSteps;
       const stepZoom = startZoom + (endZoom - startZoom) * progress;
       const isLastStep = index === chainIds.length - 1;
-      const stepDuration = isLastStep ? 1120 : 980;
-      const holdDuration = isLastStep ? 460 : 380;
+      const stepDuration = relationshipMode
+        ? (isLastStep ? 1320 : 1120)
+        : preserveCurrentZoom
+        ? (isLastStep ? 900 : 780)
+        : (isLastStep ? 1120 : 980);
+      const holdDuration = relationshipMode
+        ? (isLastStep ? 380 : 280)
+        : preserveCurrentZoom
+        ? (isLastStep ? 240 : 180)
+        : (isLastStep ? 460 : 380);
       await centerNode(chainIds[index], stepZoom, stepDuration, holdDuration, false);
     }
 
     if (lineageTourTokenRef.current !== tourToken) return;
-    await centerNode(selectedId, endZoom, 1180, 320, true);
-  }, [appSettings.animationsEnabled, appSettings.cameraEnabled, fitView, getNode, getNodes, getViewportForVisibleNodes, setCenter, setViewport, triggerGlow, wait]);
+    await centerNode(
+      selectedId,
+      endZoom,
+      relationshipMode ? 1450 : 1180,
+      relationshipMode ? 420 : 320,
+      true
+    );
+  }, [appSettings.animationsEnabled, appSettings.cameraEnabled, fitView, getNode, getNodes, getViewport, getViewportForVisibleNodes, isMobileDevice, setCenter, setViewport, triggerGlow, wait]);
 
   const runLineageBloomIntro = useCallback((rootPerson) => {
     const rootId = String(rootPerson.id);
@@ -3602,6 +3658,7 @@ const FamilyGraph = () => {
 
   const handleShowLineageOnly = useCallback((personId) => {
     if (!personId || familyData.length === 0) return;
+    const startViewport = getViewport();
 
     // Build O(1) lookup maps
     const personMapLocal = new Map();
@@ -3746,13 +3803,17 @@ const FamilyGraph = () => {
     if (isMobileDevice) {
       requestAnimationFrame(() => triggerGlow(selectedId));
     }
-    runLineageCameraTour(selectedId, ancestorChain);
-  }, [calculateAncestorPath, isMobileDevice, runLineageCameraTour, setAncestorPathForMobile, triggerGlow]);
+    runLineageCameraTour(selectedId, ancestorChain, {
+      startViewport,
+      preserveZoomOnMobile: isMobileDevice
+    });
+  }, [calculateAncestorPath, getViewport, isMobileDevice, runLineageCameraTour, setAncestorPathForMobile, triggerGlow]);
 
   const handleShowRelationshipWithMe = useCallback((personId) => {
     const memberPersonId = currentMember?.person_id ? String(currentMember.person_id) : null;
     const targetId = personId ? String(personId) : null;
     if (!memberPersonId || !targetId || memberPersonId === targetId || familyData.length === 0) return;
+    const startViewport = getViewport();
 
     const relationshipPath = calculateRelationshipPath(memberPersonId, targetId);
     if (relationshipPath.orderedNodeIds.length === 0) return;
@@ -3789,8 +3850,14 @@ const FamilyGraph = () => {
     if (isMobileDevice) {
       requestAnimationFrame(() => triggerGlow(targetId));
     }
-    runLineageCameraTour(targetId, [...relationshipPath.orderedNodeIds].reverse());
-  }, [calculateRelationshipPath, currentMember?.person_id, familyData, isMobileDevice, personMap, runLineageCameraTour, setAncestorPathForMobile, triggerGlow]);
+    runLineageCameraTour(targetId, [...relationshipPath.orderedNodeIds].reverse(), {
+      startViewport,
+      preserveZoomOnMobile: isMobileDevice,
+      preserveCurrentZoom: true,
+      skipInitialFocus: false,
+      relationshipMode: true
+    });
+  }, [calculateRelationshipPath, currentMember?.person_id, familyData, getViewport, isMobileDevice, personMap, runLineageCameraTour, setAncestorPathForMobile, triggerGlow]);
 
   const handleViewNotice = (notice) => {
     const isProposalNotice = notice?.type === 'proposal_add_child' || notice?.type === 'proposal_name_change';
