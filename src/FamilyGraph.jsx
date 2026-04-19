@@ -117,6 +117,11 @@ const TimeoutWarning = () => {
 
 const SCREENSHOT_BUTTON_ENABLED = false;
 
+const isNativeMobilePlatform = () => {
+  const platform = Capacitor.getPlatform();
+  return platform === 'android' || platform === 'ios';
+};
+
 const LoadingScreen = ({ t }) => {
   return (
     <div className="loading-screen-shell">
@@ -262,11 +267,12 @@ const FamilyGraph = () => {
 
   const t = useCallback((key) => translations[key]?.[lang] || translations[key]?.['en'] || key, [lang]);
   const isMobileDevice = useMemo(() => {
-    if (Capacitor.getPlatform() === 'android') return true;
+    if (isNativeMobilePlatform()) return true;
     if (typeof navigator === 'undefined') return false;
     return /iPhone|iPod|Android/i.test(navigator.userAgent)
       || (typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)')?.matches);
   }, []);
+  const isNativeMobile = useMemo(() => isNativeMobilePlatform(), []);
   const setAncestorPathSafe = useCallback((nextPath) => {
     if (isMobileDevice) return;
     setAncestorPath(nextPath);
@@ -327,6 +333,7 @@ const FamilyGraph = () => {
   const [collapsingParentId, setCollapsingParentId] = useState(null);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [ancestorPath, setAncestorPath] = useState({ nodeIds: new Set(), edgeIds: new Set() });
+  const [nodeComparisonSelection, setNodeComparisonSelection] = useState({ sourceId: null, sourceName: '' });
   const selectedNodeIdRef = useRef(null);
   const searchDebounceRef = useRef(null);
   const resumeSyncTimeoutRef = useRef(null);
@@ -1110,7 +1117,7 @@ const FamilyGraph = () => {
     }
     clearIntroTimers();
 
-    const isLikelyMobile = Capacitor.getPlatform() === 'android'
+    const isLikelyMobile = isNativeMobilePlatform()
       || (typeof window !== 'undefined' && (
         window.innerWidth <= 768
         || window.matchMedia?.('(pointer: coarse)')?.matches
@@ -1308,8 +1315,8 @@ const FamilyGraph = () => {
     document.documentElement.setAttribute('data-theme', theme);
     writeStorage('localStorage', 'rf-theme', theme);
 
-    // Sync Status Bar on Android
-    if (Capacitor.getPlatform() === 'android') {
+    // Sync Status Bar on native mobile apps
+    if (isNativeMobilePlatform()) {
       const updateStatusBar = async () => {
         try {
           await StatusBar.setStyle({
@@ -2621,7 +2628,7 @@ const FamilyGraph = () => {
 
     if (familyData.length === 0) return;
 
-    const isLikelyMobile = Capacitor.getPlatform() === 'android'
+    const isLikelyMobile = isNativeMobilePlatform()
       || (typeof window !== 'undefined' && (
         window.innerWidth <= 768
         || window.matchMedia?.('(pointer: coarse)')?.matches
@@ -3809,14 +3816,14 @@ const FamilyGraph = () => {
     });
   }, [calculateAncestorPath, getViewport, isMobileDevice, runLineageCameraTour, setAncestorPathForMobile, triggerGlow]);
 
-  const handleShowRelationshipWithMe = useCallback((personId) => {
-    const memberPersonId = currentMember?.person_id ? String(currentMember.person_id) : null;
-    const targetId = personId ? String(personId) : null;
-    if (!memberPersonId || !targetId || memberPersonId === targetId || familyData.length === 0) return;
-    const startViewport = getViewport();
+  const applyVisualRelationshipPath = useCallback((targetId, relationshipPath, options = {}) => {
+    if (!targetId || !relationshipPath?.orderedNodeIds?.length) return false;
 
-    const relationshipPath = calculateRelationshipPath(memberPersonId, targetId);
-    if (relationshipPath.orderedNodeIds.length === 0) return;
+    const {
+      startViewport = getViewport(),
+      preserveCurrentZoom = true,
+      relationshipMode = true
+    } = options;
 
     const scaffoldNodeIds = new Set();
     relationshipPath.orderedNodeIds.forEach((nodeId) => {
@@ -3853,11 +3860,73 @@ const FamilyGraph = () => {
     runLineageCameraTour(targetId, [...relationshipPath.orderedNodeIds].reverse(), {
       startViewport,
       preserveZoomOnMobile: isMobileDevice,
-      preserveCurrentZoom: true,
+      preserveCurrentZoom,
       skipInitialFocus: false,
+      relationshipMode
+    });
+
+    return true;
+  }, [familyData, getViewport, isMobileDevice, personMap, runLineageCameraTour, setAncestorPathForMobile, triggerGlow]);
+
+  const handleShowRelationshipWithMe = useCallback((personId) => {
+    const memberPersonId = currentMember?.person_id ? String(currentMember.person_id) : null;
+    const targetId = personId ? String(personId) : null;
+    if (!memberPersonId || !targetId || memberPersonId === targetId || familyData.length === 0) return;
+    const startViewport = getViewport();
+
+    const relationshipPath = calculateRelationshipPath(memberPersonId, targetId);
+    if (relationshipPath.orderedNodeIds.length === 0) return;
+
+    applyVisualRelationshipPath(targetId, relationshipPath, {
+      startViewport,
+      preserveCurrentZoom: true,
       relationshipMode: true
     });
-  }, [calculateRelationshipPath, currentMember?.person_id, familyData, getViewport, isMobileDevice, personMap, runLineageCameraTour, setAncestorPathForMobile, triggerGlow]);
+  }, [applyVisualRelationshipPath, calculateRelationshipPath, currentMember?.person_id, familyData.length, getViewport]);
+
+  const handleStartNodeComparison = useCallback((personId) => {
+    const sourceId = personId ? String(personId) : null;
+    if (!sourceId) return;
+
+    const sourcePerson = personMap.get(sourceId);
+    const displayNames = getDisplayNames(sourcePerson);
+    const sourceName = lang === 'ar'
+      ? displayNames.arabicName
+      : (displayNames.englishName || displayNames.arabicName || sourceId);
+
+    setNodeComparisonSelection({ sourceId, sourceName });
+    setIsModalOpen(false);
+    showToast({ text: `${sourceName} ${t('compareStartSelectedToast')}` }, 3600);
+  }, [lang, personMap, showToast, t]);
+
+  const handleCancelNodeComparison = useCallback(() => {
+    setNodeComparisonSelection({ sourceId: null, sourceName: '' });
+    showToast({ text: t('compareCanceled') });
+  }, [showToast, t]);
+
+  const handleCompleteNodeComparison = useCallback((personId) => {
+    const sourceId = nodeComparisonSelection.sourceId ? String(nodeComparisonSelection.sourceId) : null;
+    const targetId = personId ? String(personId) : null;
+    if (!sourceId || !targetId || sourceId === targetId || familyData.length === 0) return;
+
+    const startViewport = getViewport();
+    const relationshipPath = calculateRelationshipPath(sourceId, targetId);
+    if (relationshipPath.orderedNodeIds.length === 0) {
+      showToast({ text: t('comparePathNotFound') }, 3200);
+      return;
+    }
+
+    const didApply = applyVisualRelationshipPath(targetId, relationshipPath, {
+      startViewport,
+      preserveCurrentZoom: true,
+      relationshipMode: true
+    });
+
+    if (!didApply) return;
+
+    setNodeComparisonSelection({ sourceId: null, sourceName: '' });
+    showToast({ text: t('compareVisualOnlyNotice') }, 3200);
+  }, [applyVisualRelationshipPath, calculateRelationshipPath, familyData.length, getViewport, nodeComparisonSelection.sourceId, showToast, t]);
 
   const handleViewNotice = (notice) => {
     const isProposalNotice = notice?.type === 'proposal_add_child' || notice?.type === 'proposal_name_change';
@@ -4022,9 +4091,9 @@ const FamilyGraph = () => {
 
       <GraphErrorBoundary fallback={(
         <div style={{ padding: '24px', margin: '24px', borderRadius: '16px', background: 'var(--panel-bg)', border: '1px solid var(--panel-border)', color: 'var(--text-primary)' }}>
-          <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>Graph crashed</div>
-          <div style={{ marginBottom: '12px', color: 'var(--text-secondary)' }}>Try reload if the tree renderer overflowed on this device.</div>
-          <button className="lineage-primary-button" onClick={() => window.location.reload()}>Reload</button>
+          <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>{t('graphCrashedTitle')}</div>
+          <div style={{ marginBottom: '12px', color: 'var(--text-secondary)' }}>{t('graphCrashedHint')}</div>
+          <button className="lineage-primary-button" onClick={() => window.location.reload()}>{t('reload')}</button>
         </div>
       )}>
         {isModalOpen && selectedPerson && (
@@ -4041,6 +4110,9 @@ const FamilyGraph = () => {
               onShowLineageOnly={handleShowLineageOnly}
               onDownloadAncestorPdf={handleDownloadAncestorPdf}
               onShowRelationshipWithMe={handleShowRelationshipWithMe}
+              onStartNodeComparison={handleStartNodeComparison}
+              onCompleteNodeComparison={handleCompleteNodeComparison}
+              onCancelNodeComparison={handleCancelNodeComparison}
               onSubmitChildSuggestion={handleSubmitChildSuggestion}
               onSubmitNameSuggestion={handleSubmitNameSuggestion}
               onUpdateProposal={handleUpdateProposal}
@@ -4055,11 +4127,14 @@ const FamilyGraph = () => {
               canModerateProposals={canModerateProposals}
               currentRole={effectiveRole}
               canShowRelationshipWithMe={
+                !nodeComparisonSelection.sourceId &&
                 isVerifiedMember &&
                 Boolean(currentMember?.person_id) &&
                 selectedPerson &&
                 String(currentMember.person_id) !== String(selectedPerson.id)
               }
+              nodeComparisonSourceId={nodeComparisonSelection.sourceId}
+              nodeComparisonSourceName={nodeComparisonSelection.sourceName}
               memberClaimStatus={selectedPerson ? (memberStatuses[String(selectedPerson.id)] || 'none') : 'none'}
               allowMemberClaim={effectiveRole === 'guest' && (!currentMember || ['rejected', 'cancelled'].includes(currentMember.claim_status))}
               currentMemberClaimStatus={currentMember?.claim_status || 'none'}
@@ -4068,8 +4143,8 @@ const FamilyGraph = () => {
           </Suspense>
         )}
 
-        {/* Only show standalone search for Android (since it's in the header for Web) */}
-        {Capacitor.getPlatform() === 'android' && renderSearchForm()}
+        {/* Standalone search for native mobile; web keeps search in the website header */}
+        {isNativeMobile && renderSearchForm()}
 
         <div className={`graph-workspace ${Capacitor.getPlatform()} ${isCapturingScreenshot ? 'is-capturing-screenshot' : ''}`} style={{ width: '100%', height: '100%', pointerEvents: isIntroRunning ? 'none' : 'auto' }} onDoubleClick={onPaneDoubleClick}>
           {isLoading ? (

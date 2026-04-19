@@ -15,6 +15,9 @@ const NodeEditModal = ({
   onShowLineageOnly,
   onDownloadAncestorPdf,
   onShowRelationshipWithMe,
+  onStartNodeComparison,
+  onCompleteNodeComparison,
+  onCancelNodeComparison,
   onSubmitChildSuggestion,
   onSubmitNameSuggestion,
   onUpdateProposal,
@@ -29,6 +32,8 @@ const NodeEditModal = ({
   canModerateProposals = false,
   currentRole,
   canShowRelationshipWithMe = false,
+  nodeComparisonSourceId = null,
+  nodeComparisonSourceName = '',
   memberClaimStatus = 'none',
   allowMemberClaim = false,
   currentMemberClaimStatus = 'none',
@@ -64,6 +69,65 @@ const NodeEditModal = ({
     return /iPhone|iPod|Android/i.test(navigator.userAgent)
       || (typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)')?.matches);
   }, []);
+  const normalizedPersonId = person ? String(person.id) : null;
+  const isNodeComparisonPending = Boolean(nodeComparisonSourceId);
+  const isCurrentComparisonSource = isNodeComparisonPending && normalizedPersonId === String(nodeComparisonSourceId);
+  const canStartNodeComparison = Boolean(person && !isNodeComparisonPending);
+  const canCompleteNodeComparison = Boolean(person && isNodeComparisonPending && !isCurrentComparisonSource);
+  const actionButtonBaseStyle = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '10px 20px',
+    borderRadius: '10px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: 'bold',
+    letterSpacing: '0.01em',
+    flex: '1 1 140px',
+    justifyContent: 'center',
+    border: '1px solid transparent',
+    boxShadow: '0 10px 24px rgba(15, 23, 42, 0.12)',
+    transition: 'transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease'
+  };
+  const lineageActionStyle = {
+    ...actionButtonBaseStyle,
+    background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+    color: '#ffffff',
+    boxShadow: '0 10px 24px rgba(22, 163, 74, 0.28)'
+  };
+  const pdfActionStyle = {
+    ...actionButtonBaseStyle,
+    background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+    color: '#ffffff',
+    boxShadow: '0 10px 24px rgba(37, 99, 235, 0.28)'
+  };
+  const memberRelationActionStyle = {
+    ...actionButtonBaseStyle,
+    background: 'linear-gradient(135deg, #0f766e 0%, #0f766e 100%)',
+    color: '#ffffff',
+    boxShadow: '0 10px 24px rgba(15, 118, 110, 0.28)'
+  };
+  const compareActionStyle = isCurrentComparisonSource
+    ? {
+        ...actionButtonBaseStyle,
+        background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+        color: '#ffffff',
+        boxShadow: '0 10px 24px rgba(239, 68, 68, 0.28)'
+      }
+    : canCompleteNodeComparison
+      ? {
+          ...actionButtonBaseStyle,
+          background: 'linear-gradient(135deg, #0891b2 0%, #0e7490 100%)',
+          color: '#ffffff',
+          boxShadow: '0 10px 24px rgba(8, 145, 178, 0.28)'
+        }
+      : {
+          ...actionButtonBaseStyle,
+          background: 'linear-gradient(135deg, #475569 0%, #334155 100%)',
+          color: '#ffffff',
+          boxShadow: '0 10px 24px rgba(71, 85, 105, 0.28)'
+        };
 
   const displayNames = useMemo(() => {
     if (!person) return { englishName: '', arabicName: '' };
@@ -669,28 +733,24 @@ const NodeEditModal = ({
           )}
         </div>
 
-        <div style={{ marginBottom: '16px', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div style={{ marginBottom: '16px', textAlign: 'center' }}>
+          {isNodeComparisonPending && (
+            <div style={{ marginBottom: '10px', fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+              <strong>{t('compareNode1Label')}:</strong> {nodeComparisonSourceName || t('compareNode1SelectedShort')}
+              <br />
+              {isCurrentComparisonSource ? t('compareCancelHint') : t('compareSelectNode2')}
+            </div>
+          )}
+          {!isNodeComparisonPending && (
+            <div style={{ marginBottom: '10px', fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+              {t('compareVisualOnlyNotice')}
+            </div>
+          )}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
           <button
             onClick={() => onShowLineageOnly && onShowLineageOnly(person.id)}
             className="lineage-primary-action"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '10px 20px',
-              background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-hover, #7c3aed) 100%)',
-              color: '#ffffff',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              fontSize: '13px',
-              fontWeight: 'bold',
-              letterSpacing: '0.01em',
-              boxShadow: '0 2px 12px rgba(0,0,0,0.18)',
-              transition: 'all 0.18s ease',
-              width: '100%',
-              justifyContent: 'center'
-            }}
+            style={lineageActionStyle}
           >
             <span style={{ fontSize: '16px' }}>🌿</span>
             {t('showLineageOnly')}
@@ -698,20 +758,7 @@ const NodeEditModal = ({
           {canDownloadAncestorPdf && (
             <button
               onClick={() => onDownloadAncestorPdf && onDownloadAncestorPdf(person.id)}
-              className="lineage-secondary-button"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '10px 20px',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontSize: '13px',
-                fontWeight: 'bold',
-                letterSpacing: '0.01em',
-                width: '100%',
-                justifyContent: 'center'
-              }}
+              style={pdfActionStyle}
             >
               <span style={{ fontSize: '16px' }}>📄</span>
               {t('downloadAncestorPdf')}
@@ -720,25 +767,36 @@ const NodeEditModal = ({
           {canShowRelationshipWithMe && (
             <button
               onClick={() => onShowRelationshipWithMe && onShowRelationshipWithMe(person.id)}
-              className="lineage-secondary-button"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '10px 20px',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontSize: '13px',
-                fontWeight: 'bold',
-                letterSpacing: '0.01em',
-                width: '100%',
-                justifyContent: 'center'
-              }}
+              style={memberRelationActionStyle}
             >
               <span style={{ fontSize: '16px' }}>🔗</span>
               {t('showRelationshipWithMe')}
             </button>
           )}
+          {(canStartNodeComparison || canCompleteNodeComparison || isCurrentComparisonSource) && (
+            <button
+              onClick={() => {
+                if (isCurrentComparisonSource) {
+                  onCancelNodeComparison && onCancelNodeComparison();
+                  return;
+                }
+                if (canCompleteNodeComparison) {
+                  onCompleteNodeComparison && onCompleteNodeComparison(person.id);
+                  return;
+                }
+                onStartNodeComparison && onStartNodeComparison(person.id);
+              }}
+              style={compareActionStyle}
+            >
+              <span style={{ fontSize: '16px' }}>{isCurrentComparisonSource ? '✕' : '↔'}</span>
+              {isCurrentComparisonSource
+                ? t('compareCancel')
+                : canCompleteNodeComparison
+                  ? t('compareNodes')
+                  : t('compareNode1Button')}
+            </button>
+          )}
+          </div>
         </div>
 
         {(!isAdmin && (

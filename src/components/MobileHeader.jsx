@@ -5,7 +5,7 @@ import SideDrawer from './SideDrawer';
 
 const MobileHeader = ({ title = '', onMenuClick, t, lang, currentUser, role = 'guest', unreadCount = 0 }) => {
   const platform = Capacitor.getPlatform();
-  if (platform !== 'android') return null;
+  if (platform !== 'android' && platform !== 'ios') return null;
 
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 

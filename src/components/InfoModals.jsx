@@ -466,7 +466,7 @@ const InfoModal = ({
                             <button
                               className="notice-delete-button"
                               onClick={() => {
-                                if (window.confirm(t('deleteBtn') + '?')) {
+                                if (window.confirm(t('deleteNoticeConfirm'))) {
                                   onDeleteNotice && onDeleteNotice(n.id);
                                 }
                               }}

@@ -7,8 +7,8 @@ const WebsiteHeader = ({ onMenuClick, children, t, lang, currentUser, role = 'gu
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const platform = Capacitor.getPlatform();
 
-  // ONLY show on website, NOT on android
-  if (platform === 'android') return null;
+  // Only show on website, not on native mobile apps.
+  if (platform === 'android' || platform === 'ios') return null;
 
   return (
     <>
