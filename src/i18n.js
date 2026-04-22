@@ -103,6 +103,7 @@ export const translations = {
   compareSelectNode2: { id: "Pilih node lain sebagai Node 2 untuk melihat garis visual.", en: "Pick another node as Node 2 to see the visual path.", ar: "اختر عقدة أخرى كعقدة 2 لعرض المسار البصري." },
   compareCancelHint: { id: "Node ini sedang ditandai sebagai Node 1. Batalkan jika ingin mengganti pilihan.", en: "This node is marked as Node 1. Cancel to change it.", ar: "هذه العقدة محددة كالعقدة الأولى. ألغِ إذا أردت تغييرها." },
   compareCanceled: { id: "Perbandingan dua node dibatalkan.", en: "Two-node comparison canceled.", ar: "تم إلغاء مقارنة العقدتين." },
+  compareSelectionExpired: { id: "Pilihan Node 1 dibatalkan karena waktu habis. Silakan pilih lagi.", en: "Node 1 selection expired. Please pick it again.", ar: "انتهت مهلة تحديد العقدة الأولى. يرجى اختيارها مرة أخرى." },
   comparePathNotFound: { id: "Kedua node belum memiliki jalur visual pada pohon ini.", en: "These nodes do not have a visual path in this tree yet.", ar: "لا يوجد مسار بصري بين هاتين العقدتين في هذه الشجرة بعد." },
   compareVisualOnlyNotice: { id: "Mode ini hanya menampilkan garis visual, tanpa detail hubungan.", en: "This mode only shows the visual line, without relationship details.", ar: "يعرض هذا الوضع الخط البصري فقط من دون تفاصيل العلاقة." },
   layoutStyle: { id: "Model Tampilan Node", en: "Node Layout Model", ar: "نموذج تخطيط العقد" },

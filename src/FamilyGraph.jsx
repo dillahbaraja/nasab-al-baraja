@@ -282,6 +282,10 @@ const FamilyGraph = () => {
     setAncestorPath({ nodeIds: new Set(), edgeIds: new Set() });
   }, []);
 
+  const clearMobileRelationshipFocus = useCallback(() => {
+    setMobileRelationshipFocus(null);
+  }, []);
+
   const setAncestorPathForMobile = useCallback((nextPath) => {
     if (!isMobileDevice) {
       setAncestorPath(nextPath);
@@ -334,7 +338,11 @@ const FamilyGraph = () => {
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [ancestorPath, setAncestorPath] = useState({ nodeIds: new Set(), edgeIds: new Set() });
   const [nodeComparisonSelection, setNodeComparisonSelection] = useState({ sourceId: null, sourceName: '' });
+  const [mobileRelationshipFocus, setMobileRelationshipFocus] = useState(null);
   const selectedNodeIdRef = useRef(null);
+  const startNodeComparisonRef = useRef(null);
+  const completeNodeComparisonRef = useRef(null);
+  const nodeComparisonTimeoutRef = useRef(null);
   const searchDebounceRef = useRef(null);
   const resumeSyncTimeoutRef = useRef(null);
   const adminWalkthroughEnabledRef = useRef(false);
@@ -507,6 +515,10 @@ const FamilyGraph = () => {
 
   const wait = useCallback((ms) => new Promise((resolve) => {
     window.setTimeout(resolve, ms);
+  }), []);
+
+  const waitForNextFrame = useCallback(() => new Promise((resolve) => {
+    window.requestAnimationFrame(() => resolve());
   }), []);
 
   const showToast = useCallback((nextToast, duration = 2800) => {
@@ -915,7 +927,12 @@ const FamilyGraph = () => {
     });
   }, []);
 
-  const getViewportForVisibleNodes = useCallback((targetNodes) => {
+  const getViewportForVisibleNodes = useCallback((targetNodes, options = {}) => {
+    const {
+      minZoom = 0.54,
+      maxZoom = 1.05,
+      paddingRatio: paddingRatioOverride
+    } = options;
     const visibleNodes = (targetNodes || []).filter(Boolean);
     if (visibleNodes.length === 0) return null;
 
@@ -931,26 +948,32 @@ const FamilyGraph = () => {
       minY = Math.min(minY, node.position.y);
       maxX = Math.max(maxX, node.position.x + width / 2);
       maxY = Math.max(maxY, node.position.y + height);
-    });
+      });
 
-    const flowElem = document.querySelector('.react-flow');
-    const viewportWidth = Math.max(flowElem?.clientWidth || window.innerWidth, 320);
-    const viewportHeight = Math.max(flowElem?.clientHeight || window.innerHeight, 320);
-    const paddingRatio = viewportWidth < 768 ? 0.16 : 0.12;
-    const paddedWidth = Math.max(maxX - minX, 240) * (1 + paddingRatio * 2);
-    const paddedHeight = Math.max(maxY - minY, 180) * (1 + paddingRatio * 2);
-    const zoomX = viewportWidth / paddedWidth;
-    const zoomY = viewportHeight / paddedHeight;
-    const zoom = Math.min(Math.max(Math.min(zoomX, zoomY), 0.54), 1.05);
+      const flowElem = document.querySelector('.react-flow');
+      const viewportWidth = Math.max(flowElem?.clientWidth || window.innerWidth, 320);
+      const viewportHeight = Math.max(flowElem?.clientHeight || window.innerHeight, 320);
+      const paddingRatio = Number.isFinite(paddingRatioOverride)
+        ? paddingRatioOverride
+        : viewportWidth < 768 ? 0.16 : 0.12;
+      const paddedWidth = Math.max(maxX - minX, 240) * (1 + paddingRatio * 2);
+      const paddedHeight = Math.max(maxY - minY, 180) * (1 + paddingRatio * 2);
+      const zoomX = viewportWidth / paddedWidth;
+      const zoomY = viewportHeight / paddedHeight;
+      const zoom = Math.min(Math.max(Math.min(zoomX, zoomY), minZoom), maxZoom);
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
 
-    return {
-      x: viewportWidth / 2 - centerX * zoom,
-      y: viewportHeight / 2 - centerY * zoom,
-      zoom
-    };
-  }, []);
+      return {
+        x: viewportWidth / 2 - centerX * zoom,
+        y: viewportHeight / 2 - centerY * zoom,
+        zoom,
+        centerX,
+        centerY,
+        viewportWidth,
+        viewportHeight
+      };
+    }, []);
 
   const runLineageCameraTour = useCallback(async (selectedId, chainIds, options = {}) => {
     const {
@@ -1072,6 +1095,181 @@ const FamilyGraph = () => {
       true
     );
   }, [appSettings.animationsEnabled, appSettings.cameraEnabled, fitView, getNode, getNodes, getViewport, getViewportForVisibleNodes, isMobileDevice, setCenter, setViewport, triggerGlow, wait]);
+
+  const runRelationshipCameraPath = useCallback(async (targetId, orderedNodeIds, options = {}) => {
+    const {
+      startViewport = null,
+      focusNodeIds = orderedNodeIds,
+      sourceId = null
+    } = options;
+    if (!targetId || !orderedNodeIds?.length) return;
+
+    const normalizedTargetId = String(targetId);
+    const normalizedSourceId = sourceId ? String(sourceId) : null;
+    const cameraNodeIds = [...orderedNodeIds].map(String).reverse();
+    const tourToken = Date.now();
+    lineageTourTokenRef.current = tourToken;
+
+    await wait(appSettings.animationsEnabled && appSettings.cameraEnabled ? 240 : 60);
+    if (lineageTourTokenRef.current !== tourToken) return;
+
+    // Wait for collapse/layout to settle before we start moving the camera.
+    await waitForNextFrame();
+    await waitForNextFrame();
+    if (lineageTourTokenRef.current !== tourToken) return;
+
+    const resolveLiveNode = async (nodeId, maxAttempts = 8) => {
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        const liveNode = getNode(String(nodeId));
+        if (liveNode && !liveNode.hidden) {
+          return liveNode;
+        }
+        await waitForNextFrame();
+        if (lineageTourTokenRef.current !== tourToken) return null;
+      }
+      return null;
+    };
+
+    const targetNode = await resolveLiveNode(normalizedTargetId);
+    if (!targetNode) {
+      triggerGlow(normalizedTargetId);
+      return;
+    }
+
+    const transitionsEnabled = appSettings.animationsEnabled && appSettings.cameraEnabled;
+    const viewportSeed = startViewport || getViewport();
+    const focusPathNodes = [];
+    if (Array.isArray(focusNodeIds) && focusNodeIds.length > 0) {
+      for (const nodeId of focusNodeIds) {
+        const liveNode = await resolveLiveNode(nodeId, 4);
+        if (liveNode) {
+          focusPathNodes.push(liveNode);
+        }
+      }
+    }
+
+    const focusViewport = focusPathNodes.length > 1
+      ? getViewportForVisibleNodes(focusPathNodes)
+      : null;
+    const boundedFocusZoom = focusViewport
+      ? isMobileDevice
+        ? Math.min(Math.max(focusViewport.zoom, 0.72), 0.98)
+        : Math.min(Math.max(focusViewport.zoom, 0.68), 1.02)
+      : null;
+    const seedZoom = isMobileDevice
+      ? Math.min(Math.max(boundedFocusZoom || viewportSeed?.zoom || 0.9, 0.72), 0.98)
+      : Math.min(Math.max(boundedFocusZoom || viewportSeed?.zoom || 0.92, 0.68), 1.02);
+
+    const centerRelationshipNode = async (nodeId, duration, holdMs = 0, shouldGlow = false) => {
+      const liveNode = await resolveLiveNode(nodeId);
+      if (!liveNode) return false;
+      const nodeHeight = liveNode.height || liveNode.measured?.height || 72;
+      setCenter(liveNode.position.x, liveNode.position.y + nodeHeight / 2, {
+        zoom: seedZoom,
+        duration
+      });
+      await wait(duration + 100 + holdMs);
+      if (shouldGlow) {
+        triggerGlow(String(nodeId));
+      }
+      return lineageTourTokenRef.current === tourToken;
+    };
+
+    const viewportWithZoom = (viewport, zoomOverride) => {
+      if (!viewport) return null;
+      const zoom = Number.isFinite(zoomOverride) ? zoomOverride : viewport.zoom;
+      const viewportWidth = Math.max(viewport.viewportWidth || 0, 320);
+      const viewportHeight = Math.max(viewport.viewportHeight || 0, 320);
+      const centerX = viewport.centerX;
+      const centerY = viewport.centerY;
+
+      if (!Number.isFinite(centerX) || !Number.isFinite(centerY)) {
+        return {
+          x: viewport.x,
+          y: viewport.y,
+          zoom
+        };
+      }
+
+      return {
+        x: viewportWidth / 2 - centerX * zoom,
+        y: viewportHeight / 2 - centerY * zoom,
+        zoom
+      };
+    };
+
+    const getComparisonViewport = async () => {
+      if (!normalizedSourceId) return null;
+      const sourceNode = await resolveLiveNode(normalizedSourceId, 4);
+      const finalTargetNode = await resolveLiveNode(normalizedTargetId, 4);
+      if (!sourceNode || !finalTargetNode) return null;
+
+      const dualViewport = getViewportForVisibleNodes(
+        [sourceNode, finalTargetNode],
+        {
+          minZoom: isMobileDevice ? 0.12 : 0.08,
+          maxZoom: isMobileDevice ? 0.96 : 1.0,
+          paddingRatio: isMobileDevice ? 0.22 : 0.16
+        }
+      );
+      if (!dualViewport) return null;
+
+      const minZoom = isMobileDevice ? 0.12 : 0.08;
+      const maxZoom = isMobileDevice ? 0.96 : 1.0;
+      const preferredUpperBound = Math.min(seedZoom - (isMobileDevice ? 0.04 : 0.05), maxZoom);
+      const finalZoom = dualViewport.zoom > preferredUpperBound
+        ? Math.max(minZoom, preferredUpperBound)
+        : dualViewport.zoom;
+
+      return viewportWithZoom(
+        dualViewport,
+        Number.isFinite(finalZoom) ? finalZoom : dualViewport.zoom
+      );
+    };
+
+    if (!transitionsEnabled) {
+      const comparisonViewport = await getComparisonViewport();
+      if (comparisonViewport) {
+        setViewport(comparisonViewport, { duration: 0 });
+      } else if (focusViewport) {
+        setViewport(viewportWithZoom(focusViewport, seedZoom), { duration: 0 });
+      } else {
+        const nodeHeight = targetNode.height || targetNode.measured?.height || 72;
+        setCenter(targetNode.position.x, targetNode.position.y + nodeHeight / 2, { zoom: seedZoom, duration: 0 });
+      }
+      triggerGlow(normalizedTargetId);
+      return;
+    }
+
+    if (focusViewport) {
+      setViewport(viewportWithZoom(focusViewport, seedZoom), { duration: 520 });
+      await wait(700);
+      if (lineageTourTokenRef.current !== tourToken) return;
+    }
+
+    const initialOk = await centerRelationshipNode(normalizedTargetId, 560, 220, false);
+    if (!initialOk || lineageTourTokenRef.current !== tourToken) return;
+
+    for (let index = 1; index < cameraNodeIds.length; index += 1) {
+      const isLastTraversalNode = index === cameraNodeIds.length - 1;
+      const moved = await centerRelationshipNode(
+        cameraNodeIds[index],
+        isLastTraversalNode ? 1480 : 1260,
+        isLastTraversalNode ? 420 : 320,
+        false
+      );
+      if (!moved || lineageTourTokenRef.current !== tourToken) return;
+    }
+
+    const finalFocusOk = await centerRelationshipNode(normalizedTargetId, 1560, 460, true);
+    if (!finalFocusOk || lineageTourTokenRef.current !== tourToken) return;
+
+    const comparisonViewport = await getComparisonViewport();
+    if (!comparisonViewport || lineageTourTokenRef.current !== tourToken) return;
+
+    setViewport(comparisonViewport, { duration: 1380 });
+    await wait(1560);
+  }, [appSettings.animationsEnabled, appSettings.cameraEnabled, getNode, getViewport, getViewportForVisibleNodes, isMobileDevice, setCenter, setViewport, triggerGlow, wait, waitForNextFrame]);
 
   const runLineageBloomIntro = useCallback((rootPerson) => {
     const rootId = String(rootPerson.id);
@@ -1904,6 +2102,7 @@ const FamilyGraph = () => {
     const normalizedNodeId = String(nodeId);
     const node = getNode(normalizedNodeId);
     if (!node) return;
+    clearMobileRelationshipFocus();
 
     const wasExpanded = !collapsedStateById[normalizedNodeId];
 
@@ -2002,7 +2201,7 @@ const FamilyGraph = () => {
         return newState;
       });
     }
-  }, [collapsedStateById, familyData, getNode, getViewport]);
+  }, [clearMobileRelationshipFocus, collapsedStateById, familyData, getNode, getViewport]);
 
 
 
@@ -2166,9 +2365,10 @@ const FamilyGraph = () => {
     }
     setSelectedPerson(null);
     setSelectedNodeId(null);
+    clearMobileRelationshipFocus();
     clearAncestorPathSafe();
     stopCameraMotion();
-  }, [clearAncestorPathSafe, stopCameraMotion]);
+  }, [clearAncestorPathSafe, clearMobileRelationshipFocus, stopCameraMotion]);
 
   const onNodesChange = useCallback(
     (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
@@ -2280,23 +2480,59 @@ const FamilyGraph = () => {
     openNodeDetails(person);
   }, [ensurePathVisible, fetchPublicMemberStatuses, nodes, personMap, smoothFocusNode]);
 
-  const handleNodeLongPress = useCallback((nodeId) => {
-    ignorePaneClickUntilRef.current = Date.now() + 500;
-    toggleNodeCollapse(nodeId);
-  }, [toggleNodeCollapse]);
-
   const handleNodeClick = useCallback((nodeId, rawData) => {
+    if (Date.now() < ignorePaneClickUntilRef.current) {
+      return;
+    }
+
     const normalizedNodeId = String(nodeId);
     ignorePaneClickUntilRef.current = Date.now() + 500;
-    if (isMobileDevice) {
-      setSelectedNodeId(null);
-      selectedNodeIdRef.current = null;
-    } else {
-      setSelectedNodeId(normalizedNodeId);
-      setAncestorPathSafe(calculateAncestorPath(normalizedNodeId));
+    const targetPerson = personMap.get(normalizedNodeId) || rawData;
+    const isCollapsed = !!collapsedStateById[normalizedNodeId];
+    const hasChildren = familyData.some((person) => String(person.fatherId || '') === normalizedNodeId);
+
+    setSelectedNodeId(normalizedNodeId);
+    selectedNodeIdRef.current = normalizedNodeId;
+    setAncestorPathSafe(calculateAncestorPath(normalizedNodeId));
+
+    if (hasChildren && isCollapsed) {
+      toggleNodeCollapse(normalizedNodeId);
+      return;
     }
-    openNodeDetails(personMap.get(normalizedNodeId) || rawData);
-  }, [calculateAncestorPath, isMobileDevice, openNodeDetails, personMap, setAncestorPathSafe]);
+
+    openNodeDetails(targetPerson);
+  }, [calculateAncestorPath, collapsedStateById, familyData, openNodeDetails, personMap, setAncestorPathSafe, toggleNodeCollapse]);
+
+  const handleNodeLongPress = useCallback((nodeId, rawData) => {
+    const normalizedNodeId = String(nodeId);
+    const targetPerson = personMap.get(normalizedNodeId) || rawData;
+    if (!targetPerson) return;
+
+    ignorePaneClickUntilRef.current = Date.now() + 1500;
+
+    if (!nodeComparisonSelection.sourceId) {
+      startNodeComparisonRef.current?.(normalizedNodeId);
+      return;
+    }
+
+    if (String(nodeComparisonSelection.sourceId) === normalizedNodeId) {
+      showToast({ text: t('compareCancelHint') }, 2800);
+      return;
+    }
+
+    completeNodeComparisonRef.current?.(normalizedNodeId);
+  }, [nodeComparisonSelection.sourceId, personMap, showToast, t]);
+
+  useEffect(() => {
+    setNodes((nds) => nds.map((node) => ({
+      ...node,
+      data: {
+        ...node.data,
+        onClick: handleNodeClick,
+        onLongPress: handleNodeLongPress
+      }
+    })));
+  }, [handleNodeClick, handleNodeLongPress]);
 
   // Update layout diagram on data change
   useEffect(() => {
@@ -2362,8 +2598,15 @@ const FamilyGraph = () => {
       };
       rootList.forEach(r => traverse(r));
 
-      const rawNodes = createNodesFromData(visibleData);
-      const rawEdges = generateEdges(visibleData);
+      const relationshipFocusedIds = isMobileDevice && mobileRelationshipFocus?.visibleNodeIds?.length
+        ? new Set(mobileRelationshipFocus.visibleNodeIds.map(String))
+        : null;
+      const layoutSourceData = relationshipFocusedIds
+        ? visibleData.filter((person) => relationshipFocusedIds.has(String(person.id)))
+        : visibleData;
+
+      const rawNodes = createNodesFromData(layoutSourceData);
+      const rawEdges = generateEdges(layoutSourceData);
 
       const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(rawNodes, rawEdges, appSettings.layoutStyle || "tidy");
 
@@ -2414,7 +2657,7 @@ const FamilyGraph = () => {
       });
 
       // 2. Expansion & Collapse Glow Detection
-      const currentVisibleIds = new Set(visibleData.map(p => p.id));
+      const currentVisibleIds = new Set(layoutSourceData.map(p => p.id));
       const newlyVisibleIds = new Set([...currentVisibleIds].filter(id => !prevVisibleSetRef.current.has(id)));
 
       setNodes(finalNodes.map(n => {
@@ -2435,11 +2678,12 @@ const FamilyGraph = () => {
 
         return {
           ...n,
-            selected: !isMobileDevice && selectedNodeIdRef.current != null && String(n.id) === String(selectedNodeIdRef.current),
+            selected: selectedNodeIdRef.current != null && String(n.id) === String(selectedNodeIdRef.current),
             data: {
               ...n.data,
               isGlowing,
               isPathGlow,
+              onClick: handleNodeClick,
               onLongPress: handleNodeLongPress
             },
             position: initialPos
@@ -2545,7 +2789,7 @@ const FamilyGraph = () => {
     } catch (err) {
       console.error("Layout Rendering Crash Prevented:", err);
     }
-  }, [familyData, canViewPendingChildNodes, collapsedStateById, isLoading, collapsingParentId, handleNodeLongPress, appSettings.layoutStyle, isMobileDevice]);
+  }, [familyData, canViewPendingChildNodes, collapsedStateById, isLoading, collapsingParentId, appSettings.layoutStyle, isMobileDevice, mobileRelationshipFocus]);
 
 
   const getNextPendingIdForModerator = useCallback((excludeId = null) => {
@@ -3569,6 +3813,7 @@ const FamilyGraph = () => {
   }, [familyData, getNode, setViewport]);
 
   const handleExpandAll = useCallback(() => {
+    clearMobileRelationshipFocus();
     const flowElem = document.querySelector('.react-flow');
     const viewportWidth = flowElem ? flowElem.clientWidth : window.innerWidth;
     const viewportHeight = flowElem ? flowElem.clientHeight : window.innerHeight;
@@ -3612,18 +3857,19 @@ const FamilyGraph = () => {
       writeStorage('localStorage', 'rf-collapsed-state', JSON.stringify(next));
       return next;
     });
-  }, [getViewport, familyData, nodes]);
+  }, [clearMobileRelationshipFocus, getViewport, familyData, nodes]);
 
   const handleModalClose = useCallback(() => {
     const closingPersonId = selectedPerson ? String(selectedPerson.id) : null;
     adminWalkthroughEnabledRef.current = false;
     setIsModalOpen(false);
     setSelectedPerson(null);
+    clearMobileRelationshipFocus();
     clearAncestorPathSafe();
     if (isMobileDevice && closingPersonId) {
       requestAnimationFrame(() => triggerGlow(closingPersonId));
     }
-  }, [clearAncestorPathSafe, isMobileDevice, selectedPerson, triggerGlow]);
+  }, [clearAncestorPathSafe, clearMobileRelationshipFocus, isMobileDevice, selectedPerson, triggerGlow]);
 
   const handleSkipPending = useCallback((personId) => {
     if (!isAdmin) return;
@@ -3666,6 +3912,7 @@ const FamilyGraph = () => {
   const handleShowLineageOnly = useCallback((personId) => {
     if (!personId || familyData.length === 0) return;
     const startViewport = getViewport();
+    clearMobileRelationshipFocus();
 
     // Build O(1) lookup maps
     const personMapLocal = new Map();
@@ -3814,15 +4061,14 @@ const FamilyGraph = () => {
       startViewport,
       preserveZoomOnMobile: isMobileDevice
     });
-  }, [calculateAncestorPath, getViewport, isMobileDevice, runLineageCameraTour, setAncestorPathForMobile, triggerGlow]);
+  }, [calculateAncestorPath, clearMobileRelationshipFocus, getViewport, isMobileDevice, runLineageCameraTour, setAncestorPathForMobile, triggerGlow]);
 
   const applyVisualRelationshipPath = useCallback((targetId, relationshipPath, options = {}) => {
     if (!targetId || !relationshipPath?.orderedNodeIds?.length) return false;
 
     const {
       startViewport = getViewport(),
-      preserveCurrentZoom = true,
-      relationshipMode = true
+      sourceId = null
     } = options;
 
     const scaffoldNodeIds = new Set();
@@ -3836,11 +4082,33 @@ const FamilyGraph = () => {
       }
     });
 
+    const contextualVisibleNodeIds = new Set(scaffoldNodeIds);
+    scaffoldNodeIds.forEach((nodeId) => {
+      const parentId = personMap.get(String(nodeId))?.fatherId ? String(personMap.get(String(nodeId)).fatherId) : null;
+      if (!parentId) return;
+
+      familyData.forEach((person) => {
+        const siblingId = String(person.id);
+        const siblingFatherId = person.fatherId ? String(person.fatherId) : null;
+        if (siblingFatherId === parentId) {
+          contextualVisibleNodeIds.add(siblingId);
+        }
+      });
+    });
+
     setCollapsedStateById((prev) => {
       const next = { ...prev };
       familyData.forEach((person) => {
         const id = String(person.id);
-        next[id] = !scaffoldNodeIds.has(id);
+        if (scaffoldNodeIds.has(id)) {
+          next[id] = false;
+          return;
+        }
+        if (contextualVisibleNodeIds.has(id)) {
+          next[id] = true;
+          return;
+        }
+        next[id] = true;
       });
       writeStorage('localStorage', 'rf-collapsed-state', JSON.stringify(next));
       return next;
@@ -3850,6 +4118,16 @@ const FamilyGraph = () => {
       nodeIds: relationshipPath.nodeIds,
       edgeIds: relationshipPath.edgeIds
     });
+    if (isMobileDevice) {
+      setMobileRelationshipFocus({
+        orderedNodeIds: relationshipPath.orderedNodeIds.map(String),
+        scaffoldNodeIds: Array.from(scaffoldNodeIds).map(String),
+        visibleNodeIds: Array.from(contextualVisibleNodeIds).map(String),
+        targetId: String(targetId)
+      });
+    } else {
+      clearMobileRelationshipFocus();
+    }
     if (!isMobileDevice) {
       setSelectedNodeId(targetId);
     }
@@ -3857,16 +4135,14 @@ const FamilyGraph = () => {
     if (isMobileDevice) {
       requestAnimationFrame(() => triggerGlow(targetId));
     }
-    runLineageCameraTour(targetId, [...relationshipPath.orderedNodeIds].reverse(), {
+    runRelationshipCameraPath(targetId, relationshipPath.orderedNodeIds, {
       startViewport,
-      preserveZoomOnMobile: isMobileDevice,
-      preserveCurrentZoom,
-      skipInitialFocus: false,
-      relationshipMode
+      focusNodeIds: relationshipPath.orderedNodeIds,
+      sourceId
     });
 
     return true;
-  }, [familyData, getViewport, isMobileDevice, personMap, runLineageCameraTour, setAncestorPathForMobile, triggerGlow]);
+  }, [clearMobileRelationshipFocus, familyData, getViewport, isMobileDevice, personMap, runRelationshipCameraPath, setAncestorPathForMobile, triggerGlow]);
 
   const handleShowRelationshipWithMe = useCallback((personId) => {
     const memberPersonId = currentMember?.person_id ? String(currentMember.person_id) : null;
@@ -3879,8 +4155,7 @@ const FamilyGraph = () => {
 
     applyVisualRelationshipPath(targetId, relationshipPath, {
       startViewport,
-      preserveCurrentZoom: true,
-      relationshipMode: true
+      sourceId: memberPersonId
     });
   }, [applyVisualRelationshipPath, calculateRelationshipPath, currentMember?.person_id, familyData.length, getViewport]);
 
@@ -3894,15 +4169,33 @@ const FamilyGraph = () => {
       ? displayNames.arabicName
       : (displayNames.englishName || displayNames.arabicName || sourceId);
 
+    if (nodeComparisonTimeoutRef.current) {
+      clearTimeout(nodeComparisonTimeoutRef.current);
+      nodeComparisonTimeoutRef.current = null;
+    }
+
+    clearMobileRelationshipFocus();
+    clearAncestorPathSafe();
     setNodeComparisonSelection({ sourceId, sourceName });
     setIsModalOpen(false);
     showToast({ text: `${sourceName} ${t('compareStartSelectedToast')}` }, 3600);
-  }, [lang, personMap, showToast, t]);
+    nodeComparisonTimeoutRef.current = setTimeout(() => {
+      clearMobileRelationshipFocus();
+      setNodeComparisonSelection({ sourceId: null, sourceName: '' });
+      showToast({ text: t('compareSelectionExpired') }, 3200);
+      nodeComparisonTimeoutRef.current = null;
+    }, 60000);
+  }, [clearAncestorPathSafe, clearMobileRelationshipFocus, lang, personMap, showToast, t]);
 
   const handleCancelNodeComparison = useCallback(() => {
+    if (nodeComparisonTimeoutRef.current) {
+      clearTimeout(nodeComparisonTimeoutRef.current);
+      nodeComparisonTimeoutRef.current = null;
+    }
+    clearMobileRelationshipFocus();
     setNodeComparisonSelection({ sourceId: null, sourceName: '' });
     showToast({ text: t('compareCanceled') });
-  }, [showToast, t]);
+  }, [clearMobileRelationshipFocus, showToast, t]);
 
   const handleCompleteNodeComparison = useCallback((personId) => {
     const sourceId = nodeComparisonSelection.sourceId ? String(nodeComparisonSelection.sourceId) : null;
@@ -3918,15 +4211,32 @@ const FamilyGraph = () => {
 
     const didApply = applyVisualRelationshipPath(targetId, relationshipPath, {
       startViewport,
-      preserveCurrentZoom: true,
-      relationshipMode: true
+      sourceId
     });
 
     if (!didApply) return;
 
+    if (nodeComparisonTimeoutRef.current) {
+      clearTimeout(nodeComparisonTimeoutRef.current);
+      nodeComparisonTimeoutRef.current = null;
+    }
     setNodeComparisonSelection({ sourceId: null, sourceName: '' });
     showToast({ text: t('compareVisualOnlyNotice') }, 3200);
   }, [applyVisualRelationshipPath, calculateRelationshipPath, familyData.length, getViewport, nodeComparisonSelection.sourceId, showToast, t]);
+
+  useEffect(() => {
+    startNodeComparisonRef.current = handleStartNodeComparison;
+    completeNodeComparisonRef.current = handleCompleteNodeComparison;
+  }, [handleStartNodeComparison, handleCompleteNodeComparison]);
+
+  useEffect(() => {
+    return () => {
+      if (nodeComparisonTimeoutRef.current) {
+        clearTimeout(nodeComparisonTimeoutRef.current);
+        nodeComparisonTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   const handleViewNotice = (notice) => {
     const isProposalNotice = notice?.type === 'proposal_add_child' || notice?.type === 'proposal_name_change';

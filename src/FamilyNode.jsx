@@ -1,19 +1,14 @@
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { Handle, Position } from '@xyflow/react';
 
 const FamilyNode = ({ id, data, selected }) => {
-  const isMobileDevice = (() => {
-    if (typeof navigator === 'undefined') return false;
-    return /iPhone|iPod|Android/i.test(navigator.userAgent)
-      || (typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)')?.matches);
-  })();
-  const [interactionStage, setInteractionStage] = useState('none'); // 'none', 'pressing', 'hinting'
+  const [interactionStage, setInteractionStage] = useState('none');
   const actionTimerRef = useRef(null);
   const hintTimerRef = useRef(null);
   const touchStartPosRef = useRef(null);
+  const pressStartedAtRef = useRef(0);
   const isCancelledRef = useRef(false);
   const didLongPressRef = useRef(false);
-  const suppressClickRef = useRef(false);
 
   const cleanup = useCallback(() => {
     if (actionTimerRef.current) clearTimeout(actionTimerRef.current);
@@ -25,9 +20,6 @@ const FamilyNode = ({ id, data, selected }) => {
   }, []);
 
   const handlePointerDown = (e) => {
-    if (isMobileDevice) return;
-
-    // Only handle primary button/touch
     if (e.button != null && e.button !== 0) return;
     if (!e.isPrimary) {
       cleanup();
@@ -36,7 +28,7 @@ const FamilyNode = ({ id, data, selected }) => {
 
     isCancelledRef.current = false;
     didLongPressRef.current = false;
-    suppressClickRef.current = false;
+    pressStartedAtRef.current = Date.now();
     touchStartPosRef.current = { x: e.clientX, y: e.clientY };
     setInteractionStage('pressing');
 
@@ -44,68 +36,58 @@ const FamilyNode = ({ id, data, selected }) => {
       e.currentTarget.setPointerCapture(e.pointerId);
     }
 
-    // Hint timer at 160ms
     hintTimerRef.current = setTimeout(() => {
       if (!isCancelledRef.current) {
         setInteractionStage('hinting');
       }
-    }, 160);
+    }, 220);
 
-    // Main action timer at 450ms
     actionTimerRef.current = setTimeout(() => {
       if (!isCancelledRef.current && data.onLongPress) {
         didLongPressRef.current = true;
         data.onLongPress(id, data.raw);
         cleanup();
       }
-    }, 450);
+    }, 700);
   };
 
   const handlePointerMove = (e) => {
-    if (isMobileDevice) return;
-
     if (!touchStartPosRef.current || isCancelledRef.current) return;
 
     const dx = e.clientX - touchStartPosRef.current.x;
     const dy = e.clientY - touchStartPosRef.current.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
+    const movementThreshold = e.pointerType === 'touch' ? 22 : 12;
 
-    // If movement exceeds threshold (12px), cancel long press
-    if (distance > 12) {
+    if (distance > movementThreshold) {
       isCancelledRef.current = true;
       cleanup();
     }
   };
 
   const cancelInteraction = useCallback((e) => {
-    if (isMobileDevice) return;
-
     if (e?.currentTarget?.releasePointerCapture && e.currentTarget.hasPointerCapture?.(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
     isCancelledRef.current = true;
+    didLongPressRef.current = false;
     cleanup();
   }, [cleanup]);
 
   const handlePointerUp = (e) => {
-    if (isMobileDevice) return;
-
     if (e.currentTarget.releasePointerCapture && e.currentTarget.hasPointerCapture?.(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
 
-    suppressClickRef.current = didLongPressRef.current;
+    const pressDuration = Date.now() - pressStartedAtRef.current;
+    const suppressTapAfterHold = e.pointerType === 'touch' && pressDuration >= 450;
+    const shouldTriggerClick = !isCancelledRef.current && !didLongPressRef.current && !suppressTapAfterHold;
     isCancelledRef.current = true;
     cleanup();
-  };
 
-  const handleClickCapture = (e) => {
-    if (isMobileDevice) return;
-
-    if (!suppressClickRef.current) return;
-    suppressClickRef.current = false;
-    e.preventDefault();
-    e.stopPropagation();
+    if (shouldTriggerClick && data.onClick) {
+      data.onClick(id, data.raw);
+    }
   };
 
   const arabLength = data.arabicName ? data.arabicName.length : 0;
@@ -122,7 +104,6 @@ const FamilyNode = ({ id, data, selected }) => {
       onPointerUp={handlePointerUp}
       onPointerLeave={cancelInteraction}
       onPointerCancel={cancelInteraction}
-      onClickCapture={handleClickCapture}
       onContextMenu={(e) => { e.preventDefault(); }}
       style={{ WebkitUserSelect: 'none', userSelect: 'none' }}
     >
@@ -172,4 +153,3 @@ const FamilyNode = ({ id, data, selected }) => {
 };
 
 export default FamilyNode;
-
