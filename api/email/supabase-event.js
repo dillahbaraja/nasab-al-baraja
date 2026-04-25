@@ -12,6 +12,8 @@ import {
 import { sendEmail } from '../_lib/mail.js';
 import {
   createAdminSupabaseClient,
+  dedupeRecipients,
+  doesRecipientAllowCategory,
   getAdminAndPrimaryRecipients,
   getAdminRecipients,
   getNodeWithParent,
@@ -118,12 +120,20 @@ async function sendMessageToRecipients({ recipients, message, baseUrl }) {
   };
 }
 
+async function sendCategoryMessageToRecipients({ recipients, message, baseUrl, category }) {
+  return sendMessageToRecipients({
+    recipients: (recipients || []).filter((recipient) => doesRecipientAllowCategory(recipient, category)),
+    message,
+    baseUrl
+  });
+}
+
 async function deliverPendingMemberEmail({ supabase, record, eventType, tableName, baseUrl }) {
   return deliverOnce({
     supabase, kind: 'pending_member', tableName, eventType, record,
     deliver: async () => {
       const recipients = await getAdminRecipients(supabase);
-      const sent = await sendMessageToRecipients({ recipients, message: buildPendingMemberEmail(record), baseUrl });
+      const sent = await sendCategoryMessageToRecipients({ recipients, message: buildPendingMemberEmail(record), baseUrl, category: 'member_updates' });
       return { kind: 'pending_member', ...sent };
     }
   });
@@ -133,8 +143,15 @@ async function deliverPendingMemberRegistrantEmail({ supabase, record, eventType
   return deliverOnce({
     supabase, kind: 'pending_member_registrant', tableName, eventType, record,
     deliver: async () => {
-      const recipient = { email: String(record?.email || '').trim().toLowerCase(), unsubscribeToken: record?.email_unsubscribe_token, notificationsEnabled: record?.email_notifications_enabled };
-      const sent = await sendMessageToRecipients({ recipients: [recipient], message: buildPendingMemberForRegistrantEmail(record), baseUrl });
+      const recipient = {
+        email: String(record?.email || '').trim().toLowerCase(),
+        unsubscribeToken: record?.email_unsubscribe_token,
+        notificationsEnabled: record?.email_notifications_enabled,
+        notifyNewPerson: record?.email_notify_new_person,
+        notifyPersonUpdates: record?.email_notify_person_updates,
+        notifyMemberUpdates: record?.email_notify_member_updates
+      };
+      const sent = await sendCategoryMessageToRecipients({ recipients: [recipient], message: buildPendingMemberForRegistrantEmail(record), baseUrl, category: 'member_updates' });
       return { kind: 'pending_member_registrant', ...sent };
     }
   });
@@ -144,8 +161,8 @@ async function deliverAdminPromotionEmail({ supabase, record, eventType, tableNa
   return deliverOnce({
     supabase, kind: 'admin_promotion', tableName, eventType, record,
     deliver: async () => {
-      const recipients = await getVerifiedAndAdminRecipients(supabase);
-      const sent = await sendMessageToRecipients({ recipients, message: buildAdminPromotionEmail(record), baseUrl });
+      const recipients = await getAdminRecipients(supabase);
+      const sent = await sendCategoryMessageToRecipients({ recipients, message: buildAdminPromotionEmail(record), baseUrl, category: 'member_updates' });
       return { kind: 'admin_promotion', ...sent };
     }
   });
@@ -155,8 +172,15 @@ async function deliverAdminPromotionForMemberEmail({ supabase, record, eventType
   return deliverOnce({
     supabase, kind: 'admin_promotion_member', tableName, eventType, record,
     deliver: async () => {
-      const recipient = { email: String(record?.email || '').trim().toLowerCase(), unsubscribeToken: record?.email_unsubscribe_token, notificationsEnabled: record?.email_notifications_enabled };
-      const sent = await sendMessageToRecipients({ recipients: [recipient], message: buildAdminPromotionForMemberEmail(record), baseUrl });
+      const recipient = {
+        email: String(record?.email || '').trim().toLowerCase(),
+        unsubscribeToken: record?.email_unsubscribe_token,
+        notificationsEnabled: record?.email_notifications_enabled,
+        notifyNewPerson: record?.email_notify_new_person,
+        notifyPersonUpdates: record?.email_notify_person_updates,
+        notifyMemberUpdates: record?.email_notify_member_updates
+      };
+      const sent = await sendCategoryMessageToRecipients({ recipients: [recipient], message: buildAdminPromotionForMemberEmail(record), baseUrl, category: 'member_updates' });
       return { kind: 'admin_promotion_member', ...sent };
     }
   });
@@ -166,8 +190,9 @@ async function deliverMemberApprovedEmail({ supabase, record, eventType, tableNa
   return deliverOnce({
     supabase, kind: 'member_approved', tableName, eventType, record,
     deliver: async () => {
-      const recipients = await getAdminAndPrimaryRecipients(supabase);
-      const sent = await sendMessageToRecipients({ recipients, message: buildMemberApprovedEmail(record), baseUrl });
+      const adminRecipients = await getAdminAndPrimaryRecipients(supabase);
+      const verifiedRecipients = await getVerifiedAndAdminRecipients(supabase);
+      const sent = await sendCategoryMessageToRecipients({ recipients: dedupeRecipients([...adminRecipients, ...verifiedRecipients]), message: buildMemberApprovedEmail(record), baseUrl, category: 'member_updates' });
       return { kind: 'member_approved', ...sent };
     }
   });
@@ -177,8 +202,15 @@ async function deliverMemberApprovedForMemberEmail({ supabase, record, eventType
   return deliverOnce({
     supabase, kind: 'member_approved_member', tableName, eventType, record,
     deliver: async () => {
-      const recipient = { email: String(record?.email || '').trim().toLowerCase(), unsubscribeToken: record?.email_unsubscribe_token, notificationsEnabled: record?.email_notifications_enabled };
-      const sent = await sendMessageToRecipients({ recipients: [recipient], message: buildMemberApprovedForMemberEmail(record), baseUrl });
+      const recipient = {
+        email: String(record?.email || '').trim().toLowerCase(),
+        unsubscribeToken: record?.email_unsubscribe_token,
+        notificationsEnabled: record?.email_notifications_enabled,
+        notifyNewPerson: record?.email_notify_new_person,
+        notifyPersonUpdates: record?.email_notify_person_updates,
+        notifyMemberUpdates: record?.email_notify_member_updates
+      };
+      const sent = await sendCategoryMessageToRecipients({ recipients: [recipient], message: buildMemberApprovedForMemberEmail(record), baseUrl, category: 'member_updates' });
       return { kind: 'member_approved_member', ...sent };
     }
   });
@@ -188,14 +220,14 @@ async function deliverGuestProposalEmail({ supabase, record, eventType, tableNam
   return deliverOnce({
     supabase, kind: 'guest_proposal', tableName, eventType, record,
     deliver: async () => {
-      const recipients = await getAdminRecipients(supabase);
+      const recipients = await getVerifiedAndAdminRecipients(supabase);
       let nodeDetails = null;
       try {
         nodeDetails = await getNodeWithParent(supabase, record.target_id);
       } catch (error) {
         console.error('Failed to enrich guest proposal email with node details:', error);
       }
-      const sent = await sendMessageToRecipients({ recipients, message: buildGuestProposalEmail({ notice: record, nodeDetails }), baseUrl });
+      const sent = await sendCategoryMessageToRecipients({ recipients, message: buildGuestProposalEmail({ notice: record, nodeDetails }), baseUrl, category: 'person_updates' });
       return { kind: 'guest_proposal', ...sent };
     }
   });
@@ -205,14 +237,14 @@ async function deliverAdminTreeChangeEmail({ supabase, record, eventType, tableN
   return deliverOnce({
     supabase, kind: 'admin_tree_change', tableName, eventType, record,
     deliver: async () => {
-      const recipients = await getAdminAndPrimaryRecipients(supabase);
+      const recipients = await getVerifiedAndAdminRecipients(supabase);
       let nodeDetails = null;
       try {
         nodeDetails = await getNodeWithParent(supabase, record.target_id);
       } catch (error) {
         console.error('Failed to enrich admin tree change email with node details:', error);
       }
-      const sent = await sendMessageToRecipients({ recipients, message: buildAdminTreeChangeEmail({ notice: record, nodeDetails }), baseUrl });
+      const sent = await sendCategoryMessageToRecipients({ recipients, message: buildAdminTreeChangeEmail({ notice: record, nodeDetails }), baseUrl, category: record?.type === 'new_member' ? 'new_person' : 'person_updates' });
       return { kind: 'admin_tree_change', ...sent };
     }
   });

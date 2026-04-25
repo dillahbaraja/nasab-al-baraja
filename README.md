@@ -175,6 +175,12 @@ The primary inbox from `EMAIL_PRIMARY_TO` is always added as a recipient for eve
 
 Members and admins stored in `baraja_member` can disable email delivery from Settings. When disabled, they will no longer receive notification emails until they enable them again.
 
+Email preferences are grouped into three categories in Settings:
+
+- New person notifications
+- Person change notifications
+- Member notifications
+
 #### Gmail SMTP Setup
 
 1. Enable `2-Step Verification` on `info.albaraja@gmail.com`.
@@ -233,7 +239,7 @@ The webhook handler also writes a unique event key into `public.email_webhook_lo
 - Proposal notices include target name and parent name when available
 - Arabic sections are rendered in RTL with a larger font size for readability
 - Each recipient receives their own email, so other recipient addresses stay hidden
-- Member emails include an unsubscribe footer link that disables email notifications for that account
+- Member emails include an unsubscribe footer link with category choices for disabling notifications
 
 ---
 

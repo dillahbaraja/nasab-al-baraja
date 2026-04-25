@@ -29,6 +29,9 @@ function normalizeRecipient(input) {
     email: normalizedEmail,
     unsubscribeToken: String(input?.unsubscribeToken || input?.email_unsubscribe_token || '').trim() || null,
     notificationsEnabled: input?.notificationsEnabled ?? input?.email_notifications_enabled ?? true,
+    notifyNewPerson: input?.notifyNewPerson ?? input?.email_notify_new_person ?? true,
+    notifyPersonUpdates: input?.notifyPersonUpdates ?? input?.email_notify_person_updates ?? true,
+    notifyMemberUpdates: input?.notifyMemberUpdates ?? input?.email_notify_member_updates ?? true,
     isPrimary: Boolean(input?.isPrimary)
   };
 }
@@ -63,7 +66,7 @@ export async function getAdminRecipients(supabase) {
     supabase.from('admin_users').select('email'),
     supabase
       .from('baraja_member')
-      .select('email, email_unsubscribe_token, email_notifications_enabled')
+      .select('email, email_unsubscribe_token, email_notifications_enabled, email_notify_new_person, email_notify_person_updates, email_notify_member_updates')
       .eq('claim_status', 'approved')
       .eq('member_level', 'admin')
       .eq('email_notifications_enabled', true)
@@ -86,7 +89,7 @@ export async function getAdminRecipients(supabase) {
 export async function getVerifiedAndAdminRecipients(supabase) {
   const { data, error } = await supabase
     .from('baraja_member')
-    .select('email, email_unsubscribe_token, email_notifications_enabled')
+    .select('email, email_unsubscribe_token, email_notifications_enabled, email_notify_new_person, email_notify_person_updates, email_notify_member_updates')
     .eq('claim_status', 'approved')
     .eq('email_notifications_enabled', true)
     .in('member_level', ['verified', 'admin']);
@@ -105,6 +108,25 @@ export async function getAdminAndPrimaryRecipients(supabase) {
 export function isRecipientEnabled(recipientOrMember) {
   const notificationsEnabled = recipientOrMember?.notificationsEnabled ?? recipientOrMember?.email_notifications_enabled ?? true;
   return Boolean(recipientOrMember?.isPrimary || notificationsEnabled);
+}
+
+export function doesRecipientAllowCategory(recipientOrMember, category) {
+  if (recipientOrMember?.isPrimary) return true;
+  if (!isRecipientEnabled(recipientOrMember)) return false;
+
+  if (category === 'new_person') {
+    return Boolean(recipientOrMember?.notifyNewPerson ?? recipientOrMember?.email_notify_new_person ?? true);
+  }
+
+  if (category === 'person_updates') {
+    return Boolean(recipientOrMember?.notifyPersonUpdates ?? recipientOrMember?.email_notify_person_updates ?? true);
+  }
+
+  if (category === 'member_updates') {
+    return Boolean(recipientOrMember?.notifyMemberUpdates ?? recipientOrMember?.email_notify_member_updates ?? true);
+  }
+
+  return true;
 }
 
 export async function getNodeWithParent(supabase, nodeId) {

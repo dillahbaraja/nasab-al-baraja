@@ -31,6 +31,9 @@ create table if not exists public.baraja_member (
   approved_at timestamptz,
   approved_by_member_id bigint references public.baraja_member(id),
   email_notifications_enabled boolean not null default true,
+  email_notify_new_person boolean not null default true,
+  email_notify_person_updates boolean not null default true,
+  email_notify_member_updates boolean not null default true,
   email_unsubscribe_token text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -74,6 +77,15 @@ alter table public.baraja_member
 add column if not exists email_notifications_enabled boolean not null default true;
 
 alter table public.baraja_member
+add column if not exists email_notify_new_person boolean not null default true;
+
+alter table public.baraja_member
+add column if not exists email_notify_person_updates boolean not null default true;
+
+alter table public.baraja_member
+add column if not exists email_notify_member_updates boolean not null default true;
+
+alter table public.baraja_member
 add column if not exists email_unsubscribe_token text;
 
 alter table public.baraja_member
@@ -82,6 +94,18 @@ alter column email_unsubscribe_token set default md5(random()::text || clock_tim
 update public.baraja_member
 set email_notifications_enabled = coalesce(email_notifications_enabled, true)
 where email_notifications_enabled is distinct from true and email_notifications_enabled is null;
+
+update public.baraja_member
+set email_notify_new_person = coalesce(email_notify_new_person, true)
+where email_notify_new_person is distinct from true and email_notify_new_person is null;
+
+update public.baraja_member
+set email_notify_person_updates = coalesce(email_notify_person_updates, true)
+where email_notify_person_updates is distinct from true and email_notify_person_updates is null;
+
+update public.baraja_member
+set email_notify_member_updates = coalesce(email_notify_member_updates, true)
+where email_notify_member_updates is distinct from true and email_notify_member_updates is null;
 
 update public.baraja_member
 set email_unsubscribe_token = md5(random()::text || clock_timestamp()::text || coalesce(email, ''))

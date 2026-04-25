@@ -3475,6 +3475,23 @@ const FamilyGraph = () => {
         if (error) throw error;
         patchLocalPerson(person.id, { moderation: newMod });
         await deleteProposalNotices(person, 'proposal_add_child');
+
+        const parent = person.fatherId ? personMap.get(String(person.fatherId)) : null;
+        const grandParent = parent?.fatherId ? personMap.get(String(parent.fatherId)) : null;
+        const notice = await createNotice({
+          text: buildNoticeText({
+            type: 'new_member',
+            lang,
+            personName: lang === 'ar' ? (person.arabicName || '') : (person.englishName || person.arabicName || ''),
+            parentName: parent ? (lang === 'ar' ? (parent.arabicName || '') : (parent.englishName || parent.arabicName || '')) : '',
+            grandParentName: grandParent ? (lang === 'ar' ? (grandParent.arabicName || '') : (grandParent.englishName || grandParent.arabicName || '')) : ''
+          }),
+          type: 'new_member',
+          targetId: person.id,
+          targetPersonId: person.id,
+          timestamp: Date.now()
+        });
+        if (notice) appendLocalNotice(notice);
       } else {
         const pendingNameChange = getPendingNameChange(person);
         if (!pendingNameChange) return;
@@ -3633,6 +3650,25 @@ const FamilyGraph = () => {
       .update({
         email_notifications_enabled: Boolean(enabled)
       })
+      .eq('id', currentMember.id)
+      .select('*')
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(error.message || t('updateFailed'));
+    }
+
+    setCurrentMember(data || null);
+    setMemberRecords((prev) => prev.map((item) => (item.id === data?.id ? data : item)));
+    showToast({ text: t('emailNotificationsUpdated') });
+  };
+
+  const handleUpdateEmailNotificationGroups = async (patch) => {
+    if (!currentMember?.id) return;
+
+    const { data, error } = await supabase
+      .from('baraja_member')
+      .update(patch)
       .eq('id', currentMember.id)
       .select('*')
       .maybeSingle();
@@ -4417,6 +4453,7 @@ const FamilyGraph = () => {
             setAppSettings={setAppSettings}
             onUpdateProfile={handleUpdateProfile}
             onUpdateEmailNotifications={handleUpdateEmailNotifications}
+            onUpdateEmailNotificationGroups={handleUpdateEmailNotificationGroups}
             memberClaims={pendingMemberClaims}
             verifiedMembers={verifiedMembers}
             adminMembers={adminMembers}

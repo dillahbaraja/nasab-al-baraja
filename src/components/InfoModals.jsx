@@ -23,6 +23,7 @@ const InfoModal = ({
   setAppSettings,
   onUpdateProfile,
   onUpdateEmailNotifications,
+  onUpdateEmailNotificationGroups,
   memberClaims = [],
   verifiedMembers = [],
   adminMembers = [],
@@ -818,6 +819,60 @@ const InfoModal = ({
                     />
                     <div style={{ fontSize: '12px', color: 'var(--text-secondary)', padding: '12px 0 14px 0', lineHeight: '1.6' }}>
                       {t('emailNotificationsHelp')}
+                    </div>
+                    <SettingRow
+                      label={t('newPersonNotifications')}
+                      value={currentMember.email_notify_new_person !== false}
+                      onChange={async (val) => {
+                        if (!onUpdateEmailNotificationGroups) return;
+                        setIsSubmitting(true);
+                        setErrorMsg('');
+                        try {
+                          await onUpdateEmailNotificationGroups({ email_notify_new_person: val });
+                        } catch (error) {
+                          setErrorMsg(error.message || t('updateFailed'));
+                        } finally {
+                          setIsSubmitting(false);
+                        }
+                      }}
+                      disabled={isSubmitting || currentMember.email_notifications_enabled === false}
+                    />
+                    <SettingRow
+                      label={t('personUpdateNotifications')}
+                      value={currentMember.email_notify_person_updates !== false}
+                      onChange={async (val) => {
+                        if (!onUpdateEmailNotificationGroups) return;
+                        setIsSubmitting(true);
+                        setErrorMsg('');
+                        try {
+                          await onUpdateEmailNotificationGroups({ email_notify_person_updates: val });
+                        } catch (error) {
+                          setErrorMsg(error.message || t('updateFailed'));
+                        } finally {
+                          setIsSubmitting(false);
+                        }
+                      }}
+                      disabled={isSubmitting || currentMember.email_notifications_enabled === false}
+                    />
+                    <SettingRow
+                      label={t('memberUpdateNotifications')}
+                      value={currentMember.email_notify_member_updates !== false}
+                      onChange={async (val) => {
+                        if (!onUpdateEmailNotificationGroups) return;
+                        setIsSubmitting(true);
+                        setErrorMsg('');
+                        try {
+                          await onUpdateEmailNotificationGroups({ email_notify_member_updates: val });
+                        } catch (error) {
+                          setErrorMsg(error.message || t('updateFailed'));
+                        } finally {
+                          setIsSubmitting(false);
+                        }
+                      }}
+                      disabled={isSubmitting || currentMember.email_notifications_enabled === false}
+                    />
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', padding: '12px 0 14px 0', lineHeight: '1.6' }}>
+                      {t('categoryNotificationsHelp')}
                     </div>
                   </div>
                 </div>

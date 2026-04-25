@@ -81,15 +81,15 @@ export function decorateEmailForRecipient(message, recipient, baseUrl) {
   const footerText = [
     '',
     '---',
-    'Email notifications',
-    `Disable email notifications: ${unsubscribeUrl}`,
-    'You can enable them again later from Settings.'
+    'Manage email notifications',
+    `Manage email notifications: ${unsubscribeUrl}`,
+    'You can update them again later from Settings.'
   ].join('\n');
   const footerHtml = `
     <div style="max-width:720px;margin:16px auto 0 auto;padding:0 12px;font-family:Arial, Helvetica, sans-serif;color:#6b7280;">
       <div style="font-size:12px;line-height:1.7;text-align:center;">
-        <a href="${escapeHtml(unsubscribeUrl)}" style="color:#7c3aed;text-decoration:underline;">Disable email notifications</a><br />
-        You can enable them again later from Settings.
+        <a href="${escapeHtml(unsubscribeUrl)}" style="color:#7c3aed;text-decoration:underline;">Manage email notifications</a><br />
+        You can update them again later from Settings.
       </div>
     </div>
   `;
