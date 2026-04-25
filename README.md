@@ -135,10 +135,7 @@ Set these Environment Variables in Vercel:
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `SUPABASE_WEBHOOK_SECRET`
-- `SMTP_HOST`
-- `SMTP_PORT`
-- `SMTP_USER`
-- `SMTP_PASS`
+- `RESEND_API_KEY`
 - `EMAIL_FROM`
 - `EMAIL_PRIMARY_TO`
 - `APP_BASE_URL`
@@ -158,7 +155,7 @@ After deploy, make sure your Supabase project already has:
 
 ### Email Notifications
 
-The repository now includes a Vercel serverless webhook endpoint at `api/email/supabase-event.js` for sending email notifications through SMTP.
+The repository now includes a Vercel serverless webhook endpoint at `api/email/supabase-event.js` for sending email notifications through Resend.
 
 Supported notifications:
 
@@ -171,7 +168,7 @@ Supported notifications:
 - New guest proposal in `notices.type in ('proposal_add_child', 'proposal_name_change')` -> sent to all admins
 - Direct admin tree updates in `notices.type in ('new_member', 'admin_name_change')` -> sent to all admins plus the primary inbox
 
-The primary inbox from `EMAIL_PRIMARY_TO` is always added as a recipient for every email event. If it is not set, the server falls back to `SMTP_USER`.
+The primary inbox from `EMAIL_PRIMARY_TO` is always added as a recipient for every email event.
 
 Members and admins stored in `baraja_member` can disable email delivery from Settings. When disabled, they will no longer receive notification emails until they enable them again.
 
@@ -181,24 +178,20 @@ Email preferences are grouped into three categories in Settings:
 - Person change notifications
 - Member notifications
 
-#### Gmail SMTP Setup
+#### Resend Setup
 
-1. Enable `2-Step Verification` on `info.albaraja@gmail.com`.
-2. Generate an `App Password` from Google Account security settings.
-3. Store the password in Vercel as `SMTP_PASS`.
-4. Use these Vercel environment values:
+1. Verify your sending domain in Resend, for example `al-baraja.com`.
+2. Create a production `RESEND_API_KEY`.
+3. Use these Vercel environment values:
 
 ```env
 SUPABASE_URL="https://your-project.supabase.co"
 SUPABASE_SERVICE_ROLE_KEY="your_service_role_key"
 SUPABASE_WEBHOOK_SECRET="your_shared_webhook_secret"
-SMTP_HOST="smtp.gmail.com"
-SMTP_PORT="465"
-SMTP_USER="info.albaraja@gmail.com"
-SMTP_PASS="your_gmail_app_password"
-EMAIL_FROM="Nasab Al-Baraja <info.albaraja@gmail.com>"
+RESEND_API_KEY="re_your_resend_api_key"
+EMAIL_FROM="Nasab Al-Baraja <info@al-baraja.com>"
 EMAIL_PRIMARY_TO="info.albaraja@gmail.com"
-APP_BASE_URL="https://your-vercel-domain.vercel.app"
+APP_BASE_URL="https://al-baraja.com"
 ```
 
 #### Supabase Webhook Setup

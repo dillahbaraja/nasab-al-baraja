@@ -1,31 +1,24 @@
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 
-const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
-const smtpPort = Number(process.env.SMTP_PORT || 465);
-const smtpUser = process.env.SMTP_USER;
-const smtpPass = process.env.SMTP_PASS;
-const emailFrom = process.env.EMAIL_FROM || smtpUser;
+const resendApiKey = process.env.RESEND_API_KEY;
+const emailFrom = process.env.EMAIL_FROM;
 
-let transporter = null;
+let resendClient = null;
 
-function getTransporter() {
-  if (!smtpUser || !smtpPass) {
-    throw new Error('SMTP_USER and SMTP_PASS must be configured.');
+function getResendClient() {
+  if (!resendApiKey) {
+    throw new Error('RESEND_API_KEY must be configured.');
   }
 
-  if (!transporter) {
-    transporter = nodemailer.createTransport({
-      host: smtpHost,
-      port: smtpPort,
-      secure: smtpPort === 465,
-      auth: {
-        user: smtpUser,
-        pass: smtpPass
-      }
-    });
+  if (!emailFrom) {
+    throw new Error('EMAIL_FROM must be configured.');
   }
 
-  return transporter;
+  if (!resendClient) {
+    resendClient = new Resend(resendApiKey);
+  }
+
+  return resendClient;
 }
 
 export async function sendEmail({ to, subject, text, html }) {
@@ -33,26 +26,32 @@ export async function sendEmail({ to, subject, text, html }) {
     return { accepted: [], rejected: [], results: [] };
   }
 
-  const activeTransporter = getTransporter();
-  const results = [];
+  const client = getResendClient();
   const accepted = [];
   const rejected = [];
+  const results = [];
 
   for (const recipient of to) {
     try {
-      const result = await activeTransporter.sendMail({
+      const result = await client.emails.send({
         from: emailFrom,
         to: recipient,
         subject,
         text,
         html
       });
-      results.push(result);
-      accepted.push(...(result.accepted || []));
-      rejected.push(...(result.rejected || []));
+
+      if (result?.error) {
+        rejected.push(recipient);
+        results.push({ recipient, error: result.error.message || String(result.error) });
+        continue;
+      }
+
+      accepted.push(recipient);
+      results.push({ recipient, id: result?.data?.id || null });
     } catch (error) {
       rejected.push(recipient);
-      results.push({ error: error.message || String(error), recipient });
+      results.push({ recipient, error: error.message || String(error) });
     }
   }
 
