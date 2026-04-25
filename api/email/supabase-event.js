@@ -157,7 +157,12 @@ async function deliverGuestProposalEmail({ supabase, record, eventType, tableNam
     record,
     deliver: async () => {
       const recipients = await getAdminRecipients(supabase);
-      const nodeDetails = await getNodeWithParent(supabase, record.target_id);
+      let nodeDetails = null;
+      try {
+        nodeDetails = await getNodeWithParent(supabase, record.target_id);
+      } catch (error) {
+        console.error('Failed to enrich guest proposal email with node details:', error);
+      }
       const message = buildGuestProposalEmail({ notice: record, nodeDetails });
 
       return {

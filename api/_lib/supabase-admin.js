@@ -127,6 +127,11 @@ export async function reserveEmailEventKey(supabase, { eventKey, eventType, tabl
     return true;
   }
 
+  if (error.code === '42P01' || error.code === 'PGRST205') {
+    console.warn('email_webhook_log table is missing; skipping webhook deduplication.');
+    return true;
+  }
+
   if (error.code === '23505') {
     return false;
   }
