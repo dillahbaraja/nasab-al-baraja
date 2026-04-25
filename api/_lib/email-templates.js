@@ -71,6 +71,36 @@ function createEmail({ subject, arabicLines, englishLines, indonesianLines }) {
   };
 }
 
+export function decorateEmailForRecipient(message, recipient, baseUrl) {
+  const unsubscribeToken = String(recipient?.unsubscribeToken || '').trim();
+  if (!unsubscribeToken || !baseUrl || recipient?.isPrimary) {
+    return message;
+  }
+
+  const unsubscribeUrl = `${String(baseUrl).replace(/\/$/, '')}/api/email/unsubscribe?token=${encodeURIComponent(unsubscribeToken)}`;
+  const footerText = [
+    '',
+    '---',
+    'Email notifications',
+    `Disable email notifications: ${unsubscribeUrl}`,
+    'You can enable them again later from Settings.'
+  ].join('\n');
+  const footerHtml = `
+    <div style="max-width:720px;margin:16px auto 0 auto;padding:0 12px;font-family:Arial, Helvetica, sans-serif;color:#6b7280;">
+      <div style="font-size:12px;line-height:1.7;text-align:center;">
+        <a href="${escapeHtml(unsubscribeUrl)}" style="color:#7c3aed;text-decoration:underline;">Disable email notifications</a><br />
+        You can enable them again later from Settings.
+      </div>
+    </div>
+  `;
+
+  return {
+    ...message,
+    text: `${message.text || ''}${footerText}`,
+    html: `${message.html || ''}${footerHtml}`
+  };
+}
+
 function getBaseMemberDetails(member) {
   return {
     arabicName: safeValue(member?.arabic_name_snapshot),

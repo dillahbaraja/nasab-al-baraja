@@ -30,6 +30,8 @@ create table if not exists public.baraja_member (
   english_name_snapshot text not null default '',
   approved_at timestamptz,
   approved_by_member_id bigint references public.baraja_member(id),
+  email_notifications_enabled boolean not null default true,
+  email_unsubscribe_token text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint baraja_member_claim_status_check check (claim_status in ('pending', 'approved', 'rejected', 'cancelled')),
@@ -67,6 +69,27 @@ add column if not exists country_code text not null default '';
 
 alter table public.baraja_member
 add column if not exists region_code text not null default '';
+
+alter table public.baraja_member
+add column if not exists email_notifications_enabled boolean not null default true;
+
+alter table public.baraja_member
+add column if not exists email_unsubscribe_token text;
+
+alter table public.baraja_member
+alter column email_unsubscribe_token set default md5(random()::text || clock_timestamp()::text);
+
+update public.baraja_member
+set email_notifications_enabled = coalesce(email_notifications_enabled, true)
+where email_notifications_enabled is distinct from true and email_notifications_enabled is null;
+
+update public.baraja_member
+set email_unsubscribe_token = md5(random()::text || clock_timestamp()::text || coalesce(email, ''))
+where coalesce(email_unsubscribe_token, '') = '';
+
+create unique index if not exists baraja_member_email_unsubscribe_token_idx
+on public.baraja_member (email_unsubscribe_token)
+where email_unsubscribe_token is not null;
 
 grant usage on schema public to anon, authenticated;
 grant select on public.admin_users to authenticated;

@@ -6,7 +6,8 @@ import {
   buildMemberApprovedEmail,
   buildMemberApprovedForMemberEmail,
   buildPendingMemberEmail,
-  buildPendingMemberForRegistrantEmail
+  buildPendingMemberForRegistrantEmail,
+  decorateEmailForRecipient
 } from '../_lib/email-templates.js';
 import { sendEmail } from '../_lib/mail.js';
 import {
@@ -15,6 +16,7 @@ import {
   getAdminRecipients,
   getNodeWithParent,
   getVerifiedAndAdminRecipients,
+  isRecipientEnabled,
   reserveEmailEventKey
 } from '../_lib/supabase-admin.js';
 
@@ -24,10 +26,7 @@ function getSecretFromRequest(req) {
     return authorization.slice(7).trim();
   }
 
-  if (authorization) {
-    return authorization;
-  }
-
+  if (authorization) return authorization;
   return String(req.headers['x-webhook-secret'] || '').trim();
 }
 
@@ -51,222 +50,143 @@ function getOldRecord(payload) {
   return payload.old_record || payload.old || payload.previous || null;
 }
 
+function getBaseUrl(req) {
+  const configured = String(process.env.APP_BASE_URL || '').trim();
+  if (configured) return configured;
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').trim();
+  if (!host) return '';
+  const proto = String(req.headers['x-forwarded-proto'] || 'https').trim();
+  return `${proto}://${host}`;
+}
+
 function shouldSendPendingMemberEmail(record, oldRecord) {
-  if (!record || record.claim_status !== 'pending') return false;
-  return !oldRecord || oldRecord.claim_status !== 'pending';
+  return Boolean(record && record.claim_status === 'pending' && (!oldRecord || oldRecord.claim_status !== 'pending'));
 }
 
 function shouldSendAdminPromotionEmail(record, oldRecord) {
-  if (!record || record.claim_status !== 'approved' || record.member_level !== 'admin') {
-    return false;
-  }
-
-  return !oldRecord || oldRecord.member_level !== 'admin';
+  return Boolean(record && record.claim_status === 'approved' && record.member_level === 'admin' && (!oldRecord || oldRecord.member_level !== 'admin'));
 }
 
 function shouldSendMemberApprovedEmail(record, oldRecord) {
-  if (!record || record.claim_status !== 'approved') {
-    return false;
-  }
-
-  return !oldRecord || oldRecord.claim_status !== 'approved';
+  return Boolean(record && record.claim_status === 'approved' && (!oldRecord || oldRecord.claim_status !== 'approved'));
 }
 
 function shouldSendGuestProposalEmail(record, eventType) {
-  if (eventType !== 'INSERT' || !record) return false;
-  return record.type === 'proposal_add_child' || record.type === 'proposal_name_change';
+  return Boolean(eventType === 'INSERT' && record && (record.type === 'proposal_add_child' || record.type === 'proposal_name_change'));
 }
 
 function shouldSendAdminTreeChangeEmail(record, eventType) {
-  if (eventType !== 'INSERT' || !record) return false;
-  return record.type === 'new_member' || record.type === 'admin_name_change';
+  return Boolean(eventType === 'INSERT' && record && (record.type === 'new_member' || record.type === 'admin_name_change'));
 }
 
 function buildDeliveryEventKey(kind, record) {
   if (!record) return '';
-
-  if (kind === 'pending_member') {
-    return [kind, record.id, record.claim_status, record.created_at || record.updated_at || ''].join(':');
-  }
-
-  if (kind === 'pending_member_registrant') {
-    return [kind, record.id, record.email, record.claim_status, record.created_at || record.updated_at || ''].join(':');
-  }
-
-  if (kind === 'admin_promotion') {
-    return [kind, record.id, record.member_level, record.updated_at || record.approved_at || ''].join(':');
-  }
-
-  if (kind === 'admin_promotion_member') {
-    return [kind, record.id, record.email, record.member_level, record.updated_at || record.approved_at || ''].join(':');
-  }
-
-  if (kind === 'member_approved') {
-    return [kind, record.id, record.claim_status, record.approved_at || record.updated_at || ''].join(':');
-  }
-
-  if (kind === 'member_approved_member') {
-    return [kind, record.id, record.email, record.claim_status, record.approved_at || record.updated_at || ''].join(':');
-  }
-
-  if (kind === 'guest_proposal') {
-    return [kind, record.id, record.type, record.created_at || record.timestamp || ''].join(':');
-  }
-
-  if (kind === 'admin_tree_change') {
-    return [kind, record.id, record.type, record.created_at || record.timestamp || ''].join(':');
-  }
-
-  return '';
+  const stamp = record.created_at || record.updated_at || record.approved_at || record.timestamp || '';
+  return [kind, record.id, record.email || record.type || record.claim_status || record.member_level || '', stamp].join(':');
 }
 
 async function deliverOnce({ supabase, kind, tableName, eventType, record, deliver }) {
   const eventKey = buildDeliveryEventKey(kind, record);
-  const reserved = await reserveEmailEventKey(supabase, {
-    eventKey,
-    eventType,
-    tableName
-  });
+  const reserved = await reserveEmailEventKey(supabase, { eventKey, eventType, tableName });
 
   if (!reserved) {
-    return {
-      kind,
-      recipientCount: 0,
-      skipped: true,
-      reason: 'duplicate_event'
-    };
+    return { kind, recipientCount: 0, skipped: true, reason: 'duplicate_event' };
   }
 
   return deliver();
 }
 
-async function deliverPendingMemberEmail({ supabase, record, eventType, tableName }) {
+async function sendMessageToRecipients({ recipients, message, baseUrl }) {
+  const filteredRecipients = (recipients || []).filter((recipient) => recipient?.email && isRecipientEnabled(recipient));
+  const accepted = [];
+  const rejected = [];
+  const results = [];
+
+  for (const recipient of filteredRecipients) {
+    const personalizedMessage = decorateEmailForRecipient(message, recipient, baseUrl);
+    const result = await sendEmail({ to: [recipient.email], ...personalizedMessage });
+    accepted.push(...(result.accepted || []));
+    rejected.push(...(result.rejected || []));
+    results.push(...(result.results || []));
+  }
+
+  return {
+    recipientCount: filteredRecipients.length,
+    accepted,
+    rejected,
+    results
+  };
+}
+
+async function deliverPendingMemberEmail({ supabase, record, eventType, tableName, baseUrl }) {
   return deliverOnce({
-    supabase,
-    kind: 'pending_member',
-    tableName,
-    eventType,
-    record,
+    supabase, kind: 'pending_member', tableName, eventType, record,
     deliver: async () => {
       const recipients = await getAdminRecipients(supabase);
-      const message = buildPendingMemberEmail(record);
-
-      return {
-        kind: 'pending_member',
-        recipientCount: recipients.length,
-        accepted: recipients.length > 0 ? await sendEmail({ to: recipients.map((item) => item.email), ...message }) : { accepted: [], rejected: [] }
-      };
+      const sent = await sendMessageToRecipients({ recipients, message: buildPendingMemberEmail(record), baseUrl });
+      return { kind: 'pending_member', ...sent };
     }
   });
 }
 
-async function deliverPendingMemberRegistrantEmail({ supabase, record, eventType, tableName }) {
+async function deliverPendingMemberRegistrantEmail({ supabase, record, eventType, tableName, baseUrl }) {
   return deliverOnce({
-    supabase,
-    kind: 'pending_member_registrant',
-    tableName,
-    eventType,
-    record,
+    supabase, kind: 'pending_member_registrant', tableName, eventType, record,
     deliver: async () => {
-      const recipient = String(record?.email || '').trim().toLowerCase();
-      const message = buildPendingMemberForRegistrantEmail(record);
-
-      return {
-        kind: 'pending_member_registrant',
-        recipientCount: recipient ? 1 : 0,
-        accepted: recipient ? await sendEmail({ to: [recipient], ...message }) : { accepted: [], rejected: [] }
-      };
+      const recipient = { email: String(record?.email || '').trim().toLowerCase(), unsubscribeToken: record?.email_unsubscribe_token, notificationsEnabled: record?.email_notifications_enabled };
+      const sent = await sendMessageToRecipients({ recipients: [recipient], message: buildPendingMemberForRegistrantEmail(record), baseUrl });
+      return { kind: 'pending_member_registrant', ...sent };
     }
   });
 }
 
-async function deliverAdminPromotionEmail({ supabase, record, eventType, tableName }) {
+async function deliverAdminPromotionEmail({ supabase, record, eventType, tableName, baseUrl }) {
   return deliverOnce({
-    supabase,
-    kind: 'admin_promotion',
-    tableName,
-    eventType,
-    record,
+    supabase, kind: 'admin_promotion', tableName, eventType, record,
     deliver: async () => {
       const recipients = await getVerifiedAndAdminRecipients(supabase);
-      const message = buildAdminPromotionEmail(record);
-
-      return {
-        kind: 'admin_promotion',
-        recipientCount: recipients.length,
-        accepted: recipients.length > 0 ? await sendEmail({ to: recipients.map((item) => item.email), ...message }) : { accepted: [], rejected: [] }
-      };
+      const sent = await sendMessageToRecipients({ recipients, message: buildAdminPromotionEmail(record), baseUrl });
+      return { kind: 'admin_promotion', ...sent };
     }
   });
 }
 
-async function deliverAdminPromotionForMemberEmail({ supabase, record, eventType, tableName }) {
+async function deliverAdminPromotionForMemberEmail({ supabase, record, eventType, tableName, baseUrl }) {
   return deliverOnce({
-    supabase,
-    kind: 'admin_promotion_member',
-    tableName,
-    eventType,
-    record,
+    supabase, kind: 'admin_promotion_member', tableName, eventType, record,
     deliver: async () => {
-      const recipient = String(record?.email || '').trim().toLowerCase();
-      const message = buildAdminPromotionForMemberEmail(record);
-
-      return {
-        kind: 'admin_promotion_member',
-        recipientCount: recipient ? 1 : 0,
-        accepted: recipient ? await sendEmail({ to: [recipient], ...message }) : { accepted: [], rejected: [] }
-      };
+      const recipient = { email: String(record?.email || '').trim().toLowerCase(), unsubscribeToken: record?.email_unsubscribe_token, notificationsEnabled: record?.email_notifications_enabled };
+      const sent = await sendMessageToRecipients({ recipients: [recipient], message: buildAdminPromotionForMemberEmail(record), baseUrl });
+      return { kind: 'admin_promotion_member', ...sent };
     }
   });
 }
 
-async function deliverMemberApprovedEmail({ supabase, record, eventType, tableName }) {
+async function deliverMemberApprovedEmail({ supabase, record, eventType, tableName, baseUrl }) {
   return deliverOnce({
-    supabase,
-    kind: 'member_approved',
-    tableName,
-    eventType,
-    record,
+    supabase, kind: 'member_approved', tableName, eventType, record,
     deliver: async () => {
       const recipients = await getAdminAndPrimaryRecipients(supabase);
-      const message = buildMemberApprovedEmail(record);
-
-      return {
-        kind: 'member_approved',
-        recipientCount: recipients.length,
-        accepted: recipients.length > 0 ? await sendEmail({ to: recipients.map((item) => item.email), ...message }) : { accepted: [], rejected: [] }
-      };
+      const sent = await sendMessageToRecipients({ recipients, message: buildMemberApprovedEmail(record), baseUrl });
+      return { kind: 'member_approved', ...sent };
     }
   });
 }
 
-async function deliverMemberApprovedForMemberEmail({ supabase, record, eventType, tableName }) {
+async function deliverMemberApprovedForMemberEmail({ supabase, record, eventType, tableName, baseUrl }) {
   return deliverOnce({
-    supabase,
-    kind: 'member_approved_member',
-    tableName,
-    eventType,
-    record,
+    supabase, kind: 'member_approved_member', tableName, eventType, record,
     deliver: async () => {
-      const recipient = String(record?.email || '').trim().toLowerCase();
-      const message = buildMemberApprovedForMemberEmail(record);
-
-      return {
-        kind: 'member_approved_member',
-        recipientCount: recipient ? 1 : 0,
-        accepted: recipient ? await sendEmail({ to: [recipient], ...message }) : { accepted: [], rejected: [] }
-      };
+      const recipient = { email: String(record?.email || '').trim().toLowerCase(), unsubscribeToken: record?.email_unsubscribe_token, notificationsEnabled: record?.email_notifications_enabled };
+      const sent = await sendMessageToRecipients({ recipients: [recipient], message: buildMemberApprovedForMemberEmail(record), baseUrl });
+      return { kind: 'member_approved_member', ...sent };
     }
   });
 }
 
-async function deliverGuestProposalEmail({ supabase, record, eventType, tableName }) {
+async function deliverGuestProposalEmail({ supabase, record, eventType, tableName, baseUrl }) {
   return deliverOnce({
-    supabase,
-    kind: 'guest_proposal',
-    tableName,
-    eventType,
-    record,
+    supabase, kind: 'guest_proposal', tableName, eventType, record,
     deliver: async () => {
       const recipients = await getAdminRecipients(supabase);
       let nodeDetails = null;
@@ -275,24 +195,15 @@ async function deliverGuestProposalEmail({ supabase, record, eventType, tableNam
       } catch (error) {
         console.error('Failed to enrich guest proposal email with node details:', error);
       }
-      const message = buildGuestProposalEmail({ notice: record, nodeDetails });
-
-      return {
-        kind: 'guest_proposal',
-        recipientCount: recipients.length,
-        accepted: recipients.length > 0 ? await sendEmail({ to: recipients.map((item) => item.email), ...message }) : { accepted: [], rejected: [] }
-      };
+      const sent = await sendMessageToRecipients({ recipients, message: buildGuestProposalEmail({ notice: record, nodeDetails }), baseUrl });
+      return { kind: 'guest_proposal', ...sent };
     }
   });
 }
 
-async function deliverAdminTreeChangeEmail({ supabase, record, eventType, tableName }) {
+async function deliverAdminTreeChangeEmail({ supabase, record, eventType, tableName, baseUrl }) {
   return deliverOnce({
-    supabase,
-    kind: 'admin_tree_change',
-    tableName,
-    eventType,
-    record,
+    supabase, kind: 'admin_tree_change', tableName, eventType, record,
     deliver: async () => {
       const recipients = await getAdminAndPrimaryRecipients(supabase);
       let nodeDetails = null;
@@ -301,13 +212,8 @@ async function deliverAdminTreeChangeEmail({ supabase, record, eventType, tableN
       } catch (error) {
         console.error('Failed to enrich admin tree change email with node details:', error);
       }
-      const message = buildAdminTreeChangeEmail({ notice: record, nodeDetails });
-
-      return {
-        kind: 'admin_tree_change',
-        recipientCount: recipients.length,
-        accepted: recipients.length > 0 ? await sendEmail({ to: recipients.map((item) => item.email), ...message }) : { accepted: [], rejected: [] }
-      };
+      const sent = await sendMessageToRecipients({ recipients, message: buildAdminTreeChangeEmail({ notice: record, nodeDetails }), baseUrl });
+      return { kind: 'admin_tree_change', ...sent };
     }
   });
 }
@@ -320,7 +226,6 @@ export default async function handler(req, res) {
 
   const expectedSecret = String(process.env.SUPABASE_WEBHOOK_SECRET || '').trim();
   const requestSecret = getSecretFromRequest(req);
-
   if (expectedSecret && requestSecret !== expectedSecret) {
     res.status(401).json({ error: 'Invalid webhook secret.' });
     return;
@@ -333,41 +238,34 @@ export default async function handler(req, res) {
     const record = getNewRecord(payload);
     const oldRecord = getOldRecord(payload);
     const supabase = createAdminSupabaseClient();
+    const baseUrl = getBaseUrl(req);
     const deliveries = [];
 
     if (table === 'baraja_member') {
       if (shouldSendPendingMemberEmail(record, oldRecord)) {
-        deliveries.push(await deliverPendingMemberEmail({ supabase, record, eventType, tableName: table }));
-        deliveries.push(await deliverPendingMemberRegistrantEmail({ supabase, record, eventType, tableName: table }));
+        deliveries.push(await deliverPendingMemberEmail({ supabase, record, eventType, tableName: table, baseUrl }));
+        deliveries.push(await deliverPendingMemberRegistrantEmail({ supabase, record, eventType, tableName: table, baseUrl }));
       }
-
       if (shouldSendMemberApprovedEmail(record, oldRecord)) {
-        deliveries.push(await deliverMemberApprovedEmail({ supabase, record, eventType, tableName: table }));
-        deliveries.push(await deliverMemberApprovedForMemberEmail({ supabase, record, eventType, tableName: table }));
+        deliveries.push(await deliverMemberApprovedEmail({ supabase, record, eventType, tableName: table, baseUrl }));
+        deliveries.push(await deliverMemberApprovedForMemberEmail({ supabase, record, eventType, tableName: table, baseUrl }));
       }
-
       if (shouldSendAdminPromotionEmail(record, oldRecord)) {
-        deliveries.push(await deliverAdminPromotionEmail({ supabase, record, eventType, tableName: table }));
-        deliveries.push(await deliverAdminPromotionForMemberEmail({ supabase, record, eventType, tableName: table }));
+        deliveries.push(await deliverAdminPromotionEmail({ supabase, record, eventType, tableName: table, baseUrl }));
+        deliveries.push(await deliverAdminPromotionForMemberEmail({ supabase, record, eventType, tableName: table, baseUrl }));
       }
     }
 
     if (table === 'notices' && shouldSendGuestProposalEmail(record, eventType)) {
-      deliveries.push(await deliverGuestProposalEmail({ supabase, record, eventType, tableName: table }));
+      deliveries.push(await deliverGuestProposalEmail({ supabase, record, eventType, tableName: table, baseUrl }));
     }
-
     if (table === 'notices' && shouldSendAdminTreeChangeEmail(record, eventType)) {
-      deliveries.push(await deliverAdminTreeChangeEmail({ supabase, record, eventType, tableName: table }));
+      deliveries.push(await deliverAdminTreeChangeEmail({ supabase, record, eventType, tableName: table, baseUrl }));
     }
 
-    res.status(200).json({
-      ok: true,
-      deliveries
-    });
+    res.status(200).json({ ok: true, deliveries });
   } catch (error) {
     console.error('Supabase email webhook failed:', error);
-    res.status(500).json({
-      error: error.message || 'Unexpected webhook failure.'
-    });
+    res.status(500).json({ error: error.message || 'Unexpected webhook failure.' });
   }
 }

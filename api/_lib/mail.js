@@ -30,15 +30,31 @@ function getTransporter() {
 
 export async function sendEmail({ to, subject, text, html }) {
   if (!Array.isArray(to) || to.length === 0) {
-    return { accepted: [], rejected: [] };
+    return { accepted: [], rejected: [], results: [] };
   }
 
   const activeTransporter = getTransporter();
-  return activeTransporter.sendMail({
-    from: emailFrom,
-    to: to.join(', '),
-    subject,
-    text,
-    html
-  });
+  const results = [];
+  const accepted = [];
+  const rejected = [];
+
+  for (const recipient of to) {
+    try {
+      const result = await activeTransporter.sendMail({
+        from: emailFrom,
+        to: recipient,
+        subject,
+        text,
+        html
+      });
+      results.push(result);
+      accepted.push(...(result.accepted || []));
+      rejected.push(...(result.rejected || []));
+    } catch (error) {
+      rejected.push(recipient);
+      results.push({ error: error.message || String(error), recipient });
+    }
+  }
+
+  return { accepted, rejected, results };
 }

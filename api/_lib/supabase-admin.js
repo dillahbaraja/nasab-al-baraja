@@ -21,9 +21,16 @@ function normalizeEmail(value) {
   return String(value || '').trim().toLowerCase();
 }
 
-function normalizeRecipient(email) {
-  const normalizedEmail = normalizeEmail(email);
-  return normalizedEmail ? { email: normalizedEmail } : null;
+function normalizeRecipient(input) {
+  const normalizedEmail = normalizeEmail(input?.email || input);
+  if (!normalizedEmail) return null;
+
+  return {
+    email: normalizedEmail,
+    unsubscribeToken: String(input?.unsubscribeToken || input?.email_unsubscribe_token || '').trim() || null,
+    notificationsEnabled: input?.notificationsEnabled ?? input?.email_notifications_enabled ?? true,
+    isPrimary: Boolean(input?.isPrimary)
+  };
 }
 
 export function dedupeRecipients(recipients = []) {
@@ -31,7 +38,7 @@ export function dedupeRecipients(recipients = []) {
   const seen = new Set();
 
   for (const recipient of recipients) {
-    const normalized = normalizeRecipient(recipient?.email || recipient);
+    const normalized = normalizeRecipient(recipient);
     if (!normalized || seen.has(normalized.email)) continue;
     seen.add(normalized.email);
     uniqueRecipients.push(normalized);
@@ -47,7 +54,7 @@ export function withPrimaryRecipient(recipients = []) {
 
   return dedupeRecipients([
     ...recipients,
-    { email: primaryEmailRecipient }
+    { email: primaryEmailRecipient, isPrimary: true, notificationsEnabled: true }
   ]);
 }
 
@@ -56,9 +63,10 @@ export async function getAdminRecipients(supabase) {
     supabase.from('admin_users').select('email'),
     supabase
       .from('baraja_member')
-      .select('email')
+      .select('email, email_unsubscribe_token, email_notifications_enabled')
       .eq('claim_status', 'approved')
       .eq('member_level', 'admin')
+      .eq('email_notifications_enabled', true)
   ]);
 
   if (adminUsersError) {
@@ -78,8 +86,9 @@ export async function getAdminRecipients(supabase) {
 export async function getVerifiedAndAdminRecipients(supabase) {
   const { data, error } = await supabase
     .from('baraja_member')
-    .select('email')
+    .select('email, email_unsubscribe_token, email_notifications_enabled')
     .eq('claim_status', 'approved')
+    .eq('email_notifications_enabled', true)
     .in('member_level', ['verified', 'admin']);
 
   if (error) {
@@ -91,6 +100,10 @@ export async function getVerifiedAndAdminRecipients(supabase) {
 
 export async function getAdminAndPrimaryRecipients(supabase) {
   return getAdminRecipients(supabase);
+}
+
+export function isRecipientEnabled(recipientOrMember) {
+  return Boolean(recipientOrMember?.isPrimary || recipientOrMember?.notificationsEnabled ?? recipientOrMember?.email_notifications_enabled ?? true);
 }
 
 export async function getNodeWithParent(supabase, nodeId) {

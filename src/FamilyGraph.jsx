@@ -3625,6 +3625,27 @@ const FamilyGraph = () => {
     setActiveInfoModal(null);
   };
 
+  const handleUpdateEmailNotifications = async (enabled) => {
+    if (!currentMember?.id) return;
+
+    const { data, error } = await supabase
+      .from('baraja_member')
+      .update({
+        email_notifications_enabled: Boolean(enabled)
+      })
+      .eq('id', currentMember.id)
+      .select('*')
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(error.message || t('updateFailed'));
+    }
+
+    setCurrentMember(data || null);
+    setMemberRecords((prev) => prev.map((item) => (item.id === data?.id ? data : item)));
+    showToast({ text: t('emailNotificationsUpdated') });
+  };
+
   const handleSubmitMemberClaim = useCallback(async (person, payload) => {
     const email = (payload.email || '').trim().toLowerCase();
     const password = payload.password || '';
@@ -4395,6 +4416,7 @@ const FamilyGraph = () => {
             appSettings={appSettings}
             setAppSettings={setAppSettings}
             onUpdateProfile={handleUpdateProfile}
+            onUpdateEmailNotifications={handleUpdateEmailNotifications}
             memberClaims={pendingMemberClaims}
             verifiedMembers={verifiedMembers}
             adminMembers={adminMembers}

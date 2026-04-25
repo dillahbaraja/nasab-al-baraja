@@ -22,6 +22,7 @@ const InfoModal = ({
   appSettings,
   setAppSettings,
   onUpdateProfile,
+  onUpdateEmailNotifications,
   memberClaims = [],
   verifiedMembers = [],
   adminMembers = [],
@@ -792,6 +793,35 @@ const InfoModal = ({
                   />
                 </div>
               </div>
+              {(currentRole === 'verified' || currentRole === 'admin') && currentMember?.id && (
+                <div style={{ marginBottom: '16px' }}>
+                  <h3 style={{ fontSize: '12px', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em', marginBottom: '8px' }}>
+                    {t('notifications')}
+                  </h3>
+                  <div className="glass-panel" style={{ padding: '0 16px' }}>
+                    <SettingRow
+                      label={t('emailNotifications')}
+                      value={currentMember.email_notifications_enabled !== false}
+                      onChange={async (val) => {
+                        if (!onUpdateEmailNotifications) return;
+                        setIsSubmitting(true);
+                        setErrorMsg('');
+                        try {
+                          await onUpdateEmailNotifications(val);
+                        } catch (error) {
+                          setErrorMsg(error.message || t('updateFailed'));
+                        } finally {
+                          setIsSubmitting(false);
+                        }
+                      }}
+                      disabled={isSubmitting}
+                    />
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', padding: '12px 0 14px 0', lineHeight: '1.6' }}>
+                      {t('emailNotificationsHelp')}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         );

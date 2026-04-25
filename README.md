@@ -141,6 +141,7 @@ Set these Environment Variables in Vercel:
 - `SMTP_PASS`
 - `EMAIL_FROM`
 - `EMAIL_PRIMARY_TO`
+- `APP_BASE_URL`
 
 Recommended build settings:
 
@@ -172,6 +173,8 @@ Supported notifications:
 
 The primary inbox from `EMAIL_PRIMARY_TO` is always added as a recipient for every email event. If it is not set, the server falls back to `SMTP_USER`.
 
+Members and admins stored in `baraja_member` can disable email delivery from Settings. When disabled, they will no longer receive notification emails until they enable them again.
+
 #### Gmail SMTP Setup
 
 1. Enable `2-Step Verification` on `info.albaraja@gmail.com`.
@@ -189,6 +192,7 @@ SMTP_USER="info.albaraja@gmail.com"
 SMTP_PASS="your_gmail_app_password"
 EMAIL_FROM="Nasab Al-Baraja <info.albaraja@gmail.com>"
 EMAIL_PRIMARY_TO="info.albaraja@gmail.com"
+APP_BASE_URL="https://your-vercel-domain.vercel.app"
 ```
 
 #### Supabase Webhook Setup
@@ -228,6 +232,8 @@ The webhook handler also writes a unique event key into `public.email_webhook_lo
 - Member and admin notices show both `arabic_name_snapshot` and `english_name_snapshot`
 - Proposal notices include target name and parent name when available
 - Arabic sections are rendered in RTL with a larger font size for readability
+- Each recipient receives their own email, so other recipient addresses stay hidden
+- Member emails include an unsubscribe footer link that disables email notifications for that account
 
 ---
 
