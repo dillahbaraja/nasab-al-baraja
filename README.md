@@ -83,6 +83,7 @@ SUPABASE_SERVICE_ROLE_KEY="your_service_role_key_for_server_side_scripts_only"
 Notes:
 - The frontend only needs `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
 - `SUPABASE_SERVICE_ROLE_KEY` is only for local/server-side scripts and must never be exposed to the browser.
+- `SUPABASE_WEBHOOK_SECRET`, `SMTP_USER`, and `SMTP_PASS` are only for the Vercel serverless email webhook.
 
 ### Run Locally
 
@@ -131,6 +132,14 @@ Set these Environment Variables in Vercel:
 
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_WEBHOOK_SECRET`
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_USER`
+- `SMTP_PASS`
+- `EMAIL_FROM`
 
 Recommended build settings:
 
@@ -144,6 +153,69 @@ After deploy, make sure your Supabase project already has:
 - the `nodes` and `notices` tables
 - the `admin_users` table
 - the policies from `supabase_guest_policies.sql`
+
+### Email Notifications
+
+The repository now includes a Vercel serverless webhook endpoint at `api/email/supabase-event.js` for sending email notifications through SMTP.
+
+Supported notifications:
+
+- New member registration with `claim_status = 'pending'` -> sent to all admins
+- New admin promotion with `member_level = 'admin'` and `claim_status = 'approved'` -> sent to all verified members and admins
+- New guest proposal in `notices.type in ('proposal_add_child', 'proposal_name_change')` -> sent to all admins
+
+#### Gmail SMTP Setup
+
+1. Enable `2-Step Verification` on `info.albaraja@gmail.com`.
+2. Generate an `App Password` from Google Account security settings.
+3. Store the password in Vercel as `SMTP_PASS`.
+4. Use these Vercel environment values:
+
+```env
+SUPABASE_URL="https://your-project.supabase.co"
+SUPABASE_SERVICE_ROLE_KEY="your_service_role_key"
+SUPABASE_WEBHOOK_SECRET="your_shared_webhook_secret"
+SMTP_HOST="smtp.gmail.com"
+SMTP_PORT="465"
+SMTP_USER="info.albaraja@gmail.com"
+SMTP_PASS="your_gmail_app_password"
+EMAIL_FROM="Nasab Al-Baraja <info.albaraja@gmail.com>"
+```
+
+#### Supabase Webhook Setup
+
+Create two Database Webhooks in Supabase and point both of them to your Vercel deployment URL:
+
+```text
+https://your-vercel-domain.vercel.app/api/email/supabase-event
+```
+
+Use `Authorization: Bearer <SUPABASE_WEBHOOK_SECRET>` as a custom header.
+
+Webhook 1:
+
+- Table: `public.baraja_member`
+- Events: `Insert`, `Update`
+
+Webhook 2:
+
+- Table: `public.notices`
+- Events: `Insert`
+
+The endpoint filters the events internally, so only these cases will send email:
+
+- `baraja_member.claim_status` changed to `pending`
+- `baraja_member.member_level` changed to `admin` while `claim_status = 'approved'`
+- `notices.type` is `proposal_add_child` or `proposal_name_change`
+
+The webhook handler also writes a unique event key into `public.email_webhook_log` before sending, so repeated webhook retries do not send duplicate emails.
+
+#### Email Content
+
+- Subject: Arabic + English
+- Body: Arabic + English + Indonesian
+- Member and admin notices show both `arabic_name_snapshot` and `english_name_snapshot`
+- Proposal notices include target name and parent name when available
 
 ---
 

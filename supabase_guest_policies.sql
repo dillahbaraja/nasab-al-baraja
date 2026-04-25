@@ -36,10 +36,18 @@ create table if not exists public.baraja_member (
   constraint baraja_member_level_check check (member_level in ('guest', 'verified', 'admin'))
 );
 
+create table if not exists public.email_webhook_log (
+  event_key text primary key,
+  event_type text not null default '',
+  table_name text not null default '',
+  created_at timestamptz not null default now()
+);
+
 alter table public.admin_users enable row level security;
 alter table public.baraja_member enable row level security;
 alter table public.nodes enable row level security;
 alter table public.notices enable row level security;
+alter table public.email_webhook_log enable row level security;
 
 drop view if exists public.baraja_member_public_status;
 drop view if exists public.baraja_member_directory;
@@ -65,6 +73,7 @@ grant select on public.admin_users to authenticated;
 grant select, insert, update, delete on public.baraja_member to authenticated;
 grant select, insert, update, delete on public.nodes to anon, authenticated;
 grant select, insert, update, delete on public.notices to anon, authenticated;
+grant select, insert on public.email_webhook_log to authenticated;
 grant usage, select on all sequences in schema public to anon, authenticated;
 
 create or replace function public.is_admin_user()
