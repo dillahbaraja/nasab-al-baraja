@@ -608,6 +608,22 @@ body {
   gap: 12px;
 }
 
+.lineage-suggestion-form {
+  background: rgba(var(--accent-rgb), 0.03);
+  border-radius: 18px;
+  padding: 18px 16px 0 !important;
+}
+
+.lineage-name-input-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.lineage-name-input {
+  width: 100%;
+}
+
 .lineage-button-row {
   display: flex;
   gap: 10px;
@@ -620,6 +636,29 @@ body {
   flex-direction: column;
   gap: 8px;
   padding: 14px 0;
+}
+
+.lineage-suggestion-child-card {
+  gap: 12px;
+}
+
+.lineage-child-form-header {
+  align-items: center;
+  gap: 12px;
+}
+
+.lineage-add-child-button {
+  white-space: nowrap;
+}
+
+.lineage-suggestion-action-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.lineage-suggestion-action-row > button {
+  min-width: 0;
 }
 
 .lineage-child-item {
@@ -663,6 +702,14 @@ body {
 
   .notice-view-button {
     flex: 1;
+  }
+
+  .lineage-name-input-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .lineage-suggestion-action-row {
+    flex-direction: column;
   }
 }
 

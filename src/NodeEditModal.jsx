@@ -426,29 +426,31 @@ const NodeEditModal = ({
   };
 
   const renderNameForm = (title, onSubmit, submitLabel) => (
-    <form ref={suggestionFormRef} onSubmit={onSubmit} className="lineage-modal-form">
+    <form ref={suggestionFormRef} onSubmit={onSubmit} className="lineage-modal-form lineage-suggestion-form">
       <h3 className="lineage-section-title">
         {title}
       </h3>
       <div className="lineage-form-stack">
-        <input
-          ref={primarySuggestionInputRef}
-          type="text"
-          placeholder={`${t('placeholderArab')} *`}
-          className="search-input"
-          style={{ padding: '12px 14px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', color: 'var(--text-primary)' }}
-          value={proposalNameForm.arab}
-          onChange={(e) => setProposalNameForm((prev) => ({ ...prev, arab: e.target.value }))}
-          required
-        />
-        <input
-          type="text"
-          placeholder={`${t('placeholderLatin')} ${t('optional')}`}
-          className="search-input"
-          style={{ padding: '12px 14px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', color: 'var(--text-primary)' }}
-          value={proposalNameForm.latin}
-          onChange={(e) => setProposalNameForm((prev) => ({ ...prev, latin: e.target.value }))}
-        />
+        <div className="lineage-name-input-grid">
+          <input
+            ref={primarySuggestionInputRef}
+            type="text"
+            placeholder={`${t('placeholderArab')} *`}
+            className="search-input lineage-name-input"
+            style={{ padding: '12px 14px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', color: 'var(--text-primary)' }}
+            value={proposalNameForm.arab}
+            onChange={(e) => setProposalNameForm((prev) => ({ ...prev, arab: e.target.value }))}
+            required
+          />
+          <input
+            type="text"
+            placeholder={`${t('placeholderLatin')} ${t('optional')}`}
+            className="search-input lineage-name-input"
+            style={{ padding: '12px 14px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', color: 'var(--text-primary)' }}
+            value={proposalNameForm.latin}
+            onChange={(e) => setProposalNameForm((prev) => ({ ...prev, latin: e.target.value }))}
+          />
+        </div>
         <div className="lineage-button-row">
           <button type="button" onClick={() => setActiveSuggestionMode(null)} className="lineage-secondary-button" style={{ flex: 1 }}>
             {t('cancel')}
@@ -462,13 +464,13 @@ const NodeEditModal = ({
   );
 
   const renderChildSuggestionForm = () => (
-    <form ref={suggestionFormRef} onSubmit={handleSubmitChildSuggestionForm} className="lineage-modal-form">
+    <form ref={suggestionFormRef} onSubmit={handleSubmitChildSuggestionForm} className="lineage-modal-form lineage-suggestion-form">
       <h3 className="lineage-section-title">{t('suggestAddChildFor')}{displayName}</h3>
       <div className="lineage-form-stack">
         {childrenInputs.map((childInput, idx) => (
-          <div key={idx} className="lineage-child-form-card" style={{ borderBottom: idx < childrenInputs.length - 1 ? '1px dashed var(--panel-border)' : 'none' }}>
+          <div key={idx} className="lineage-child-form-card lineage-suggestion-child-card" style={{ borderBottom: idx < childrenInputs.length - 1 ? '1px dashed var(--panel-border)' : 'none' }}>
             {childrenInputs.length > 1 && (
-              <div style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between' }}>
+              <div className="lineage-child-form-header" style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between' }}>
                 <span>{t('childLabel')} #{idx + 1}</span>
                 {idx > 0 && (
                   <button type="button" onClick={() => setChildrenInputs(childrenInputs.filter((_, i) => i !== idx))} style={{ background: 'transparent', border: 'none', color: '#ff4444', cursor: 'pointer', fontSize: '12px' }}>
@@ -477,37 +479,39 @@ const NodeEditModal = ({
                 )}
               </div>
             )}
-            <input
-              ref={idx === 0 ? primarySuggestionInputRef : null}
-              type="text"
-              placeholder={`${t('placeholderArab')} *`}
-              className="search-input"
-              style={{ padding: '12px 14px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', color: 'var(--text-primary)' }}
-              value={childInput.arab}
-              onChange={(e) => {
-                const newArr = [...childrenInputs];
-                newArr[idx].arab = e.target.value;
-                setChildrenInputs(newArr);
-              }}
-              required
-            />
-            <input
-              type="text"
-              placeholder={`${t('placeholderLatin')} ${t('optional')}`}
-              className="search-input"
-              style={{ padding: '12px 14px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', color: 'var(--text-primary)' }}
-              value={childInput.latin}
-              onChange={(e) => {
-                const newArr = [...childrenInputs];
-                newArr[idx].latin = e.target.value;
-                setChildrenInputs(newArr);
-              }}
-            />
+            <div className="lineage-name-input-grid">
+              <input
+                ref={idx === 0 ? primarySuggestionInputRef : null}
+                type="text"
+                placeholder={`${t('placeholderArab')} *`}
+                className="search-input lineage-name-input"
+                style={{ padding: '12px 14px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', color: 'var(--text-primary)' }}
+                value={childInput.arab}
+                onChange={(e) => {
+                  const newArr = [...childrenInputs];
+                  newArr[idx].arab = e.target.value;
+                  setChildrenInputs(newArr);
+                }}
+                required
+              />
+              <input
+                type="text"
+                placeholder={`${t('placeholderLatin')} ${t('optional')}`}
+                className="search-input lineage-name-input"
+                style={{ padding: '12px 14px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', color: 'var(--text-primary)' }}
+                value={childInput.latin}
+                onChange={(e) => {
+                  const newArr = [...childrenInputs];
+                  newArr[idx].latin = e.target.value;
+                  setChildrenInputs(newArr);
+                }}
+              />
+            </div>
           </div>
         ))}
         <div className="lineage-button-row">
-          <button type="button" onClick={() => setChildrenInputs([...childrenInputs, createEmptyChildInput()])} className="lineage-secondary-button" style={{ flex: 1 }}>
-            +
+          <button type="button" onClick={() => setChildrenInputs([...childrenInputs, createEmptyChildInput()])} className="lineage-secondary-button lineage-add-child-button" style={{ flex: 2 }}>
+            {t('addNewChild')}
           </button>
           <button type="button" onClick={() => setActiveSuggestionMode(null)} className="lineage-secondary-button" style={{ flex: 2 }}>
             {t('cancel')}
@@ -1007,14 +1011,14 @@ const NodeEditModal = ({
         {activeSuggestionMode === 'claimMember' && renderMemberClaimForm()}
 
         {!isAdmin && !hasPendingProposal && activeSuggestionMode === null && (
-          <div className="lineage-action-card" style={{ display: 'flex', flexDirection: 'column', gap: '10px', borderTop: '1px solid var(--panel-border)', paddingTop: '20px' }}>
+          <div className="lineage-action-card lineage-suggestion-action-row" style={{ borderTop: '1px solid var(--panel-border)', paddingTop: '20px' }}>
             <button
               onClick={() => {
                 setChildrenInputs([createEmptyChildInput()]);
                 setActiveSuggestionMode('suggestChild');
               }}
               className="lineage-danger-button"
-              style={{ width: '100%' }}
+              style={{ flex: 1 }}
             >
               {t('suggestAddChild')}
             </button>
@@ -1027,7 +1031,7 @@ const NodeEditModal = ({
                 setActiveSuggestionMode('suggestName');
               }}
               className="lineage-danger-button"
-              style={{ width: '100%' }}
+              style={{ flex: 1 }}
             >
               {t('suggestNameChange')}
             </button>

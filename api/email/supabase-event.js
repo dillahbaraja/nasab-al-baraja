@@ -9,12 +9,16 @@ import {
 } from '../_lib/supabase-admin.js';
 
 function getSecretFromRequest(req) {
-  const authorization = req.headers.authorization || '';
+  const authorization = String(req.headers.authorization || '').trim();
   if (authorization.toLowerCase().startsWith('bearer ')) {
     return authorization.slice(7).trim();
   }
 
-  return req.headers['x-webhook-secret'] || '';
+  if (authorization) {
+    return authorization;
+  }
+
+  return String(req.headers['x-webhook-secret'] || '').trim();
 }
 
 function normalizePayload(body) {
@@ -180,7 +184,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  const expectedSecret = process.env.SUPABASE_WEBHOOK_SECRET || '';
+  const expectedSecret = String(process.env.SUPABASE_WEBHOOK_SECRET || '').trim();
   const requestSecret = getSecretFromRequest(req);
 
   if (expectedSecret && requestSecret !== expectedSecret) {

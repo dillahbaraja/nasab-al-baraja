@@ -333,6 +333,7 @@ const FamilyGraph = () => {
   const lastVisibleSyncAtRef = useRef(0);
   const hiddenSinceRef = useRef(null);
   const [pendingFocusTarget, setPendingFocusTarget] = useState(null);
+  const [visibleNoticeTargetId, setVisibleNoticeTargetId] = useState(null);
   const [toggledNodeInfo, setToggledNodeInfo] = useState(null); // { id, lastPos, lastViewport }
   const [collapsingParentId, setCollapsingParentId] = useState(null);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
@@ -368,6 +369,8 @@ const FamilyGraph = () => {
   const isAdmin = effectiveRole === 'admin';
   const canModerateProposals = isVerifiedMember;
   const canViewPendingChildNodes = isVerifiedMember;
+  const visibleNoticeTargetKey = visibleNoticeTargetId ? String(visibleNoticeTargetId) : null;
+  const shouldIncludeVisibleNoticeTarget = useCallback((person) => String(person?.id) === visibleNoticeTargetKey, [visibleNoticeTargetKey]);
   const pendingMemberClaims = useMemo(() => memberRecords.filter((member) => member.claim_status === 'pending'), [memberRecords]);
   const verifiedMembers = useMemo(() => memberRecords.filter((member) => member.claim_status === 'approved' && member.member_level === 'verified'), [memberRecords]);
   const adminMembers = useMemo(() => memberRecords.filter((member) => member.claim_status === 'approved' && member.member_level === 'admin'), [memberRecords]);
@@ -381,7 +384,7 @@ const FamilyGraph = () => {
   const searchIndex = useMemo(() => {
     const searchablePeople = canViewPendingChildNodes
       ? familyData
-      : familyData.filter((person) => !isPendingAddChildNode(person));
+      : familyData.filter((person) => !isPendingAddChildNode(person) || shouldIncludeVisibleNoticeTarget(person));
 
     return searchablePeople.map(person => {
       const displayNames = getDisplayNames(person);
@@ -409,7 +412,7 @@ const FamilyGraph = () => {
         info: (person.info || '').toLowerCase()
       };
     });
-  }, [canViewPendingChildNodes, familyData, personMap]); // personMap already depends on familyData
+  }, [canViewPendingChildNodes, familyData, personMap, shouldIncludeVisibleNoticeTarget]); // personMap already depends on familyData
 
   const pendingQueueIds = useMemo(() => {
     const getDepth = (id) => {
@@ -2551,7 +2554,7 @@ const FamilyGraph = () => {
     try {
       const renderableFamilyData = canViewPendingChildNodes
         ? familyData
-        : familyData.filter((person) => !isPendingAddChildNode(person));
+        : familyData.filter((person) => !isPendingAddChildNode(person) || shouldIncludeVisibleNoticeTarget(person));
 
       // 1. Build lookup maps for O(N) performance
       const personMapLocal = new Map();
@@ -2592,7 +2595,7 @@ const FamilyGraph = () => {
 
         if (!isCollapsed || isCurrentlyCollapsing) {
           const children = (parentToChildren.get(pid) || [])
-            .filter((child) => canViewPendingChildNodes || !isPendingAddChildNode(child));
+            .filter((child) => canViewPendingChildNodes || !isPendingAddChildNode(child) || shouldIncludeVisibleNoticeTarget(child));
           children.forEach(c => traverse(c));
         }
       };
@@ -2789,7 +2792,7 @@ const FamilyGraph = () => {
     } catch (err) {
       console.error("Layout Rendering Crash Prevented:", err);
     }
-  }, [familyData, canViewPendingChildNodes, collapsedStateById, isLoading, collapsingParentId, appSettings.layoutStyle, isMobileDevice, mobileRelationshipFocus]);
+  }, [familyData, canViewPendingChildNodes, shouldIncludeVisibleNoticeTarget, collapsedStateById, isLoading, collapsingParentId, appSettings.layoutStyle, isMobileDevice, mobileRelationshipFocus]);
 
 
   const getNextPendingIdForModerator = useCallback((excludeId = null) => {
@@ -3898,13 +3901,17 @@ const FamilyGraph = () => {
 
     if (!personId) return;
 
-    const wasHidden = ensurePathVisible(personId);
+    const normalizedPersonId = String(personId);
+
+    const wasHidden = ensurePathVisible(normalizedPersonId);
     if (wasHidden) {
-      setPendingFocusTarget({ id: personId, options: { targetZoom: 1.2 } });
+      setPendingFocusTarget({ id: normalizedPersonId, options: { targetZoom: 1.2 } });
     } else {
-      const targetNode = nodes.find(n => n.id === personId);
+      const targetNode = nodes.find((n) => String(n.id) === normalizedPersonId);
       if (targetNode) {
-        smoothFocusNode(personId, { targetZoom: 1.2 });
+        smoothFocusNode(normalizedPersonId, { targetZoom: 1.2 });
+      } else {
+        setPendingFocusTarget({ id: normalizedPersonId, options: { targetZoom: 1.2 } });
       }
     }
   };
@@ -4239,10 +4246,8 @@ const FamilyGraph = () => {
   }, []);
 
   const handleViewNotice = (notice) => {
-    const isProposalNotice = notice?.type === 'proposal_add_child' || notice?.type === 'proposal_name_change';
-    if (isProposalNotice && !isVerifiedMember) {
-      alert(t('proposalNoticeRestricted'));
-      return;
+    if (notice?.type === 'proposal_add_child' && notice?.targetId) {
+      setVisibleNoticeTargetId(String(notice.targetId));
     }
 
     if (notice?.type === 'new_member' && notice?.id) {

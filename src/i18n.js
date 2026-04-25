@@ -33,6 +33,7 @@ export const translations = {
   editBtn: { id: "Edit", en: "Edit", ar: "تعديل" },
   deleteBtn: { id: "Hapus", en: "Delete", ar: "حذف" },
   addChildTitle: { id: "Tambah Anak untuk ", en: "Add Child for ", ar: "إضافة ابن لـ " },
+  addNewChild: { id: "Tambah Anak Baru", en: "Add New Child", ar: "إضافة ابن جديد" },
   placeholderArab: { id: "Nama Arab (contoh: أحمد)", en: "Arabic Name (e.g. أحمد)", ar: "الاسم العربي (مثال: أحمد)" },
   placeholderLatin: { id: "Nama Latin (contoh: Ahmad)", en: "Latin Name (e.g. Ahmad)", ar: "الاسم اللاتيني (مثال: Ahmad)" },
   saveChild: { id: "Simpan Anak", en: "Save Child", ar: "حفظ الابن" },
