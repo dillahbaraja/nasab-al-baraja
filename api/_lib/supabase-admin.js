@@ -103,7 +103,8 @@ export async function getAdminAndPrimaryRecipients(supabase) {
 }
 
 export function isRecipientEnabled(recipientOrMember) {
-  return Boolean(recipientOrMember?.isPrimary || recipientOrMember?.notificationsEnabled ?? recipientOrMember?.email_notifications_enabled ?? true);
+  const notificationsEnabled = recipientOrMember?.notificationsEnabled ?? recipientOrMember?.email_notifications_enabled ?? true;
+  return Boolean(recipientOrMember?.isPrimary || notificationsEnabled);
 }
 
 export async function getNodeWithParent(supabase, nodeId) {
