@@ -28,7 +28,7 @@ function getTransporter() {
   return transporter;
 }
 
-export async function sendEmail({ to, subject, text }) {
+export async function sendEmail({ to, subject, text, html }) {
   if (!Array.isArray(to) || to.length === 0) {
     return { accepted: [], rejected: [] };
   }
@@ -38,6 +38,7 @@ export async function sendEmail({ to, subject, text }) {
     from: emailFrom,
     to: to.join(', '),
     subject,
-    text
+    text,
+    html
   });
 }

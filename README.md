@@ -162,8 +162,11 @@ The repository now includes a Vercel serverless webhook endpoint at `api/email/s
 Supported notifications:
 
 - New member registration with `claim_status = 'pending'` -> sent to all admins
+- Registration received notice for the registrant -> sent to the member email on `claim_status = 'pending'`
 - New member verification with `claim_status = 'approved'` -> sent to all admins plus the primary inbox
+- Verification confirmed notice for the registrant -> sent to the member email on `claim_status = 'approved'`
 - New admin promotion with `member_level = 'admin'` and `claim_status = 'approved'` -> sent to all verified members and admins
+- Admin appointment notice for the promoted member -> sent to the member email when `member_level` changes to `admin`
 - New guest proposal in `notices.type in ('proposal_add_child', 'proposal_name_change')` -> sent to all admins
 - Direct admin tree updates in `notices.type in ('new_member', 'admin_name_change')` -> sent to all admins plus the primary inbox
 
@@ -221,9 +224,10 @@ The webhook handler also writes a unique event key into `public.email_webhook_lo
 #### Email Content
 
 - Subject: Arabic + English
-- Body: Arabic + English + Indonesian
+- Body: HTML email with Arabic + English + Indonesian sections, plus plain-text fallback
 - Member and admin notices show both `arabic_name_snapshot` and `english_name_snapshot`
 - Proposal notices include target name and parent name when available
+- Arabic sections are rendered in RTL with a larger font size for readability
 
 ---
 

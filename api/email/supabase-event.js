@@ -1,15 +1,18 @@
 import {
   buildAdminPromotionEmail,
+  buildAdminPromotionForMemberEmail,
   buildAdminTreeChangeEmail,
   buildGuestProposalEmail,
   buildMemberApprovedEmail,
-  buildPendingMemberEmail
+  buildMemberApprovedForMemberEmail,
+  buildPendingMemberEmail,
+  buildPendingMemberForRegistrantEmail
 } from '../_lib/email-templates.js';
 import { sendEmail } from '../_lib/mail.js';
 import {
   createAdminSupabaseClient,
-  getAdminRecipients,
   getAdminAndPrimaryRecipients,
+  getAdminRecipients,
   getNodeWithParent,
   getVerifiedAndAdminRecipients,
   reserveEmailEventKey
@@ -83,48 +86,35 @@ function buildDeliveryEventKey(kind, record) {
   if (!record) return '';
 
   if (kind === 'pending_member') {
-    return [
-      kind,
-      record.id,
-      record.claim_status,
-      record.created_at || record.updated_at || ''
-    ].join(':');
+    return [kind, record.id, record.claim_status, record.created_at || record.updated_at || ''].join(':');
+  }
+
+  if (kind === 'pending_member_registrant') {
+    return [kind, record.id, record.email, record.claim_status, record.created_at || record.updated_at || ''].join(':');
   }
 
   if (kind === 'admin_promotion') {
-    return [
-      kind,
-      record.id,
-      record.member_level,
-      record.updated_at || record.approved_at || ''
-    ].join(':');
+    return [kind, record.id, record.member_level, record.updated_at || record.approved_at || ''].join(':');
+  }
+
+  if (kind === 'admin_promotion_member') {
+    return [kind, record.id, record.email, record.member_level, record.updated_at || record.approved_at || ''].join(':');
   }
 
   if (kind === 'member_approved') {
-    return [
-      kind,
-      record.id,
-      record.claim_status,
-      record.approved_at || record.updated_at || ''
-    ].join(':');
+    return [kind, record.id, record.claim_status, record.approved_at || record.updated_at || ''].join(':');
+  }
+
+  if (kind === 'member_approved_member') {
+    return [kind, record.id, record.email, record.claim_status, record.approved_at || record.updated_at || ''].join(':');
   }
 
   if (kind === 'guest_proposal') {
-    return [
-      kind,
-      record.id,
-      record.type,
-      record.created_at || record.timestamp || ''
-    ].join(':');
+    return [kind, record.id, record.type, record.created_at || record.timestamp || ''].join(':');
   }
 
   if (kind === 'admin_tree_change') {
-    return [
-      kind,
-      record.id,
-      record.type,
-      record.created_at || record.timestamp || ''
-    ].join(':');
+    return [kind, record.id, record.type, record.created_at || record.timestamp || ''].join(':');
   }
 
   return '';
@@ -170,6 +160,26 @@ async function deliverPendingMemberEmail({ supabase, record, eventType, tableNam
   });
 }
 
+async function deliverPendingMemberRegistrantEmail({ supabase, record, eventType, tableName }) {
+  return deliverOnce({
+    supabase,
+    kind: 'pending_member_registrant',
+    tableName,
+    eventType,
+    record,
+    deliver: async () => {
+      const recipient = String(record?.email || '').trim().toLowerCase();
+      const message = buildPendingMemberForRegistrantEmail(record);
+
+      return {
+        kind: 'pending_member_registrant',
+        recipientCount: recipient ? 1 : 0,
+        accepted: recipient ? await sendEmail({ to: [recipient], ...message }) : { accepted: [], rejected: [] }
+      };
+    }
+  });
+}
+
 async function deliverAdminPromotionEmail({ supabase, record, eventType, tableName }) {
   return deliverOnce({
     supabase,
@@ -190,6 +200,26 @@ async function deliverAdminPromotionEmail({ supabase, record, eventType, tableNa
   });
 }
 
+async function deliverAdminPromotionForMemberEmail({ supabase, record, eventType, tableName }) {
+  return deliverOnce({
+    supabase,
+    kind: 'admin_promotion_member',
+    tableName,
+    eventType,
+    record,
+    deliver: async () => {
+      const recipient = String(record?.email || '').trim().toLowerCase();
+      const message = buildAdminPromotionForMemberEmail(record);
+
+      return {
+        kind: 'admin_promotion_member',
+        recipientCount: recipient ? 1 : 0,
+        accepted: recipient ? await sendEmail({ to: [recipient], ...message }) : { accepted: [], rejected: [] }
+      };
+    }
+  });
+}
+
 async function deliverMemberApprovedEmail({ supabase, record, eventType, tableName }) {
   return deliverOnce({
     supabase,
@@ -205,6 +235,26 @@ async function deliverMemberApprovedEmail({ supabase, record, eventType, tableNa
         kind: 'member_approved',
         recipientCount: recipients.length,
         accepted: recipients.length > 0 ? await sendEmail({ to: recipients.map((item) => item.email), ...message }) : { accepted: [], rejected: [] }
+      };
+    }
+  });
+}
+
+async function deliverMemberApprovedForMemberEmail({ supabase, record, eventType, tableName }) {
+  return deliverOnce({
+    supabase,
+    kind: 'member_approved_member',
+    tableName,
+    eventType,
+    record,
+    deliver: async () => {
+      const recipient = String(record?.email || '').trim().toLowerCase();
+      const message = buildMemberApprovedForMemberEmail(record);
+
+      return {
+        kind: 'member_approved_member',
+        recipientCount: recipient ? 1 : 0,
+        accepted: recipient ? await sendEmail({ to: [recipient], ...message }) : { accepted: [], rejected: [] }
       };
     }
   });
@@ -288,14 +338,17 @@ export default async function handler(req, res) {
     if (table === 'baraja_member') {
       if (shouldSendPendingMemberEmail(record, oldRecord)) {
         deliveries.push(await deliverPendingMemberEmail({ supabase, record, eventType, tableName: table }));
+        deliveries.push(await deliverPendingMemberRegistrantEmail({ supabase, record, eventType, tableName: table }));
       }
 
       if (shouldSendMemberApprovedEmail(record, oldRecord)) {
         deliveries.push(await deliverMemberApprovedEmail({ supabase, record, eventType, tableName: table }));
+        deliveries.push(await deliverMemberApprovedForMemberEmail({ supabase, record, eventType, tableName: table }));
       }
 
       if (shouldSendAdminPromotionEmail(record, oldRecord)) {
         deliveries.push(await deliverAdminPromotionEmail({ supabase, record, eventType, tableName: table }));
+        deliveries.push(await deliverAdminPromotionForMemberEmail({ supabase, record, eventType, tableName: table }));
       }
     }
 
