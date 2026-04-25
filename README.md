@@ -140,6 +140,7 @@ Set these Environment Variables in Vercel:
 - `SMTP_USER`
 - `SMTP_PASS`
 - `EMAIL_FROM`
+- `EMAIL_PRIMARY_TO`
 
 Recommended build settings:
 
@@ -161,8 +162,12 @@ The repository now includes a Vercel serverless webhook endpoint at `api/email/s
 Supported notifications:
 
 - New member registration with `claim_status = 'pending'` -> sent to all admins
+- New member verification with `claim_status = 'approved'` -> sent to all admins plus the primary inbox
 - New admin promotion with `member_level = 'admin'` and `claim_status = 'approved'` -> sent to all verified members and admins
 - New guest proposal in `notices.type in ('proposal_add_child', 'proposal_name_change')` -> sent to all admins
+- Direct admin tree updates in `notices.type in ('new_member', 'admin_name_change')` -> sent to all admins plus the primary inbox
+
+The primary inbox from `EMAIL_PRIMARY_TO` is always added as a recipient for every email event. If it is not set, the server falls back to `SMTP_USER`.
 
 #### Gmail SMTP Setup
 
@@ -180,6 +185,7 @@ SMTP_PORT="465"
 SMTP_USER="info.albaraja@gmail.com"
 SMTP_PASS="your_gmail_app_password"
 EMAIL_FROM="Nasab Al-Baraja <info.albaraja@gmail.com>"
+EMAIL_PRIMARY_TO="info.albaraja@gmail.com"
 ```
 
 #### Supabase Webhook Setup
@@ -190,7 +196,7 @@ Create two Database Webhooks in Supabase and point both of them to your Vercel d
 https://your-vercel-domain.vercel.app/api/email/supabase-event
 ```
 
-Use `Authorization: Bearer <SUPABASE_WEBHOOK_SECRET>` as a custom header.
+Use `x-webhook-secret: <SUPABASE_WEBHOOK_SECRET>` as a custom header.
 
 Webhook 1:
 
@@ -205,8 +211,10 @@ Webhook 2:
 The endpoint filters the events internally, so only these cases will send email:
 
 - `baraja_member.claim_status` changed to `pending`
+- `baraja_member.claim_status` changed to `approved`
 - `baraja_member.member_level` changed to `admin` while `claim_status = 'approved'`
 - `notices.type` is `proposal_add_child` or `proposal_name_change`
+- `notices.type` is `new_member` or `admin_name_change`
 
 The webhook handler also writes a unique event key into `public.email_webhook_log` before sending, so repeated webhook retries do not send duplicate emails.
 

@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const primaryEmailRecipient = String(process.env.EMAIL_PRIMARY_TO || process.env.SMTP_USER || 'info.albaraja@gmail.com').trim().toLowerCase();
 
 export function createAdminSupabaseClient() {
   if (!supabaseUrl || !supabaseServiceRoleKey) {
@@ -39,6 +40,17 @@ export function dedupeRecipients(recipients = []) {
   return uniqueRecipients;
 }
 
+export function withPrimaryRecipient(recipients = []) {
+  if (!primaryEmailRecipient) {
+    return dedupeRecipients(recipients);
+  }
+
+  return dedupeRecipients([
+    ...recipients,
+    { email: primaryEmailRecipient }
+  ]);
+}
+
 export async function getAdminRecipients(supabase) {
   const [{ data: adminUsers, error: adminUsersError }, { data: adminMembers, error: adminMembersError }] = await Promise.all([
     supabase.from('admin_users').select('email'),
@@ -57,7 +69,7 @@ export async function getAdminRecipients(supabase) {
     throw new Error(adminMembersError.message || 'Failed to load admin member recipients.');
   }
 
-  return dedupeRecipients([
+  return withPrimaryRecipient([
     ...(adminUsers || []),
     ...(adminMembers || [])
   ]);
@@ -74,7 +86,11 @@ export async function getVerifiedAndAdminRecipients(supabase) {
     throw new Error(error.message || 'Failed to load verified recipients.');
   }
 
-  return dedupeRecipients(data || []);
+  return withPrimaryRecipient(data || []);
+}
+
+export async function getAdminAndPrimaryRecipients(supabase) {
+  return getAdminRecipients(supabase);
 }
 
 export async function getNodeWithParent(supabase, nodeId) {

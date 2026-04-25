@@ -192,6 +192,12 @@ const buildNoticeText = ({ type, lang, personName = '', parentName = '', grandPa
     return `Name change suggestion for ${personName}`;
   }
 
+  if (type === 'admin_name_change') {
+    if (lang === 'ar') return `تعديل الاسم من الإدارة لـ ${personName}`;
+    if (lang === 'id') return `Perubahan nama oleh admin untuk ${personName}`;
+    return `Admin name update for ${personName}`;
+  }
+
   if (lang === 'ar') return `${personName} بن ${parentName}${grandParentName ? ` بن ${grandParentName}` : ''}`;
   return `${personName} bin ${parentName}${grandParentName ? ` bin ${grandParentName}` : ''}`;
 };
@@ -3110,6 +3116,7 @@ const FamilyGraph = () => {
   const handleUpdateChild = async (childId, updates) => {
     if (!isAdmin) return;
     try {
+      const currentPerson = personMap.get(String(childId));
       const dbUpdates = {};
       if (updates.englishName !== undefined) dbUpdates.english_name = updates.englishName;
       if (updates.arabicName !== undefined) dbUpdates.arabic_name = updates.arabicName;
@@ -3139,6 +3146,28 @@ const FamilyGraph = () => {
 
       if (error) throw error;
       patchLocalPerson(childId, updates);
+
+      const nextArabicName = updates.arabicName !== undefined ? (updates.arabicName || '') : (currentPerson?.arabicName || '');
+      const nextEnglishName = updates.englishName !== undefined ? (updates.englishName || '') : (currentPerson?.englishName || '');
+      const didChangeName = nextArabicName !== (currentPerson?.arabicName || '') || nextEnglishName !== (currentPerson?.englishName || '');
+
+      if (didChangeName) {
+        const notice = await createNotice({
+          text: buildNoticeText({
+            type: 'admin_name_change',
+            lang,
+            personName: lang === 'ar'
+              ? (nextArabicName || currentPerson?.arabicName || '')
+              : (nextEnglishName || nextArabicName || currentPerson?.englishName || currentPerson?.arabicName || '')
+          }),
+          type: 'admin_name_change',
+          targetId: childId,
+          targetPersonId: childId,
+          timestamp: Date.now()
+        });
+        if (notice) appendLocalNotice(notice);
+      }
+
       await fetchAllNodes({ markLoaded: false });
     } catch (err) {
       console.error(err);

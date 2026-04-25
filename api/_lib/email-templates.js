@@ -103,6 +103,40 @@ export function buildAdminPromotionEmail(member) {
   };
 }
 
+export function buildMemberApprovedEmail(member) {
+  const arabicName = safeValue(member?.arabic_name_snapshot);
+  const englishName = safeValue(member?.english_name_snapshot);
+  const email = safeValue(member?.email);
+  const approvedAt = formatTimestamp(member?.approved_at || member?.updated_at);
+
+  return {
+    subject: 'تم اعتماد عضو جديد | New Member Verification',
+    text: renderSections({
+      arabicLines: [
+        'تم اعتماد عضو جديد في نظام شجرة العائلة.',
+        `الاسم العربي: ${arabicName}`,
+        `الاسم الإنجليزي: ${englishName}`,
+        `البريد الإلكتروني: ${email}`,
+        `وقت الاعتماد: ${approvedAt}`
+      ],
+      englishLines: [
+        'A new member has been verified in the family tree system.',
+        `Arabic name: ${arabicName}`,
+        `English name: ${englishName}`,
+        `Email: ${email}`,
+        `Verified at: ${approvedAt}`
+      ],
+      indonesianLines: [
+        'Seorang member baru telah diverifikasi dalam sistem pohon keluarga.',
+        `Nama Arab: ${arabicName}`,
+        `Nama English: ${englishName}`,
+        `Email: ${email}`,
+        `Waktu verifikasi: ${approvedAt}`
+      ]
+    })
+  };
+}
+
 function getProposalLabels(type) {
   if (type === 'proposal_add_child') {
     return {
@@ -156,6 +190,60 @@ export function buildGuestProposalEmail({ notice, nodeDetails }) {
         `Nama ayah Arab: ${parentArabicName}`,
         `Nama ayah English: ${parentEnglishName}`,
         `Waktu pengiriman: ${submittedAt}`
+      ]
+    })
+  };
+}
+
+export function buildAdminTreeChangeEmail({ notice, nodeDetails }) {
+  const targetArabicName = safeValue(nodeDetails?.node?.arabic_name);
+  const targetEnglishName = safeValue(nodeDetails?.node?.english_name);
+  const parentArabicName = safeValue(nodeDetails?.parent?.arabic_name);
+  const parentEnglishName = safeValue(nodeDetails?.parent?.english_name);
+  const happenedAt = formatTimestamp(notice?.created_at || notice?.timestamp);
+  const isAddChild = notice?.type === 'new_member';
+
+  return {
+    subject: isAddChild ? 'إضافة اسم جديد من الإدارة | Admin Added a New Family Member' : 'تعديل اسم من الإدارة | Admin Updated a Family Name',
+    text: renderSections({
+      arabicLines: isAddChild ? [
+        'تمت إضافة اسم جديد مباشرة من قبل الإدارة في شجرة العائلة.',
+        `الاسم العربي: ${targetArabicName}`,
+        `الاسم الإنجليزي: ${targetEnglishName}`,
+        `اسم الأب بالعربية: ${parentArabicName}`,
+        `اسم الأب بالإنجليزية: ${parentEnglishName}`,
+        `وقت الإضافة: ${happenedAt}`
+      ] : [
+        'تم تعديل اسم أحد أفراد العائلة مباشرة من قبل الإدارة.',
+        `الاسم العربي الحالي: ${targetArabicName}`,
+        `الاسم الإنجليزي الحالي: ${targetEnglishName}`,
+        `وقت التعديل: ${happenedAt}`
+      ],
+      englishLines: isAddChild ? [
+        'A new family member was added directly by an admin.',
+        `Arabic name: ${targetArabicName}`,
+        `English name: ${targetEnglishName}`,
+        `Parent Arabic name: ${parentArabicName}`,
+        `Parent English name: ${parentEnglishName}`,
+        `Added at: ${happenedAt}`
+      ] : [
+        'A family member name was updated directly by an admin.',
+        `Current Arabic name: ${targetArabicName}`,
+        `Current English name: ${targetEnglishName}`,
+        `Updated at: ${happenedAt}`
+      ],
+      indonesianLines: isAddChild ? [
+        'Ada penambahan nama baru yang dilakukan langsung oleh admin pada pohon keluarga.',
+        `Nama Arab: ${targetArabicName}`,
+        `Nama English: ${targetEnglishName}`,
+        `Nama ayah Arab: ${parentArabicName}`,
+        `Nama ayah English: ${parentEnglishName}`,
+        `Waktu penambahan: ${happenedAt}`
+      ] : [
+        'Ada perubahan nama keluarga yang dilakukan langsung oleh admin.',
+        `Nama Arab saat ini: ${targetArabicName}`,
+        `Nama English saat ini: ${targetEnglishName}`,
+        `Waktu perubahan: ${happenedAt}`
       ]
     })
   };

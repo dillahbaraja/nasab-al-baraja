@@ -1,8 +1,15 @@
-import { buildAdminPromotionEmail, buildGuestProposalEmail, buildPendingMemberEmail } from '../_lib/email-templates.js';
+import {
+  buildAdminPromotionEmail,
+  buildAdminTreeChangeEmail,
+  buildGuestProposalEmail,
+  buildMemberApprovedEmail,
+  buildPendingMemberEmail
+} from '../_lib/email-templates.js';
 import { sendEmail } from '../_lib/mail.js';
 import {
   createAdminSupabaseClient,
   getAdminRecipients,
+  getAdminAndPrimaryRecipients,
   getNodeWithParent,
   getVerifiedAndAdminRecipients,
   reserveEmailEventKey
@@ -54,9 +61,22 @@ function shouldSendAdminPromotionEmail(record, oldRecord) {
   return !oldRecord || oldRecord.member_level !== 'admin';
 }
 
+function shouldSendMemberApprovedEmail(record, oldRecord) {
+  if (!record || record.claim_status !== 'approved') {
+    return false;
+  }
+
+  return !oldRecord || oldRecord.claim_status !== 'approved';
+}
+
 function shouldSendGuestProposalEmail(record, eventType) {
   if (eventType !== 'INSERT' || !record) return false;
   return record.type === 'proposal_add_child' || record.type === 'proposal_name_change';
+}
+
+function shouldSendAdminTreeChangeEmail(record, eventType) {
+  if (eventType !== 'INSERT' || !record) return false;
+  return record.type === 'new_member' || record.type === 'admin_name_change';
 }
 
 function buildDeliveryEventKey(kind, record) {
@@ -80,7 +100,25 @@ function buildDeliveryEventKey(kind, record) {
     ].join(':');
   }
 
+  if (kind === 'member_approved') {
+    return [
+      kind,
+      record.id,
+      record.claim_status,
+      record.approved_at || record.updated_at || ''
+    ].join(':');
+  }
+
   if (kind === 'guest_proposal') {
+    return [
+      kind,
+      record.id,
+      record.type,
+      record.created_at || record.timestamp || ''
+    ].join(':');
+  }
+
+  if (kind === 'admin_tree_change') {
     return [
       kind,
       record.id,
@@ -152,6 +190,26 @@ async function deliverAdminPromotionEmail({ supabase, record, eventType, tableNa
   });
 }
 
+async function deliverMemberApprovedEmail({ supabase, record, eventType, tableName }) {
+  return deliverOnce({
+    supabase,
+    kind: 'member_approved',
+    tableName,
+    eventType,
+    record,
+    deliver: async () => {
+      const recipients = await getAdminAndPrimaryRecipients(supabase);
+      const message = buildMemberApprovedEmail(record);
+
+      return {
+        kind: 'member_approved',
+        recipientCount: recipients.length,
+        accepted: recipients.length > 0 ? await sendEmail({ to: recipients.map((item) => item.email), ...message }) : { accepted: [], rejected: [] }
+      };
+    }
+  });
+}
+
 async function deliverGuestProposalEmail({ supabase, record, eventType, tableName }) {
   return deliverOnce({
     supabase,
@@ -171,6 +229,32 @@ async function deliverGuestProposalEmail({ supabase, record, eventType, tableNam
 
       return {
         kind: 'guest_proposal',
+        recipientCount: recipients.length,
+        accepted: recipients.length > 0 ? await sendEmail({ to: recipients.map((item) => item.email), ...message }) : { accepted: [], rejected: [] }
+      };
+    }
+  });
+}
+
+async function deliverAdminTreeChangeEmail({ supabase, record, eventType, tableName }) {
+  return deliverOnce({
+    supabase,
+    kind: 'admin_tree_change',
+    tableName,
+    eventType,
+    record,
+    deliver: async () => {
+      const recipients = await getAdminAndPrimaryRecipients(supabase);
+      let nodeDetails = null;
+      try {
+        nodeDetails = await getNodeWithParent(supabase, record.target_id);
+      } catch (error) {
+        console.error('Failed to enrich admin tree change email with node details:', error);
+      }
+      const message = buildAdminTreeChangeEmail({ notice: record, nodeDetails });
+
+      return {
+        kind: 'admin_tree_change',
         recipientCount: recipients.length,
         accepted: recipients.length > 0 ? await sendEmail({ to: recipients.map((item) => item.email), ...message }) : { accepted: [], rejected: [] }
       };
@@ -206,6 +290,10 @@ export default async function handler(req, res) {
         deliveries.push(await deliverPendingMemberEmail({ supabase, record, eventType, tableName: table }));
       }
 
+      if (shouldSendMemberApprovedEmail(record, oldRecord)) {
+        deliveries.push(await deliverMemberApprovedEmail({ supabase, record, eventType, tableName: table }));
+      }
+
       if (shouldSendAdminPromotionEmail(record, oldRecord)) {
         deliveries.push(await deliverAdminPromotionEmail({ supabase, record, eventType, tableName: table }));
       }
@@ -213,6 +301,10 @@ export default async function handler(req, res) {
 
     if (table === 'notices' && shouldSendGuestProposalEmail(record, eventType)) {
       deliveries.push(await deliverGuestProposalEmail({ supabase, record, eventType, tableName: table }));
+    }
+
+    if (table === 'notices' && shouldSendAdminTreeChangeEmail(record, eventType)) {
+      deliveries.push(await deliverAdminTreeChangeEmail({ supabase, record, eventType, tableName: table }));
     }
 
     res.status(200).json({
