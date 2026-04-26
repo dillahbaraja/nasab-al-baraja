@@ -4433,6 +4433,7 @@ const FamilyGraph = () => {
         currentUser={isSignedInUser ? currentUser : null}
         role={effectiveRole}
         unreadCount={unreadCount}
+        activeItem={activeInfoModal}
       >
         {renderSearchForm()}
       </WebsiteHeader>

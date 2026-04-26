@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Menu } from 'lucide-react';
 import SideDrawer from './SideDrawer';
 
-const WebsiteHeader = ({ onMenuClick, children, t, lang, currentUser, role = 'guest', unreadCount = 0 }) => {
+const WebsiteHeader = ({ onMenuClick, children, t, lang, currentUser, role = 'guest', unreadCount = 0, activeItem = null }) => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   return (
@@ -40,6 +40,7 @@ const WebsiteHeader = ({ onMenuClick, children, t, lang, currentUser, role = 'gu
         currentUser={currentUser}
         role={role}
         unreadCount={unreadCount}
+        activeItem={activeItem}
       />
     </>
   );
