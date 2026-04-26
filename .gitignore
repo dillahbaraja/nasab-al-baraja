@@ -26,5 +26,13 @@ dist-ssr
 # Build outputs
 build_output.txt
 vite_debug.txt
+git_*.txt
+database_export.csv
+scratch/*.csv
+scratch/*.json
+scratch/*.sql
+*-backup.csv
+*-backup.json
+*-backup.sql
 
 .vercel

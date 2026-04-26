@@ -1,14 +1,9 @@
 import React, { useState } from 'react';
 import { Menu } from 'lucide-react';
-import { Capacitor } from '@capacitor/core';
 import SideDrawer from './SideDrawer';
 
 const WebsiteHeader = ({ onMenuClick, children, t, lang, currentUser, role = 'guest', unreadCount = 0 }) => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const platform = Capacitor.getPlatform();
-
-  // Only show on website, not on native mobile apps.
-  if (platform === 'android' || platform === 'ios') return null;
 
   return (
     <>

@@ -14,12 +14,9 @@ import { initialFamilyData, generateEdges } from './data';
 import { getLayoutedElements, createNodesFromData } from './layout';
 import { supabase } from './supabase';
 import { translations } from './i18n';
-import MobileHeader from './components/MobileHeader';
 import WebsiteHeader from './components/WebsiteHeader';
 import { nodeTypes } from './reactFlowTypes';
 import GraphErrorBoundary from './components/GraphErrorBoundary';
-import { StatusBar, Style } from '@capacitor/status-bar';
-import { Capacitor } from '@capacitor/core';
 
 const LazyNodeEditModal = lazy(() => import('./NodeEditModal'));
 const LazyInfoModal = lazy(() => import('./components/InfoModals'));
@@ -117,10 +114,12 @@ const TimeoutWarning = () => {
 
 const SCREENSHOT_BUTTON_ENABLED = false;
 
-const isNativeMobilePlatform = () => {
-  const platform = Capacitor.getPlatform();
-  return platform === 'android' || platform === 'ios';
-};
+const escapeXml = (value) => String(value || '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
 
 const LoadingScreen = ({ t }) => {
   return (
@@ -273,12 +272,10 @@ const FamilyGraph = () => {
 
   const t = useCallback((key) => translations[key]?.[lang] || translations[key]?.['en'] || key, [lang]);
   const isMobileDevice = useMemo(() => {
-    if (isNativeMobilePlatform()) return true;
     if (typeof navigator === 'undefined') return false;
     return /iPhone|iPod|Android/i.test(navigator.userAgent)
       || (typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)')?.matches);
   }, []);
-  const isNativeMobile = useMemo(() => isNativeMobilePlatform(), []);
   const setAncestorPathSafe = useCallback((nextPath) => {
     if (isMobileDevice) return;
     setAncestorPath(nextPath);
@@ -346,6 +343,7 @@ const FamilyGraph = () => {
   const [ancestorPath, setAncestorPath] = useState({ nodeIds: new Set(), edgeIds: new Set() });
   const [nodeComparisonSelection, setNodeComparisonSelection] = useState({ sourceId: null, sourceName: '' });
   const [mobileRelationshipFocus, setMobileRelationshipFocus] = useState(null);
+  const deepLinkAppliedRef = useRef(false);
   const selectedNodeIdRef = useRef(null);
   const startNodeComparisonRef = useRef(null);
   const completeNodeComparisonRef = useRef(null);
@@ -552,7 +550,7 @@ const FamilyGraph = () => {
   }, []);
 
   const handleCaptureVisibleView = useCallback(async () => {
-    if (isCapturingScreenshot || Capacitor.getPlatform() !== 'web') return;
+    if (isCapturingScreenshot) return;
 
     const flowElement = document.querySelector('.graph-workspace .react-flow');
     if (!flowElement) {
@@ -605,11 +603,6 @@ const FamilyGraph = () => {
   }, [isCapturingScreenshot, loadExportModules, showToast, t, wait]);
 
   const handleDownloadAncestorPdf = useCallback(async (personId) => {
-    if (Capacitor.getPlatform() !== 'web') {
-      showToast({ text: t('ancestorPdfFailed') });
-      return;
-    }
-
     const normalizedId = String(personId);
     const chain = [];
     let current = personMap.get(normalizedId);
@@ -651,12 +644,6 @@ const FamilyGraph = () => {
     const exportCard = document.createElement('div');
     const measureCanvas = document.createElement('canvas');
     const measureContext = measureCanvas.getContext('2d');
-    const escapeXml = (value) => String(value || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
     const measureTextWidth = (text, font) => {
       if (!measureContext) return String(text || '').length * 14;
       measureContext.font = font;
@@ -1324,11 +1311,10 @@ const FamilyGraph = () => {
     }
     clearIntroTimers();
 
-    const isLikelyMobile = isNativeMobilePlatform()
-      || (typeof window !== 'undefined' && (
+    const isLikelyMobile = typeof window !== 'undefined' && (
         window.innerWidth <= 768
         || window.matchMedia?.('(pointer: coarse)')?.matches
-      ));
+      );
 
     // Jika mobile, durasi animasi ngebut, jika desktop durasi normal
     const duration = isLikelyMobile ? 5500 : 14000;
@@ -1521,18 +1507,6 @@ const FamilyGraph = () => {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     writeStorage('localStorage', 'rf-theme', theme);
-
-    // Sync Status Bar on native mobile apps
-    if (isNativeMobilePlatform()) {
-      const updateStatusBar = async () => {
-        try {
-          await StatusBar.setStyle({
-            style: theme === 'dark' ? Style.Dark : Style.Light
-          });
-        } catch (e) { console.warn("StatusBar error:", e); }
-      };
-      updateStatusBar();
-    }
   }, [theme]);
 
   const toggleTheme = () => {
@@ -2372,6 +2346,7 @@ const FamilyGraph = () => {
     if (Date.now() < ignorePaneClickUntilRef.current) {
       return;
     }
+    setVisibleNoticeTargetId(null);
     setSelectedPerson(null);
     setSelectedNodeId(null);
     clearMobileRelationshipFocus();
@@ -2439,14 +2414,15 @@ const FamilyGraph = () => {
 
 
   const ensurePathVisible = useCallback((targetId) => {
+    const normalizedTargetId = String(targetId);
     // 1. Walk up the ancestor chain to collect all ancestor IDs
-    let current = familyData.find(p => p.id === targetId);
+    let current = familyData.find(p => String(p.id) === normalizedTargetId);
     const ancestorsToExpand = [];
     let loopGuard = 0;
     while (current && current.fatherId && loopGuard < 100) { // #8: loop limit against circular refs
       loopGuard++;
       ancestorsToExpand.push(String(current.fatherId));
-      current = familyData.find(p => p.id === current.fatherId);
+      current = familyData.find(p => String(p.id) === String(current.fatherId));
     }
 
     if (ancestorsToExpand.length === 0) return false;
@@ -2827,21 +2803,29 @@ const FamilyGraph = () => {
 
   // Auto-focus when pending target becomes visible in nodes array
   useEffect(() => {
-    if (pendingFocusTarget) {
-      const targetNode = nodes.find(n => n.id === pendingFocusTarget.id);
-      // Verify node exists AND has a meaningful computed position (not a default 0,0 before layout)
-      const isLayoutReady = targetNode && (Math.abs(targetNode.position.x) > 1 || Math.abs(targetNode.position.y) > 1);
+    if (!pendingFocusTarget) return;
 
-      if (isLayoutReady) {
-        // Double rAF: first frame = DOM update done, second frame = layout/paint fully settled
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            smoothFocusNode(pendingFocusTarget.id, pendingFocusTarget.options);
-            setPendingFocusTarget(null);
-          });
-        });
-      }
+    const targetNode = nodes.find((n) => n.id === pendingFocusTarget.id);
+    const isLayoutReady = targetNode && (Math.abs(targetNode.position.x) > 1 || Math.abs(targetNode.position.y) > 1);
+    if (!isLayoutReady) return;
+
+    const runFocus = () => {
+      smoothFocusNode(pendingFocusTarget.id, pendingFocusTarget.options);
+      setPendingFocusTarget(null);
+    };
+
+    if (pendingFocusTarget.source === 'notice' || pendingFocusTarget.source === 'list') {
+      requestAnimationFrame(() => {
+        runFocus();
+      });
+      return;
     }
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        runFocus();
+      });
+    });
   }, [nodes, pendingFocusTarget, smoothFocusNode]);
 
   useEffect(() => {
@@ -2881,11 +2865,10 @@ const FamilyGraph = () => {
 
     if (familyData.length === 0) return;
 
-    const isLikelyMobile = isNativeMobilePlatform()
-      || (typeof window !== 'undefined' && (
+    const isLikelyMobile = typeof window !== 'undefined' && (
         window.innerWidth <= 768
         || window.matchMedia?.('(pointer: coarse)')?.matches
-      ));
+      );
 
     // User request: Focus intro explicitly on "Muhammad bin Mas'ud ... al-Mulaqqab bi-Abi Raja'"
     const rootPerson = familyData.find(p => p.arabicName && p.arabicName.includes('الملقب بأبي رجاء'))
@@ -3981,26 +3964,61 @@ const FamilyGraph = () => {
   }, [isAdmin, openNextPendingForModerator]);
 
 
-  const handleViewPerson = (personId) => {
+  const handleViewPerson = (personId, options = {}) => {
+    const {
+      source = 'list',
+      openDetails = false,
+      targetZoom = 1.2,
+      customDuration = source === 'notice' ? 180 : 220,
+    } = options;
+
     setActiveInfoModal(null);
     setIsModalOpen(false);
+
+    if (source !== 'notice') {
+      setVisibleNoticeTargetId(null);
+    }
 
     if (!personId) return;
 
     const normalizedPersonId = String(personId);
+    const focusOptions = { targetZoom, customDuration };
 
     const wasHidden = ensurePathVisible(normalizedPersonId);
     if (wasHidden) {
-      setPendingFocusTarget({ id: normalizedPersonId, options: { targetZoom: 1.2 } });
+      setPendingFocusTarget({ id: normalizedPersonId, options: focusOptions, source, openDetails });
     } else {
       const targetNode = nodes.find((n) => String(n.id) === normalizedPersonId);
       if (targetNode) {
-        smoothFocusNode(normalizedPersonId, { targetZoom: 1.2 });
+        smoothFocusNode(normalizedPersonId, focusOptions);
+        if (source === 'notice') {
+          setVisibleNoticeTargetId(null);
+        }
       } else {
-        setPendingFocusTarget({ id: normalizedPersonId, options: { targetZoom: 1.2 } });
+        setPendingFocusTarget({ id: normalizedPersonId, options: focusOptions, source, openDetails });
       }
     }
   };
+
+  useEffect(() => {
+    if (deepLinkAppliedRef.current) return;
+    if (familyData.length === 0) return;
+    if (typeof window === 'undefined') return;
+
+    const params = new URLSearchParams(window.location.search || '');
+    const personId = String(params.get('personId') || '').trim();
+    const parentId = String(params.get('parentId') || '').trim();
+    const focusId = personId && personMap.has(personId)
+      ? personId
+      : parentId && personMap.has(parentId)
+        ? parentId
+        : '';
+
+    deepLinkAppliedRef.current = true;
+    if (!focusId) return;
+
+    handleViewPerson(focusId, { source: 'deeplink', targetZoom: 1.2, customDuration: 260 });
+  }, [familyData.length, personMap]);
 
   const handleShowLineageOnly = useCallback((personId) => {
     if (!personId || familyData.length === 0) return;
@@ -4332,8 +4350,11 @@ const FamilyGraph = () => {
   }, []);
 
   const handleViewNotice = (notice) => {
+    const targetId = String(notice?.targetId || '').trim();
+    if (!targetId) return;
+
     if (notice?.type === 'proposal_add_child' && notice?.targetId) {
-      setVisibleNoticeTargetId(String(notice.targetId));
+      setVisibleNoticeTargetId(targetId);
     }
 
     if (notice?.type === 'new_member' && notice?.id) {
@@ -4350,7 +4371,12 @@ const FamilyGraph = () => {
         });
     }
 
-    handleViewPerson(notice.targetId);
+    handleViewPerson(targetId, {
+      source: 'notice',
+      openDetails: false,
+      targetZoom: 1.2,
+      customDuration: 180,
+    });
   };
 
 
@@ -4400,16 +4426,6 @@ const FamilyGraph = () => {
 
   return (
     <div className={`app-root-container ${!appSettings.animationsEnabled ? 'no-animations' : ''}`}>
-      <MobileHeader
-        title={t('appName')}
-        onMenuClick={handleMenuClick}
-        t={t}
-        lang={lang}
-        currentUser={isSignedInUser ? currentUser : null}
-        role={effectiveRole}
-        unreadCount={unreadCount}
-      />
-
       <WebsiteHeader
         onMenuClick={handleMenuClick}
         t={t}
@@ -4422,7 +4438,16 @@ const FamilyGraph = () => {
       </WebsiteHeader>
 
       {!!activeInfoModal && (
-        <Suspense fallback={null}>
+        <Suspense fallback={
+          <div className="info-modal-overlay">
+            <div className="info-modal-content" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '200px' }}>
+              <div style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>
+                <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '8px' }}>{t('loading')}</div>
+                <div style={{ fontSize: '13px' }}>{t('loadingHint')}</div>
+              </div>
+            </div>
+          </div>
+        }>
           <LazyInfoModal
             isOpen={!!activeInfoModal}
             onClose={() => setActiveInfoModal(null)}
@@ -4546,10 +4571,7 @@ const FamilyGraph = () => {
           </Suspense>
         )}
 
-        {/* Standalone search for native mobile; web keeps search in the website header */}
-        {isNativeMobile && renderSearchForm()}
-
-        <div className={`graph-workspace ${Capacitor.getPlatform()} ${isCapturingScreenshot ? 'is-capturing-screenshot' : ''}`} style={{ width: '100%', height: '100%', pointerEvents: isIntroRunning ? 'none' : 'auto' }} onDoubleClick={onPaneDoubleClick}>
+        <div className={`graph-workspace ${isCapturingScreenshot ? 'is-capturing-screenshot' : ''}`} style={{ width: '100%', height: '100%', pointerEvents: isIntroRunning ? 'none' : 'auto' }} onDoubleClick={onPaneDoubleClick}>
           {isLoading ? (
             <LoadingScreen t={t} />
           ) : (
@@ -4601,7 +4623,7 @@ const FamilyGraph = () => {
                 >
                   <ListTree size={14} />
                 </button>
-                {SCREENSHOT_BUTTON_ENABLED && Capacitor.getPlatform() === 'web' && (
+                {SCREENSHOT_BUTTON_ENABLED && (
                   <button
                     className="react-flow__controls-button"
                     onClick={handleCaptureVisibleView}

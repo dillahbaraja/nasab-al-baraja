@@ -102,58 +102,6 @@ body {
   flex-direction: column;
 }
 
-/* Android Top App Bar */
-.android-app-bar {
-  width: 100%;
-  background: var(--panel-bg);
-  border-bottom: 1px solid var(--panel-border);
-  z-index: 100;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  flex-shrink: 0;
-  transition: background 0.3s ease;
-}
-
-.status-bar-spacer {
-  height: env(safe-area-inset-top, 0px);
-  width: 100%;
-}
-
-.app-bar-content {
-  height: 56px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 16px;
-}
-
-.app-bar-title {
-  font-size: 20px;
-  font-weight: 500;
-  color: var(--text-primary);
-  font-family: serif;
-}
-
-.overflow-container {
-  position: relative;
-}
-
-.overflow-button {
-  background: transparent;
-  border: none;
-  color: var(--text-primary);
-  padding: 8px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  transition: background 0.2s ease;
-}
-
-.overflow-button:hover {
-  background: var(--panel-highlight-bg);
-}
-
 /* Notice Badge */
 .notice-badge {
   background: #ff4444;
@@ -732,7 +680,7 @@ body {
 /* Website Navigation Styles */
 .web-header-container {
   position: absolute;
-  top: 20px;
+  top: calc(20px + env(safe-area-inset-top, 0px));
   left: 0;
   right: 0;
   display: flex;
@@ -811,11 +759,19 @@ body {
 
 @media (max-width: 480px) {
   .web-header-container {
-    top: 12px;
+    top: calc(12px + env(safe-area-inset-top, 0px));
     padding-left: 12px;
   }
   .hamburger-button {
     right: 12px;
+  }
+
+  .react-flow__panel.bottom.right {
+    right: 7px !important;
+  }
+
+  .side-drawer {
+    width: calc(100vw - 12px);
   }
 }
 
@@ -847,7 +803,7 @@ body {
   position: fixed;
   top: 0;
   right: 0;
-  width: 300px;
+  width: min(300px, calc(100vw - 24px));
   height: 100%;
   background:
     linear-gradient(180deg, rgba(var(--accent-rgb), 0.045) 0%, transparent 18%),
@@ -1056,7 +1012,7 @@ body {
 /* Base position for controls and label */
 .react-flow__panel.bottom.right {
   bottom: 24px !important;
-  right: 2px !important; /* Mepet ke kanan */
+  right: 2px !important;
 }
 
 .total-nodes-label {
@@ -1101,6 +1057,30 @@ body {
 
 .react-flow__controls-button svg {
   fill: var(--text-primary) !important;
+}
+
+@media (max-width: 767px) and (orientation: portrait) {
+  .react-flow__panel.bottom.right {
+    bottom: 16px !important;
+    right: 7px !important;
+  }
+
+  .react-flow__controls-button {
+    width: 34px !important;
+    height: 34px !important;
+    border-bottom: 1px solid var(--panel-border) !important;
+    border-right: none !important;
+  }
+
+  .total-nodes-label {
+    bottom: 16px;
+    left: 12px;
+    padding: 8px 12px;
+    font-size: 11px;
+    max-width: calc(100vw - 96px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }
 
 /* Landscape Mode Adjustments for Controls & Label Alignment */

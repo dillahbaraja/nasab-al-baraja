@@ -66,9 +66,6 @@
 - Review schema database live:
   - cek constraint foreign key `father_id`.
   - cek struktur kolom `moderation` dan kecocokannya dengan frontend.
-- Cleanup sisa jejak Firebase:
-  - dependensi `firebase` di `package.json` kemungkinan sudah tidak diperlukan.
-  - file konfigurasi / dokumentasi lama yang masih menyebut Firebase perlu dibersihkan.
 - Dokumentasi:
   - update `README.md` agar menjelaskan Supabase, auth admin, notice, dan workflow usulan publik.
 

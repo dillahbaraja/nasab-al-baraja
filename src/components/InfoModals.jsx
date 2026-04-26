@@ -1,6 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { X, Shield, Info, Bell, Trash2, Settings, User, Users, UserCog, ShieldCheck, MessageCircle } from 'lucide-react';
-import { buildLocationState, ensureCurrentOption, getCityOptions, getCountryLabelFromCode, getCountryOptions, getRegionOptions } from '../locationData';
 
 const InfoModal = ({
   isOpen,
@@ -39,6 +38,8 @@ const InfoModal = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [expandedMemberId, setExpandedMemberId] = useState(null);
   const [showSecurityForm, setShowSecurityForm] = useState(false);
+  const [locationApi, setLocationApi] = useState(null);
+  const [isLocationLoading, setIsLocationLoading] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -48,10 +49,32 @@ const InfoModal = ({
     setPwData({ newPassword: '', confirmPassword: '' });
     setExpandedMemberId(null);
     setShowSecurityForm(false);
+    if (type !== 'profile') {
+      setLocationApi(null);
+      setIsLocationLoading(false);
+    }
   }, [isOpen, type]);
 
   useEffect(() => {
-    const nextLocation = buildLocationState({
+    if (!isOpen || type !== 'profile') return;
+    let cancelled = false;
+    setIsLocationLoading(true);
+    import('../locationData').then((mod) => {
+      if (!cancelled) {
+        setLocationApi(mod);
+        setIsLocationLoading(false);
+      }
+    }).catch(() => {
+      if (!cancelled) {
+        setIsLocationLoading(false);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [isOpen, type]);
+
+  useEffect(() => {
+    if (!isOpen || type !== 'profile' || !locationApi) return;
+    const nextLocation = locationApi.buildLocationState({
       country: currentMember?.country || '',
       countryCode: currentMember?.country_code || currentMember?.countryCode || '',
       region: currentMember?.region || '',
@@ -62,7 +85,7 @@ const InfoModal = ({
       phone: currentMember?.phone || '',
       ...nextLocation
     });
-  }, [currentMember, lang]);
+  }, [isOpen, type, locationApi, currentMember, lang]);
 
   const accountStatusLabel = useMemo(() => {
     if (currentRole === 'admin') return t('adminRole');
@@ -81,16 +104,22 @@ const InfoModal = ({
   }, [familyData]);
 
   const countryOptions = useMemo(
-    () => ensureCurrentOption(getCountryOptions(lang), profileData.countryCode, profileData.country),
-    [lang, profileData.country, profileData.countryCode]
+    () => type === 'profile' && locationApi
+      ? locationApi.ensureCurrentOption(locationApi.getCountryOptions(lang), profileData.countryCode, profileData.country)
+      : [],
+    [type, locationApi, lang, profileData.country, profileData.countryCode]
   );
   const regionOptions = useMemo(
-    () => ensureCurrentOption(getRegionOptions(profileData.countryCode), profileData.regionCode, profileData.region),
-    [profileData.countryCode, profileData.region, profileData.regionCode]
+    () => type === 'profile' && locationApi
+      ? locationApi.ensureCurrentOption(locationApi.getRegionOptions(profileData.countryCode), profileData.regionCode, profileData.region)
+      : [],
+    [type, locationApi, profileData.countryCode, profileData.region, profileData.regionCode]
   );
   const cityOptions = useMemo(
-    () => ensureCurrentOption(getCityOptions(profileData.countryCode, profileData.regionCode), profileData.city, profileData.city),
-    [profileData.city, profileData.countryCode, profileData.regionCode]
+    () => type === 'profile' && locationApi
+      ? locationApi.ensureCurrentOption(locationApi.getCityOptions(profileData.countryCode, profileData.regionCode), profileData.city, profileData.city)
+      : [],
+    [type, locationApi, profileData.city, profileData.countryCode, profileData.regionCode]
   );
 
   if (!isOpen) return null;
@@ -116,7 +145,7 @@ const InfoModal = ({
     setProfileData((prev) => ({
       ...prev,
       countryCode: nextCountryCode,
-      country: selectedCountry?.label || getCountryLabelFromCode(nextCountryCode, lang, ''),
+      country: selectedCountry?.label || (locationApi?.getCountryLabelFromCode ? locationApi.getCountryLabelFromCode(nextCountryCode, lang, '') : nextCountryCode),
       regionCode: '',
       region: '',
       city: ''
@@ -185,6 +214,20 @@ const InfoModal = ({
         : normalizedPhone;
     return `https://wa.me/${waPhone}`;
   };
+
+  const getCountryLabelFromCode = useCallback((countryCode, language = 'en', fallback = '') => {
+    if (!countryCode) return fallback || '';
+    try {
+      const localeMap = { id: 'id-ID', en: 'en', ar: 'ar' };
+      const locale = localeMap[language] || localeMap.en;
+      const displayNames = new Intl.DisplayNames([locale], { type: 'region' });
+      const localizedName = displayNames.of(countryCode);
+      if (localizedName) return localizedName;
+    } catch {
+      // ignore
+    }
+    return fallback || countryCode;
+  }, []);
 
   const renderMemberCard = (member, actionLabel = null, actionHandler = null, iconColor = 'var(--accent)', options = {}) => {
     const { compact = false, approvalCompact = false, secondaryActionLabel = null, secondaryActionHandler = null } = options;
@@ -566,39 +609,47 @@ const InfoModal = ({
                 <input type="email" value={currentMember?.email || currentUser?.email || ''} className="login-input" style={{ width: '100%' }} disabled />
               </div>
               <div className="input-group">
-                <label style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>{t('phone')}</label>
-                <input type="text" name="phone" value={profileData.phone} onChange={handleProfileChange} className="login-input" style={{ width: '100%' }} required />
-              </div>
-              <div className="input-group">
                 <label style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>{t('country')}</label>
-                <select value={profileData.countryCode} onChange={handleProfileCountryChange} className="login-input" style={{ width: '100%' }}>
-                  <option value="">{t('selectCountry')}</option>
-                  {countryOptions.map((country) => (
-                    <option key={country.code} value={country.code}>{country.label}</option>
-                  ))}
-                </select>
+                {isLocationLoading ? (
+                  <div className="login-input" style={{ width: '100%', color: 'var(--text-secondary)', fontStyle: 'italic' }}>{t('loading')}...</div>
+                ) : (
+                  <select value={profileData.countryCode} onChange={handleProfileCountryChange} className="login-input" style={{ width: '100%' }}>
+                    <option value="">{t('selectCountry')}</option>
+                    {countryOptions.map((country) => (
+                      <option key={country.code} value={country.code}>{country.label}</option>
+                    ))}
+                  </select>
+                )}
               </div>
               <div className="input-group">
                 <label style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>{t('region')}</label>
-                <select value={profileData.regionCode} onChange={handleProfileRegionChange} className="login-input" style={{ width: '100%' }} disabled={!profileData.countryCode || regionOptions.length === 0}>
-                  <option value="">{t('selectRegion')}</option>
-                  {regionOptions.map((region) => (
-                    <option key={region.code} value={region.code}>{region.label}</option>
-                  ))}
-                </select>
-                {!profileData.countryCode || regionOptions.length > 0 ? null : (
+                {isLocationLoading ? (
+                  <div className="login-input" style={{ width: '100%', color: 'var(--text-secondary)', fontStyle: 'italic' }}>{t('loading')}...</div>
+                ) : (
+                  <select value={profileData.regionCode} onChange={handleProfileRegionChange} className="login-input" style={{ width: '100%' }} disabled={!profileData.countryCode || regionOptions.length === 0}>
+                    <option value="">{t('selectRegion')}</option>
+                    {regionOptions.map((region) => (
+                      <option key={region.code} value={region.code}>{region.label}</option>
+                    ))}
+                  </select>
+                )}
+                {!isLocationLoading && (!profileData.countryCode || regionOptions.length > 0) ? null : (
                   <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>{t('noRegionOptions')}</div>
                 )}
               </div>
               <div className="input-group">
                 <label style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>{t('city')}</label>
-                <select value={profileData.city} onChange={handleProfileCityChange} className="login-input" style={{ width: '100%' }} disabled={!profileData.countryCode || cityOptions.length === 0}>
-                  <option value="">{t('selectCity')}</option>
-                  {cityOptions.map((city) => (
-                    <option key={city.code} value={city.code}>{city.label}</option>
-                  ))}
-                </select>
-                {!profileData.countryCode || cityOptions.length > 0 ? null : (
+                {isLocationLoading ? (
+                  <div className="login-input" style={{ width: '100%', color: 'var(--text-secondary)', fontStyle: 'italic' }}>{t('loading')}...</div>
+                ) : (
+                  <select value={profileData.city} onChange={handleProfileCityChange} className="login-input" style={{ width: '100%' }} disabled={!profileData.countryCode || cityOptions.length === 0}>
+                    <option value="">{t('selectCity')}</option>
+                    {cityOptions.map((city) => (
+                      <option key={city.code} value={city.code}>{city.label}</option>
+                    ))}
+                  </select>
+                )}
+                {!isLocationLoading && (!profileData.countryCode || cityOptions.length > 0) ? null : (
                   <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>{t('noCityOptions')}</div>
                 )}
               </div>

@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/React-18.3-61DAFB?logo=react&logoColor=white" alt="React"/>
   <img src="https://img.shields.io/badge/Vite-5.4-646CFF?logo=vite&logoColor=white" alt="Vite"/>
   <img src="https://img.shields.io/badge/Supabase-Postgres-3ECF8E?logo=supabase&logoColor=white" alt="Supabase"/>
-  <img src="https://img.shields.io/badge/Platform-Web%20%26%20Android-34A853?logo=android&logoColor=white" alt="Platform"/>
+  <img src="https://img.shields.io/badge/Platform-Web-0ea5e9" alt="Platform"/>
   <img src="https://img.shields.io/badge/Language-AR%20%7C%20EN%20%7C%20ID-blueviolet" alt="Languages"/>
 </p>
 
@@ -21,7 +21,7 @@
 
 Nasab Al-Baraja is a multilingual family tree application for visualizing and maintaining the Al-Baraja lineage. It supports large trees, animated navigation, public suggestions, admin verification, and realtime synchronization through Supabase.
 
-The project runs as a Vite web app and can also be packaged for Android through Capacitor.
+The project runs as a Vite web app optimized for desktop and mobile browsers.
 
 ---
 
@@ -42,7 +42,7 @@ The project runs as a Vite web app and can also be packaged for Android through 
 Frontend       React 18 + Vite 5
 Graph          @xyflow/react + Dagre
 Backend        Supabase (Postgres, Realtime, Auth)
-Mobile         Capacitor Android
+Platform       Responsive Web
 Styling        Vanilla CSS
 Icons          Lucide React
 ```
@@ -83,7 +83,8 @@ SUPABASE_SERVICE_ROLE_KEY="your_service_role_key_for_server_side_scripts_only"
 Notes:
 - The frontend only needs `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
 - `SUPABASE_SERVICE_ROLE_KEY` is only for local/server-side scripts and must never be exposed to the browser.
-- `SUPABASE_WEBHOOK_SECRET`, `SMTP_USER`, and `SMTP_PASS` are only for the Vercel serverless email webhook.
+- `SUPABASE_WEBHOOK_SECRET` is required for the email webhook and the endpoint now rejects requests when it is missing.
+- `SMTP_USER` and `SMTP_PASS` are not used by the current Resend-based webhook flow.
 
 ### Run Locally
 
@@ -127,6 +128,8 @@ where email = 'adminbaru@example.com';
 ## Deploy to Vercel
 
 This project is ready for Vercel as a standard Vite app.
+
+If you previously deployed this repository with Firebase Hosting, update that pipeline before your next release. The Firebase hosting config has been removed and the documented deployment target is now Vercel or another equivalent web host.
 
 Set these Environment Variables in Vercel:
 
@@ -204,6 +207,8 @@ https://your-vercel-domain.vercel.app/api/email/supabase-event
 
 Use `x-webhook-secret: <SUPABASE_WEBHOOK_SECRET>` as a custom header.
 
+The webhook handler fails closed: if `SUPABASE_WEBHOOK_SECRET` is not configured in the deployment environment, every request is rejected and no email is sent.
+
 Webhook 1:
 
 - Table: `public.baraja_member`
@@ -250,20 +255,9 @@ nasab-al-baraja/
 │   └── index.css
 ├── public/
 │   └── assets/
-├── android/
 ├── .env.example
 ├── supabase_guest_policies.sql
 └── task.md
-```
-
----
-
-## Android
-
-```bash
-npm run build
-npx cap sync
-npx cap open android
 ```
 
 ---

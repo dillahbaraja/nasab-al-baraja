@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">Al-Baraja</string>
-    <string name="title_activity_main">Al-Baraja</string>
-    <string name="package_name">id.baraja.silsilah</string>
-    <string name="custom_url_scheme">id.baraja.silsilah</string>
-</resources>

@@ -1,17 +1,16 @@
 {
   "name": "nasab-al-baraja",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.2.37",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "smoke:webhook-secret": "node scripts/smoke-webhook-secret.mjs"
   },
   "dependencies": {
-    "@capacitor/core": "^8.2.0",
-    "@capacitor/status-bar": "^8.0.1",
     "@supabase/supabase-js": "^2.103.0",
     "@vercel/analytics": "^2.0.1",
     "@vercel/speed-insights": "^2.0.0",
@@ -26,8 +25,6 @@
     "resend": "^6.12.2"
   },
   "devDependencies": {
-    "@capacitor/android": "^8.2.0",
-    "@capacitor/cli": "^8.2.0",
     "@eslint/js": "^9.9.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",

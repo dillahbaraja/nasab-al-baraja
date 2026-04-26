@@ -1,5 +1,5 @@
 // ============================================================
-// BACKUP — Algoritma layout LAMA (subtree-width / trapesium)
+// BACKUP - Algoritma layout LAMA (subtree-width / trapesium)
 // Untuk revert: copy-paste isi file ini ke layout.js
 // ============================================================
 
@@ -11,7 +11,7 @@ const gapY = 90;  // Jarak vertikal antar generasi
 export const getLayoutedElements = (nodes, edges, direction = 'TB') => {
   const childrenMap = {};
   const inDegree = {};
-  
+
   nodes.forEach(n => {
     childrenMap[n.id] = [];
     inDegree[n.id] = 0;
@@ -66,12 +66,12 @@ export const getLayoutedElements = (nodes, edges, direction = 'TB') => {
     });
 
     // 2. Parent sits at midpoint of first & last immediate child
-    //    → balanced even when siblings have very different subtree sizes
+    //    -> balanced even when siblings have very different subtree sizes
     const firstChildX = positions[children[0]]?.x ?? (xLeft + width / 2);
-    const lastChildX  = positions[children[children.length - 1]]?.x ?? firstChildX;
+    const lastChildX = positions[children[children.length - 1]]?.x ?? firstChildX;
     positions[id] = {
       x: (firstChildX + lastChildX) / 2,
-      y: yTop
+      y: yTop,
     };
   };
 
@@ -82,7 +82,7 @@ export const getLayoutedElements = (nodes, edges, direction = 'TB') => {
   });
 
   const layoutedNodes = nodes.map(n =>
-    positions[n.id] ? { ...n, position: positions[n.id] } : n
+    positions[n.id] ? { ...n, position: positions[n.id] } : n,
   );
 
   return { nodes: layoutedNodes, edges };
@@ -95,7 +95,7 @@ export const createNodesFromData = (dataList) => {
       id: String(person.id),
       type: 'customNode',
       origin: [0.5, 0], // Anchor node to its center-top to guarantee perfect alignment
-      position: { x: 0, y: 0 }, 
+      position: { x: 0, y: 0 },
       data: {
         arabicName: person.arabicName || '',
         englishName: person.englishName || person.name || '-',
@@ -104,7 +104,7 @@ export const createNodesFromData = (dataList) => {
         isCollapsed: !!person.isCollapsed,
         hasChildren: !!person.hasChildren,
         isGlowing: !!person.isGlowing,
-        raw: person
-      }
+        raw: person,
+      },
     }));
 };

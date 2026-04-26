@@ -50,11 +50,18 @@ function renderHtmlSection(title, lines, { rtl = false, arabic = false } = {}) {
   `;
 }
 
-function renderHtmlEmail({ subject, arabicLines, englishLines, indonesianLines }) {
+function renderHtmlEmail({ subject, arabicLines, englishLines, indonesianLines, targetUrl = '' }) {
+  const ctaHtml = targetUrl
+    ? `<div style="margin:0 0 24px 0;text-align:center;">
+        <a href="${escapeHtml(targetUrl)}" style="display:inline-block;padding:12px 18px;border-radius:10px;background:#111827;color:#ffffff;font-family:Arial, Helvetica, sans-serif;font-size:14px;font-weight:700;text-decoration:none;">View in Website</a>
+      </div>`
+    : '';
+
   return `
     <div style="margin:0;padding:24px;background:#f4f4f5;">
       <div style="max-width:720px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;padding:28px;">
         <div style="font-family:Arial, Helvetica, sans-serif;font-size:20px;font-weight:700;line-height:1.4;color:#111827;margin:0 0 24px 0;">${escapeHtml(subject)}</div>
+        ${ctaHtml}
         ${renderHtmlSection('Arabic', arabicLines, { rtl: true, arabic: true })}
         ${renderHtmlSection('English', englishLines)}
         ${renderHtmlSection('Indonesia', indonesianLines)}
@@ -63,12 +70,23 @@ function renderHtmlEmail({ subject, arabicLines, englishLines, indonesianLines }
   `;
 }
 
-function createEmail({ subject, arabicLines, englishLines, indonesianLines }) {
+function createEmail({ subject, arabicLines, englishLines, indonesianLines, targetUrl = '' }) {
+  const ctaText = targetUrl ? `\n\nView in Website: ${targetUrl}` : '';
   return {
     subject,
-    text: renderTextSections({ arabicLines, englishLines, indonesianLines }),
-    html: renderHtmlEmail({ subject, arabicLines, englishLines, indonesianLines })
+    text: `${renderTextSections({ arabicLines, englishLines, indonesianLines })}${ctaText}`,
+    html: renderHtmlEmail({ subject, arabicLines, englishLines, indonesianLines, targetUrl })
   };
+}
+
+export function buildNodeTargetUrl(baseUrl, personId, parentId = '') {
+  if (!baseUrl || !personId) return '';
+  const url = new URL(String(baseUrl).replace(/\/$/, ''));
+  url.searchParams.set('personId', String(personId));
+  if (parentId) {
+    url.searchParams.set('parentId', String(parentId));
+  }
+  return url.toString();
 }
 
 export function decorateEmailForRecipient(message, recipient, baseUrl) {
@@ -114,7 +132,7 @@ function getBaseMemberDetails(member) {
   };
 }
 
-export function buildPendingMemberEmail(member) {
+export function buildPendingMemberEmail(member, targetUrl = '') {
   const details = getBaseMemberDetails(member);
 
   return createEmail({
@@ -145,11 +163,12 @@ export function buildPendingMemberEmail(member) {
       `Kota: ${details.city}`,
       `Negara: ${details.country}`,
       `Waktu pengiriman: ${details.submittedAt}`
-    ]
+    ],
+    targetUrl
   });
 }
 
-export function buildPendingMemberForRegistrantEmail(member) {
+export function buildPendingMemberForRegistrantEmail(member, targetUrl = '') {
   const details = getBaseMemberDetails(member);
 
   return createEmail({
@@ -174,11 +193,12 @@ export function buildPendingMemberForRegistrantEmail(member) {
       `Nama English: ${details.englishName}`,
       `Email: ${details.email}`,
       `Waktu pengiriman: ${details.submittedAt}`
-    ]
+    ],
+    targetUrl
   });
 }
 
-export function buildAdminPromotionEmail(member) {
+export function buildAdminPromotionEmail(member, targetUrl = '') {
   const details = getBaseMemberDetails(member);
 
   return createEmail({
@@ -203,11 +223,12 @@ export function buildAdminPromotionEmail(member) {
       `Nama English: ${details.englishName}`,
       `Email: ${details.email}`,
       `Waktu pengangkatan: ${details.promotedAt}`
-    ]
+    ],
+    targetUrl
   });
 }
 
-export function buildAdminPromotionForMemberEmail(member) {
+export function buildAdminPromotionForMemberEmail(member, targetUrl = '') {
   const details = getBaseMemberDetails(member);
 
   return createEmail({
@@ -229,11 +250,12 @@ export function buildAdminPromotionForMemberEmail(member) {
       `Nama Arab: ${details.arabicName}`,
       `Nama English: ${details.englishName}`,
       `Waktu pengangkatan: ${details.promotedAt}`
-    ]
+    ],
+    targetUrl
   });
 }
 
-export function buildMemberApprovedEmail(member) {
+export function buildMemberApprovedEmail(member, targetUrl = '') {
   const details = getBaseMemberDetails(member);
 
   return createEmail({
@@ -258,11 +280,12 @@ export function buildMemberApprovedEmail(member) {
       `Nama English: ${details.englishName}`,
       `Email: ${details.email}`,
       `Waktu verifikasi: ${details.approvedAt}`
-    ]
+    ],
+    targetUrl
   });
 }
 
-export function buildMemberApprovedForMemberEmail(member) {
+export function buildMemberApprovedForMemberEmail(member, targetUrl = '') {
   const details = getBaseMemberDetails(member);
 
   return createEmail({
@@ -284,7 +307,8 @@ export function buildMemberApprovedForMemberEmail(member) {
       `Nama Arab: ${details.arabicName}`,
       `Nama English: ${details.englishName}`,
       `Waktu verifikasi: ${details.approvedAt}`
-    ]
+    ],
+    targetUrl
   });
 }
 
@@ -304,7 +328,7 @@ function getProposalLabels(type) {
   };
 }
 
-export function buildGuestProposalEmail({ notice, nodeDetails }) {
+export function buildGuestProposalEmail({ notice, nodeDetails, targetUrl = '' }) {
   const labels = getProposalLabels(notice?.type);
   const targetArabicName = safeValue(nodeDetails?.node?.arabic_name);
   const targetEnglishName = safeValue(nodeDetails?.node?.english_name);
@@ -340,11 +364,12 @@ export function buildGuestProposalEmail({ notice, nodeDetails }) {
       `Nama ayah Arab: ${parentArabicName}`,
       `Nama ayah English: ${parentEnglishName}`,
       `Waktu pengiriman: ${submittedAt}`
-    ]
+    ],
+    targetUrl
   });
 }
 
-export function buildAdminTreeChangeEmail({ notice, nodeDetails }) {
+export function buildAdminTreeChangeEmail({ notice, nodeDetails, targetUrl = '' }) {
   const targetArabicName = safeValue(nodeDetails?.node?.arabic_name);
   const targetEnglishName = safeValue(nodeDetails?.node?.english_name);
   const parentArabicName = safeValue(nodeDetails?.parent?.arabic_name);
@@ -392,6 +417,7 @@ export function buildAdminTreeChangeEmail({ notice, nodeDetails }) {
       `Nama Arab saat ini: ${targetArabicName}`,
       `Nama English saat ini: ${targetEnglishName}`,
       `Waktu perubahan: ${happenedAt}`
-    ]
+    ],
+    targetUrl
   });
 }
