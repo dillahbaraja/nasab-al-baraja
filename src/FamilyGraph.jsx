@@ -3696,92 +3696,61 @@ const FamilyGraph = () => {
     }
 
     let authUser = null;
-    const signUpResult = await supabase.auth.signUp({
-      email,
-      password
-    });
+    const signInResult = await supabase.auth.signInWithPassword({ email, password });
+    if (signInResult.error) {
+      const invalidCredentials = signInResult.error.message?.toLowerCase().includes('invalid login credentials');
+      if (!invalidCredentials) {
+        throw new Error(signInResult.error.message || t('claimFailed'));
+      }
 
-    if (signUpResult.error) {
-      const message = signUpResult.error.message || '';
-      const alreadyRegistered = message.toLowerCase().includes('already registered');
+      const signUpResult = await supabase.auth.signUp({
+        email,
+        password
+      });
 
-      if (!alreadyRegistered) {
+      if (signUpResult.error) {
+        const message = signUpResult.error.message || '';
+        const alreadyRegistered = message.toLowerCase().includes('already registered');
+        if (alreadyRegistered) {
+          throw new Error(t('invalidCredentials'));
+        }
         throw new Error(message || t('claimFailed'));
       }
 
-      const signInResult = await supabase.auth.signInWithPassword({ email, password });
-      if (signInResult.error) {
-        throw new Error(signInResult.error.message || t('invalidCredentials'));
-      }
+      authUser = signUpResult.data?.user || null;
+    } else {
       authUser = signInResult.data?.user || null;
       alert(t('existingAccountContinueClaim'));
-    } else {
-      authUser = signUpResult.data?.user || null;
-      if (!signUpResult.data?.session) {
-        const signInResult = await supabase.auth.signInWithPassword({ email, password });
-        if (signInResult.error) {
-          throw new Error(signInResult.error.message || t('claimFailed'));
-        }
-        authUser = signInResult.data?.user || authUser;
-      }
     }
 
     if (!authUser?.id) {
       throw new Error(t('claimFailed'));
     }
 
-    const { data: existingMember, error: existingMemberError } = await supabase
-      .from('baraja_member')
-      .select('*')
-      .eq('auth_user_id', authUser.id)
-      .order('id', { ascending: true })
-      .limit(1)
-      .maybeSingle();
-
-    if (existingMemberError) {
-      throw new Error(existingMemberError.message || t('claimFailed'));
-    }
-
-    if (existingMember?.claim_status === 'pending') {
-      await resolveMemberContext(authUser);
-      await fetchPublicMemberStatuses();
-      throw new Error(t('alreadyHavePendingClaim'));
-    }
-
-    if (existingMember?.claim_status === 'approved') {
-      await resolveMemberContext(authUser);
-      await fetchPublicMemberStatuses();
-      throw new Error(t('alreadyConnectedMember'));
-    }
-
-    const memberPayload = {
-      auth_user_id: authUser.id,
-      person_id: String(person.id),
-      email,
-      phone,
-      city,
-      country_code: countryCode,
-      region,
-      region_code: regionCode,
-      country,
-      claim_status: 'pending',
-      member_level: 'guest',
-      arabic_name_snapshot: person.arabicName || '',
-      english_name_snapshot: person.englishName || ''
-    };
-
-    const memberWriteQuery = existingMember
-      ? supabase.from('baraja_member').update(memberPayload).eq('id', existingMember.id)
-      : supabase.from('baraja_member').insert(memberPayload);
-
-    const { error } = await memberWriteQuery;
+    const { error } = await supabase.rpc('submit_baraja_member_claim', {
+      target_auth_user_id: authUser.id,
+      target_person_id: String(person.id),
+      claim_email: email,
+      claim_phone: phone,
+      claim_city: city,
+      claim_country_code: countryCode,
+      claim_region: region,
+      claim_region_code: regionCode,
+      claim_country: country,
+      claim_arabic_name_snapshot: person.arabicName || '',
+      claim_english_name_snapshot: person.englishName || ''
+    });
 
     if (error) {
       throw new Error(error.message || t('claimFailed'));
     }
 
     await fetchPublicMemberStatuses();
-    await resolveMemberContext(authUser);
+    const { data: sessionData } = await supabase.auth.getSession();
+    const activeUser = sessionData?.session?.user || null;
+    if (activeUser?.id === authUser.id) {
+      await resolveMemberContext(activeUser);
+    }
     alert(t('claimSaved'));
   }, [currentMember, fetchPublicMemberStatuses, memberStatuses, resolveMemberContext, t]);
 

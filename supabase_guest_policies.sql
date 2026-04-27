@@ -372,6 +372,136 @@ begin
 end;
 $$;
 
+create or replace function public.submit_baraja_member_claim(
+  target_auth_user_id uuid,
+  target_person_id text,
+  claim_email text,
+  claim_phone text,
+  claim_city text,
+  claim_country_code text default '',
+  claim_region text default '',
+  claim_region_code text default '',
+  claim_country text default '',
+  claim_arabic_name_snapshot text default '',
+  claim_english_name_snapshot text default ''
+)
+returns public.baraja_member
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  existing_row public.baraja_member;
+  target_row public.baraja_member;
+begin
+  if auth.role() <> 'authenticated' then
+    raise exception 'You must be signed in to submit a member claim.';
+  end if;
+
+  if target_auth_user_id is null then
+    raise exception 'Target auth user is required.';
+  end if;
+
+  if coalesce(trim(target_person_id), '') = ''
+    or coalesce(trim(claim_email), '') = ''
+    or coalesce(trim(claim_phone), '') = ''
+    or coalesce(trim(claim_city), '') = '' then
+    raise exception 'All required claim fields must be filled.';
+  end if;
+
+  select *
+  into existing_row
+  from public.baraja_member
+  where auth_user_id = target_auth_user_id
+  order by id asc
+  limit 1
+  for update;
+
+  if existing_row.claim_status = 'pending' then
+    raise exception 'This account already has a claim waiting for verification.';
+  end if;
+
+  if existing_row.claim_status = 'approved' then
+    raise exception 'This account is already connected as a member.';
+  end if;
+
+  if exists (
+    select 1
+    from public.baraja_member
+    where person_id = target_person_id
+      and claim_status = 'approved'
+      and auth_user_id <> target_auth_user_id
+  ) then
+    raise exception 'This person is already connected to a member account.';
+  end if;
+
+  if exists (
+    select 1
+    from public.baraja_member
+    where person_id = target_person_id
+      and claim_status = 'pending'
+      and auth_user_id <> target_auth_user_id
+  ) then
+    raise exception 'This name is currently under review.';
+  end if;
+
+  if existing_row.id is not null then
+    update public.baraja_member
+    set
+      person_id = trim(target_person_id),
+      email = lower(trim(claim_email)),
+      phone = trim(claim_phone),
+      city = trim(claim_city),
+      country_code = trim(coalesce(claim_country_code, '')),
+      region = trim(coalesce(claim_region, '')),
+      region_code = trim(coalesce(claim_region_code, '')),
+      country = trim(coalesce(claim_country, '')),
+      claim_status = 'pending',
+      member_level = 'guest',
+      approved_at = null,
+      approved_by_member_id = null,
+      arabic_name_snapshot = coalesce(claim_arabic_name_snapshot, ''),
+      english_name_snapshot = coalesce(claim_english_name_snapshot, '')
+    where id = existing_row.id
+    returning * into target_row;
+  else
+    insert into public.baraja_member (
+      auth_user_id,
+      person_id,
+      email,
+      phone,
+      city,
+      country_code,
+      region,
+      region_code,
+      country,
+      claim_status,
+      member_level,
+      arabic_name_snapshot,
+      english_name_snapshot
+    )
+    values (
+      target_auth_user_id,
+      trim(target_person_id),
+      lower(trim(claim_email)),
+      trim(claim_phone),
+      trim(claim_city),
+      trim(coalesce(claim_country_code, '')),
+      trim(coalesce(claim_region, '')),
+      trim(coalesce(claim_region_code, '')),
+      trim(coalesce(claim_country, '')),
+      'pending',
+      'guest',
+      coalesce(claim_arabic_name_snapshot, ''),
+      coalesce(claim_english_name_snapshot, '')
+    )
+    returning * into target_row;
+  end if;
+
+  return target_row;
+end;
+$$;
+
 grant execute on function public.is_admin_user() to anon, authenticated;
 grant execute on function public.current_baraja_member_id() to authenticated;
 grant execute on function public.is_verified_baraja_member() to authenticated;
@@ -379,6 +509,7 @@ grant execute on function public.is_admin_baraja_member() to authenticated;
 grant execute on function public.can_manage_baraja_members() to authenticated;
 grant execute on function public.approve_baraja_member_claim(bigint) to authenticated;
 grant execute on function public.promote_baraja_member_admin(bigint) to authenticated;
+grant execute on function public.submit_baraja_member_claim(uuid, text, text, text, text, text, text, text, text, text, text) to authenticated;
 
 insert into public.admin_users (email)
 values ('dillahbaraja@gmail.com')

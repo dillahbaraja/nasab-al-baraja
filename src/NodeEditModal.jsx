@@ -56,6 +56,8 @@ const NodeEditModal = ({
   const [proposalNameForm, setProposalNameForm] = useState({ latin: '', arab: '' });
   const [claimForm, setClaimForm] = useState({ email: '', password: '', phone: '', country: '', countryCode: '', region: '', regionCode: '', city: '' });
   const [locationApi, setLocationApi] = useState(null);
+  const [isLocationLoading, setIsLocationLoading] = useState(false);
+  const [useManualLocationFields, setUseManualLocationFields] = useState(false);
   const suggestionFormRef = useRef(null);
   const primarySuggestionInputRef = useRef(null);
 
@@ -163,6 +165,9 @@ const NodeEditModal = ({
       regionCode: '',
       city: ''
     });
+    setLocationApi(null);
+    setIsLocationLoading(false);
+    setUseManualLocationFields(false);
   }, [person, displayNames]);
 
   useEffect(() => {
@@ -181,20 +186,37 @@ const NodeEditModal = ({
   }, [activeSuggestionMode, isMobileDevice]);
 
   useEffect(() => {
-    if (isMobileDevice || activeSuggestionMode !== 'claimMember') return;
+    if (activeSuggestionMode !== 'claimMember') return;
     if (locationApi) return;
 
     let cancelled = false;
+    const fallbackTimer = setTimeout(() => {
+      if (!cancelled) {
+        setIsLocationLoading(false);
+        setUseManualLocationFields(true);
+      }
+    }, 1200);
+
+    setIsLocationLoading(true);
     import('./locationData').then((mod) => {
-      if (!cancelled) setLocationApi(mod);
-    }).catch((error) => {
-      console.error('Location data failed to load:', error);
+      if (!cancelled) {
+        clearTimeout(fallbackTimer);
+        setLocationApi(mod);
+        setIsLocationLoading(false);
+      }
+    }).catch(() => {
+      if (!cancelled) {
+        clearTimeout(fallbackTimer);
+        setIsLocationLoading(false);
+        setUseManualLocationFields(true);
+      }
     });
 
     return () => {
       cancelled = true;
+      clearTimeout(fallbackTimer);
     };
-  }, [activeSuggestionMode, isMobileDevice, locationApi]);
+  }, [activeSuggestionMode, locationApi]);
 
   const children = useMemo(() => {
     if (!person) return [];
@@ -204,6 +226,9 @@ const NodeEditModal = ({
   const claimCountryOptions = useMemo(() => (locationApi?.getCountryOptions ? locationApi.getCountryOptions(lang) : []), [locationApi, lang]);
   const claimRegionOptions = useMemo(() => (locationApi?.getRegionOptions ? locationApi.getRegionOptions(claimForm.countryCode) : []), [locationApi, claimForm.countryCode]);
   const claimCityOptions = useMemo(() => (locationApi?.getCityOptions ? locationApi.getCityOptions(claimForm.countryCode, claimForm.regionCode) : []), [locationApi, claimForm.countryCode, claimForm.regionCode]);
+  const canUseCountrySelect = !useManualLocationFields && claimCountryOptions.length > 0;
+  const canUseRegionSelect = canUseCountrySelect && claimRegionOptions.length > 0;
+  const canUseCitySelect = canUseCountrySelect && claimCityOptions.length > 0;
 
   if (!isOpen || !person) return null;
 
@@ -374,7 +399,11 @@ const NodeEditModal = ({
       city: (claimForm.city || '').trim()
     };
 
-    if (!payload.email || !payload.password || !payload.phone || !payload.city || isSaving) return;
+    if (isSaving) return;
+    if (!payload.email || !payload.password || !payload.phone || !payload.city) {
+      alert(t('fillAllFields'));
+      return;
+    }
 
     setIsSaving(true);
     try {
@@ -571,60 +600,99 @@ const NodeEditModal = ({
           onChange={(e) => setClaimForm((prev) => ({ ...prev, phone: e.target.value }))}
           required
         />
-        <select
-          className="search-input"
-          style={{ padding: '12px 14px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', color: 'var(--text-primary)' }}
-          value={claimForm.countryCode}
-          onChange={(e) => {
-            const selected = claimCountryOptions.find((country) => country.code === e.target.value);
-            setClaimForm((prev) => ({
-              ...prev,
-              countryCode: e.target.value,
-              country: selected?.label || locationApi?.getCountryLabelFromCode?.(e.target.value, lang, '') || e.target.value,
-              regionCode: '',
-              region: '',
-              city: ''
-            }));
-          }}
-        >
-          <option value="">{t('selectCountry')}</option>
-          {claimCountryOptions.map((country) => (
-            <option key={country.code} value={country.code}>{country.label}</option>
-          ))}
-        </select>
-        <select
-          className="search-input"
-          style={{ padding: '12px 14px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', color: 'var(--text-primary)' }}
-          value={claimForm.regionCode}
-          onChange={(e) => {
-            const selected = claimRegionOptions.find((region) => region.code === e.target.value);
-            setClaimForm((prev) => ({
-              ...prev,
-              regionCode: e.target.value,
-              region: selected?.label || '',
-              city: ''
-            }));
-          }}
-          disabled={!claimForm.countryCode || claimRegionOptions.length === 0}
-        >
-          <option value="">{t('selectRegion')}</option>
-          {claimRegionOptions.map((region) => (
-            <option key={region.code} value={region.code}>{region.label}</option>
-          ))}
-        </select>
-        <select
-          className="search-input"
-          style={{ padding: '12px 14px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', color: 'var(--text-primary)' }}
-          value={claimForm.city}
-          onChange={(e) => setClaimForm((prev) => ({ ...prev, city: e.target.value }))}
-          disabled={!claimForm.countryCode || claimCityOptions.length === 0}
-          required
-        >
-          <option value="">{t('selectCity')}</option>
-          {claimCityOptions.map((city) => (
-            <option key={city.code} value={city.label}>{city.label}</option>
-          ))}
-        </select>
+        {isLocationLoading && !useManualLocationFields && (
+          <div style={{ color: 'var(--text-secondary)', fontSize: '13px', textAlign: 'center' }}>
+            {t('loading')}
+          </div>
+        )}
+        {canUseCountrySelect ? (
+          <select
+            className="search-input"
+            style={{ padding: '12px 14px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', color: 'var(--text-primary)' }}
+            value={claimForm.countryCode}
+            onChange={(e) => {
+              const selected = claimCountryOptions.find((country) => country.code === e.target.value);
+              setClaimForm((prev) => ({
+                ...prev,
+                countryCode: e.target.value,
+                country: selected?.label || locationApi?.getCountryLabelFromCode?.(e.target.value, lang, '') || e.target.value,
+                regionCode: '',
+                region: '',
+                city: ''
+              }));
+            }}
+          >
+            <option value="">{t('selectCountry')}</option>
+            {claimCountryOptions.map((country) => (
+              <option key={country.code} value={country.code}>{country.label}</option>
+            ))}
+          </select>
+        ) : (
+          <input
+            type="text"
+            placeholder={`${t('country')} ${t('optional')}`}
+            className="search-input"
+            style={{ padding: '12px 14px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', color: 'var(--text-primary)' }}
+            value={claimForm.country}
+            onChange={(e) => setClaimForm((prev) => ({ ...prev, country: e.target.value, countryCode: '' }))}
+          />
+        )}
+        {canUseRegionSelect ? (
+          <select
+            className="search-input"
+            style={{ padding: '12px 14px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', color: 'var(--text-primary)' }}
+            value={claimForm.regionCode}
+            onChange={(e) => {
+              const selected = claimRegionOptions.find((region) => region.code === e.target.value);
+              setClaimForm((prev) => ({
+                ...prev,
+                regionCode: e.target.value,
+                region: selected?.label || '',
+                city: ''
+              }));
+            }}
+            disabled={!claimForm.countryCode}
+          >
+            <option value="">{t('selectRegion')}</option>
+            {claimRegionOptions.map((region) => (
+              <option key={region.code} value={region.code}>{region.label}</option>
+            ))}
+          </select>
+        ) : (
+          <input
+            type="text"
+            placeholder={`${t('region')} ${t('optional')}`}
+            className="search-input"
+            style={{ padding: '12px 14px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', color: 'var(--text-primary)' }}
+            value={claimForm.region}
+            onChange={(e) => setClaimForm((prev) => ({ ...prev, region: e.target.value, regionCode: '' }))}
+          />
+        )}
+        {canUseCitySelect ? (
+          <select
+            className="search-input"
+            style={{ padding: '12px 14px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', color: 'var(--text-primary)' }}
+            value={claimForm.city}
+            onChange={(e) => setClaimForm((prev) => ({ ...prev, city: e.target.value }))}
+            disabled={!claimForm.countryCode}
+            required
+          >
+            <option value="">{t('selectCity')}</option>
+            {claimCityOptions.map((city) => (
+              <option key={city.code} value={city.label}>{city.label}</option>
+            ))}
+          </select>
+        ) : (
+          <input
+            type="text"
+            placeholder={`${t('city')} *`}
+            className="search-input"
+            style={{ padding: '12px 14px', background: 'var(--input-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', color: 'var(--text-primary)' }}
+            value={claimForm.city}
+            onChange={(e) => setClaimForm((prev) => ({ ...prev, city: e.target.value }))}
+            required
+          />
+        )}
         <div className="lineage-button-row">
           <button type="button" onClick={() => setActiveSuggestionMode(null)} className="lineage-secondary-button" style={{ flex: 1 }}>
             {t('cancel')}
